@@ -1,0 +1,6 @@
+{
+  "name": "DownloaderZero (DZ)",
+  "description": "Web app downloader modern futuristik 3D untuk download video hingga 4K dan MP3 audio dari YouTube, TikTok, Facebook, dan Instagram.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
