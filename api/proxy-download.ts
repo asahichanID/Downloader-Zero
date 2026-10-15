@@ -9,7 +9,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const targetUrl = (req.query?.url as string) || '';
-    const rawFilename = (req.query?.filename as string) || 'DownloaderZero_Media';
+    const rawFilename = (req.query?.filename as string) || 'DownloaderZero_Media.mp4';
 
     if (!targetUrl || !targetUrl.startsWith('http')) {
       res.status(400).send('Target URL tidak valid.');
@@ -20,7 +20,9 @@ export default async function handler(req: any, res: any) {
 
     const remoteRes = await fetch(targetUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Referer': targetUrl.includes('tiktok') ? 'https://www.tiktok.com/' : targetUrl.includes('facebook') ? 'https://www.facebook.com/' : targetUrl
       }
     });
 
@@ -29,11 +31,15 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const contentType = remoteRes.headers.get('content-type') || 'application/octet-stream';
     const contentLength = remoteRes.headers.get('content-length');
 
-    res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}"`);
-    res.setHeader('Content-Type', contentType);
+    // Force automatic direct attachment download
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
     if (contentLength) {
       res.setHeader('Content-Length', contentLength);
     }

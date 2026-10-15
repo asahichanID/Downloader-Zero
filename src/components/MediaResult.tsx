@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
 import {
   Download,
-  ExternalLink,
   Film,
   Music,
-  CheckCircle,
+  CheckCircle2,
   Clock,
   User,
-  HardDrive,
   RefreshCw,
-  Sparkles,
-  Loader2
+  Loader2,
+  FileCheck
 } from 'lucide-react';
 import type { MediaMetadata, MediaFormat, MediaType } from '../types/index.ts';
 
@@ -27,57 +25,39 @@ export const MediaResult: React.FC<MediaResultProps> = ({
 }) => {
   // Filter formats based on selected tab (Video vs MP3)
   const availableFormats = media.formats.filter((f) => f.type === activeFilter);
-  // If no formats match the filter, fallback to all formats
   const displayFormats = availableFormats.length > 0 ? availableFormats : media.formats;
 
   const [selectedFormatId, setSelectedFormatId] = useState<string>(displayFormats[0]?.id || '');
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const [downloadProgress, setDownloadProgress] = useState<number>(0);
   const [downloadStatusText, setDownloadStatusText] = useState<string>('');
+  const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
 
   const currentFormat = displayFormats.find((f) => f.id === selectedFormatId) || displayFormats[0];
 
+  // Automated Direct Download without redirects or new tabs
   const handleDownloadTrigger = async (fmt: MediaFormat) => {
+    if (isDownloading) return;
+
     setIsDownloading(true);
+    setDownloadSuccess(null);
     setDownloadProgress(10);
-    setDownloadStatusText('Memulai sambungan unduhan...');
+    setDownloadStatusText('Menghubungkan ke server media...');
 
     const ext = fmt.extension;
-    const sanitizedTitle = (media.title || 'media').slice(0, 50).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filename = `DownloaderZero_${sanitizedTitle}_${fmt.resolution || fmt.quality}.${ext}`;
+    const sanitizedTitle = (media.title || 'media').slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `DownloaderZero_${sanitizedTitle}_${fmt.resolution || fmt.quality.split(' ')[0]}.${ext}`;
 
     try {
-      // If it's a direct URL, initiate proxy download attachment
-      if (fmt.isDirect) {
-        setDownloadProgress(60);
-        setDownloadStatusText('Mengalirkan berkas...');
+      let targetDownloadUrl = fmt.url;
 
-        const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(fmt.url)}&filename=${encodeURIComponent(filename)}`;
-        
-        // Trigger browser download via invisible anchor
-        const a = document.createElement('a');
-        a.href = proxyUrl;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-
-        setDownloadProgress(100);
-        setDownloadStatusText('Unduhan siap!');
-        setTimeout(() => {
-          setIsDownloading(false);
-          setDownloadProgress(0);
-        }, 2000);
-        return;
-      }
-
-      // If it has a loader.to job or needs polling
+      // If format requires async conversion job (e.g. YouTube loader)
       if (fmt.jobId) {
-        setDownloadStatusText('Menyiapkan konversi audio/video...');
+        setDownloadStatusText('Memproses konversi resolusi/audio...');
         let finished = false;
         let attempts = 0;
 
-        while (!finished && attempts < 20) {
+        while (!finished && attempts < 25) {
           attempts++;
           await new Promise((r) => setTimeout(r, 1200));
 
@@ -86,49 +66,120 @@ export const MediaResult: React.FC<MediaResultProps> = ({
             if (progRes.ok) {
               const pData = await progRes.json();
               if (pData.success && pData.downloadUrl) {
-                setDownloadProgress(100);
-                setDownloadStatusText('Selesai! Mengunduh berkas...');
-                
-                const a = document.createElement('a');
-                a.href = pData.downloadUrl;
-                a.download = filename;
-                a.target = '_blank';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-
+                targetDownloadUrl = pData.downloadUrl;
                 finished = true;
-                setTimeout(() => {
-                  setIsDownloading(false);
-                  setDownloadProgress(0);
-                }, 2000);
-                return;
-              } else if (pData.progress) {
-                setDownloadProgress(pData.progress);
-                setDownloadStatusText(pData.statusText || 'Sedang memproses konversi...');
+                break;
+              } else if (typeof pData.progress === 'number' && pData.progress > 0) {
+                setDownloadProgress(Math.min(85, Math.round(pData.progress)));
+                setDownloadStatusText(pData.statusText || 'Sedang memproses konversi video...');
               }
             }
           } catch {
-            // continue polling
+            // Keep polling
           }
         }
       }
 
-      // Fallback: trigger directly
+      setDownloadProgress(40);
+      setDownloadStatusText('Mengalirkan data berkas asli...');
+
+      const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(targetDownloadUrl)}&filename=${encodeURIComponent(filename)}`;
+
+      // Fetch file as Blob with streaming progress so browser saves directly to disk
+      const response = await fetch(proxyUrl);
+      if (!response.ok) {
+        throw new Error(`Server merespons kode ${response.status}`);
+      }
+
+      const contentLength = Number(response.headers.get('content-length')) || 0;
+      const reader = response.body?.getReader();
+
+      if (!reader) {
+        // Fallback to direct blob
+        const blob = await response.blob();
+        saveBlobLocally(blob, filename);
+      } else {
+        const chunks: BlobPart[] = [];
+        let received = 0;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value.buffer as ArrayBuffer);
+            received += value.length;
+          }
+
+          if (contentLength > 0) {
+            const pct = Math.min(98, Math.round((received / contentLength) * 100));
+            setDownloadProgress(Math.max(40, pct));
+          } else {
+            setDownloadProgress((prev) => Math.min(95, prev + 5));
+          }
+          setDownloadStatusText(`Mengunduh berkas: ${formatLoadedBytes(received)}...`);
+        }
+
+        const fullBlob = new Blob(chunks, { type: 'application/octet-stream' });
+        saveBlobLocally(fullBlob, filename);
+      }
+
       setDownloadProgress(100);
-      setDownloadStatusText('Membuka tautan unduhan...');
-      const fallbackUrl = `/api/proxy-download?url=${encodeURIComponent(fmt.url)}&filename=${encodeURIComponent(filename)}`;
-      window.open(fallbackUrl, '_blank');
+      setDownloadStatusText('Unduhan selesai!');
+      setDownloadSuccess(`Berkas "${filename}" telah tersimpan otomatis ke folder Downloads Anda.`);
+
       setTimeout(() => {
         setIsDownloading(false);
         setDownloadProgress(0);
-      }, 1500);
+      }, 2500);
     } catch (err: any) {
-      alert(`Gagal mengunduh: ${err.message}. Membuka tautan langsung...`);
-      window.open(fmt.url, '_blank');
-      setIsDownloading(false);
-      setDownloadProgress(0);
+      console.warn('Blob download fallback to hidden iframe:', err);
+      // Fallback: trigger hidden iframe download so browser handles it natively without opening any tab
+      setDownloadStatusText('Mengalihkan ke download manager peramban...');
+      triggerHiddenIframeDownload(fmt.url, filename);
+      setDownloadProgress(100);
+      setDownloadSuccess(`Berkas "${filename}" sedang diunduh oleh peramban Anda.`);
+      setTimeout(() => {
+        setIsDownloading(false);
+        setDownloadProgress(0);
+      }, 2000);
     }
+  };
+
+  // Helper to trigger browser save dialog from local memory blob
+  const saveBlobLocally = (blob: Blob, filename: string) => {
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    }, 4000);
+  };
+
+  // Helper for hidden iframe download fallback (never navigates away or opens a new tab)
+  const triggerHiddenIframeDownload = (url: string, filename: string) => {
+    const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = proxyUrl;
+    document.body.appendChild(iframe);
+    setTimeout(() => {
+      try {
+        document.body.removeChild(iframe);
+      } catch {}
+    }, 60000);
+  };
+
+  const formatLoadedBytes = (bytes: number): string => {
+    if (bytes < 1024 * 1024) {
+      return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
@@ -138,17 +189,17 @@ export const MediaResult: React.FC<MediaResultProps> = ({
         <div className="flex items-center gap-2">
           <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse" />
           <span className="text-xs font-mono font-semibold uppercase tracking-wider text-cyan-400">
-            Media Siap Diunduh · {media.platform.toUpperCase()}
+            Media Siap Diunduh Otomatis · {media.platform.toUpperCase()}
           </span>
         </div>
 
         <button
           type="button"
           onClick={onReset}
-          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white light:text-slate-600 light:hover:text-slate-900 py-1 px-3 rounded-lg bg-slate-900/60 light:bg-slate-100 hover:bg-slate-800 transition-colors"
+          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white light:text-slate-600 light:hover:text-slate-900 py-1.5 px-3 rounded-lg bg-slate-900/60 light:bg-slate-100 hover:bg-slate-800 transition-colors"
         >
           <RefreshCw className="h-3.5 w-3.5" />
-          <span>Unduh Lainnya</span>
+          <span>Ganti Link</span>
         </button>
       </div>
 
@@ -203,15 +254,15 @@ export const MediaResult: React.FC<MediaResultProps> = ({
             </div>
           </div>
 
-          {/* Format selection info */}
-          <div className="rounded-xl bg-slate-900/60 light:bg-slate-100/80 p-3.5 border border-slate-800/80 light:border-slate-200">
-            <span className="text-xs font-semibold text-slate-400 light:text-slate-600 block mb-2">
-              Pilih Kualitas ({activeFilter === 'video' ? 'Video' : 'Audio MP3'}):
+          {/* Format selection cards */}
+          <div className="rounded-2xl bg-slate-900/60 light:bg-slate-100/80 p-4 border border-slate-800/80 light:border-slate-200">
+            <span className="text-xs font-semibold text-slate-300 light:text-slate-700 block mb-2.5">
+              Pilih Kualitas Unduhan ({activeFilter === 'video' ? 'Video MP4' : 'Audio MP3'}):
             </span>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {displayFormats.map((fmt) => {
-                const isSelected = (currentFormat?.id === fmt.id);
+                const isSelected = currentFormat?.id === fmt.id;
                 return (
                   <button
                     key={fmt.id}
@@ -219,13 +270,13 @@ export const MediaResult: React.FC<MediaResultProps> = ({
                     onClick={() => setSelectedFormatId(fmt.id)}
                     className={`flex flex-col items-start p-2.5 rounded-xl border text-left transition-all ${
                       isSelected
-                        ? 'border-cyan-400 bg-cyan-950/40 text-cyan-200 ring-2 ring-cyan-500/20'
+                        ? 'border-cyan-400 bg-cyan-950/50 text-cyan-200 ring-2 ring-cyan-500/25 shadow-sm'
                         : 'border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700 light:bg-white light:border-slate-200 light:text-slate-700'
                     }`}
                   >
                     <span className="text-xs font-bold truncate w-full">{fmt.quality}</span>
                     <div className="flex items-center justify-between w-full mt-1 text-[10px] text-slate-400 light:text-slate-500">
-                      <span>{fmt.extension.toUpperCase()}</span>
+                      <span className="font-mono">{fmt.extension.toUpperCase()}</span>
                       {fmt.filesize && <span>{fmt.filesize}</span>}
                     </div>
                   </button>
@@ -236,49 +287,60 @@ export const MediaResult: React.FC<MediaResultProps> = ({
 
           {/* Download Progress Bar if active */}
           {isDownloading && (
-            <div className="space-y-1.5 p-3 rounded-xl bg-cyan-950/40 border border-cyan-800/60">
+            <div className="space-y-2 p-4 rounded-2xl bg-cyan-950/50 border border-cyan-800/70 animate-in fade-in duration-200">
               <div className="flex items-center justify-between text-xs text-cyan-300">
-                <span className="flex items-center gap-1.5 font-medium">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span className="flex items-center gap-2 font-medium">
+                  <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
                   <span>{downloadStatusText}</span>
                 </span>
                 <span className="font-mono font-bold">{downloadProgress}%</span>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-900">
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-900">
                 <div
-                  className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-300 rounded-full"
+                  className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 transition-all duration-200 rounded-full"
                   style={{ width: `${downloadProgress}%` }}
                 />
+              </div>
+              <span className="text-[11px] text-slate-400 block text-right">
+                Mengunduh langsung ke penyimpanan tanpa membuka tab baru
+              </span>
+            </div>
+          )}
+
+          {/* Success Banner */}
+          {downloadSuccess && !isDownloading && (
+            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-emerald-950/50 border border-emerald-800/70 text-emerald-200 text-xs animate-in fade-in duration-200">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <span className="font-bold block">Unduhan Berhasil!</span>
+                <p>{downloadSuccess}</p>
               </div>
             </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+          {/* Primary Action Button: Automatic Instant Download */}
+          <div className="pt-2">
             <button
               type="button"
               disabled={isDownloading || !currentFormat}
               onClick={() => currentFormat && handleDownloadTrigger(currentFormat)}
-              className="w-full sm:flex-1 h-12 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:via-blue-500 hover:to-indigo-500 disabled:opacity-50 shadow-lg shadow-cyan-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.99]"
+              className="w-full h-14 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:via-blue-500 hover:to-indigo-500 disabled:opacity-50 shadow-lg shadow-cyan-500/25 transition-all flex items-center justify-center gap-2.5 active:scale-[0.99] cursor-pointer"
             >
-              <Download className="h-4 w-4" />
-              <span>
-                {isDownloading ? 'Sedang Memproses...' : `Download ${currentFormat?.quality || 'Sekarang'}`}
-              </span>
+              {isDownloading ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Sedang Mengunduh Otomatis...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="h-5 w-5" />
+                  <span>Unduh Otomatis ({currentFormat?.quality || 'Pilihan'})</span>
+                </>
+              )}
             </button>
-
-            {currentFormat?.url && (
-              <a
-                href={currentFormat.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full sm:w-auto h-12 px-4 rounded-xl font-medium text-xs text-slate-400 hover:text-white bg-slate-900/80 light:bg-slate-100 light:text-slate-700 light:hover:text-slate-900 border border-slate-800 light:border-slate-200 transition-colors flex items-center justify-center gap-1.5 shrink-0"
-                title="Buka tautan media langsung"
-              >
-                <span>Buka Link Asli</span>
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            )}
+            <span className="text-[11px] text-slate-400 light:text-slate-500 text-center block mt-2">
+              Berkas langsung disimpan otomatis ke folder Downloads tanpa diarahkan ke link eksternal.
+            </span>
           </div>
         </div>
       </div>

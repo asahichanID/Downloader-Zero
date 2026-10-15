@@ -80,11 +80,11 @@ async function startServer() {
     }
   });
 
-  // 4. Proxy stream for instant download attachment
+  // 4. Proxy stream for instant automatic download attachment
   app.get('/api/proxy-download', async (req: Request, res: Response) => {
     try {
       const targetUrl = req.query.url as string;
-      const rawFilename = (req.query.filename as string) || 'DownloaderZero_Media';
+      const rawFilename = (req.query.filename as string) || 'DownloaderZero_Media.mp4';
 
       if (!targetUrl || !targetUrl.startsWith('http')) {
         res.status(400).send('Target URL tidak valid.');
@@ -93,39 +93,44 @@ async function startServer() {
 
       const sanitizedFilename = rawFilename.replace(/[^a-zA-Z0-9_.-]/g, '_');
 
+      // Fetch from real source with proper referrer and modern user agent
       const response = await fetch(targetUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+          'Accept': '*/*',
+          'Referer': targetUrl.includes('tiktok') ? 'https://www.tiktok.com/' : targetUrl.includes('facebook') ? 'https://www.facebook.com/' : targetUrl
         }
       });
 
       if (!response.ok || !response.body) {
-        res.status(response.status).send('Gagal mengunduh media dari sumber.');
+        res.status(response.status).send('Gagal mengunduh media dari tautan sumber.');
         return;
       }
 
-      const contentType = response.headers.get('content-type') || 'application/octet-stream';
       const contentLength = response.headers.get('content-length');
 
-      res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}"`);
-      res.setHeader('Content-Type', contentType);
+      // Force direct file download into Downloads folder without navigating or opening in browser
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
       if (contentLength) {
         res.setHeader('Content-Length', contentLength);
       }
 
-      // Stream directly to client
+      // Stream chunks directly to user's browser
       const reader = response.body.getReader();
-      const stream = async () => {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(value);
-        }
-        res.end();
-      };
-      await stream();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+      res.end();
     } catch (err: any) {
-      console.error('Proxy download error:', err);
+      console.error('Proxy download stream error:', err);
       if (!res.headersSent) {
         res.status(500).send(`Download gagal: ${err.message}`);
       }
@@ -135,7 +140,11 @@ async function startServer() {
   // 5. Mount Vite in dev, or serve dist in production
   if (!isProduction) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      configFile: path.resolve(__dirname, 'vite.config.ts'),
+      server: {
+        middlewareMode: true,
+        hmr: false
+      },
       appType: 'spa'
     });
     app.use(vite.middlewares);
