@@ -1,4 +1,4 @@
-import type { PlatformType, MediaFormat, MediaMetadata } from '../src/types/index.ts';
+import type { PlatformType, MediaFormat, MediaMetadata } from '../../src/types/index.ts';
 import * as cheerio from 'cheerio';
 
 export function detectPlatform(url: string): PlatformType {

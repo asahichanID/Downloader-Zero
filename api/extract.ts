@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { extractMedia } from './scraper.ts';
+import { extractMedia } from './_utils/scraper.ts';
 
 export default async function handler(req: any, res: any) {
   // Enable CORS
