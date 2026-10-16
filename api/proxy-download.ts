@@ -8,10 +8,13 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const targetUrl = (req.query?.url as string) || '';
-    const rawFilename = (req.query?.filename as string) || 'DownloaderZero_Media.mp4';
+    const parsedUrl = new URL(req.url || '', `http://${req.headers?.host || 'localhost'}`);
+    const query = Object.fromEntries(parsedUrl.searchParams.entries());
 
-    if (!targetUrl || !targetUrl.startsWith('http')) {
+    const targetUrl = query.url || req.query?.url || '';
+    const rawFilename = query.filename || req.query?.filename || 'DownloaderZero_Media.mp4';
+
+    if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('http')) {
       res.status(400).send('Target URL tidak valid.');
       return;
     }

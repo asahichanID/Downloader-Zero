@@ -28,7 +28,6 @@ export default async function handler(req: any, res: any) {
         // keep as is
       }
     } else if (!body) {
-      // In case body was passed as raw stream
       try {
         const chunks: Buffer[] = [];
         for await (const chunk of req) {
@@ -43,13 +42,17 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const url = body?.url;
+    let url = body?.url;
+    if (!url) {
+      const parsedUrl = new URL(req.url || '', `http://${req.headers?.host || 'localhost'}`);
+      url = parsedUrl.searchParams.get('url');
+    }
+
     if (!url || typeof url !== 'string') {
       res.status(400).json({ success: false, error: 'Parameter URL wajib disertakan.' });
       return;
     }
 
-    // Extract media: API key is loaded securely from process.env.NEOXR_API_KEY in server environment
     const data = await extractMedia(url);
     res.status(200).json({ success: true, data });
   } catch (err: any) {

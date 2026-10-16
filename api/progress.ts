@@ -9,7 +9,10 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const jobId = (req.query?.jobId as string) || (req.query?.id as string) || '';
+    const parsedUrl = new URL(req.url || '', `http://${req.headers?.host || 'localhost'}`);
+    const query = Object.fromEntries(parsedUrl.searchParams.entries());
+    const jobId = query.jobId || query.id || req.query?.jobId || req.query?.id || '';
+
     if (!jobId) {
       res.status(400).json({ success: false, error: 'Job ID tidak valid.' });
       return;
