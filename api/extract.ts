@@ -1,4 +1,4 @@
-import type { IncomingMessage, ServerResponse } from 'http';
+import 'dotenv/config';
 import { extractMedia } from '../src/services/scraper.ts';
 
 export default async function handler(req: any, res: any) {
@@ -18,16 +18,42 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { url, apiKey } = req.body || {};
+    let body = req.body;
+
+    // Handle string body if not parsed automatically by serverless runtime
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        // keep as is
+      }
+    } else if (!body) {
+      // In case body was passed as raw stream
+      try {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) {
+          chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+        }
+        const raw = Buffer.concat(chunks).toString('utf8');
+        if (raw) {
+          body = JSON.parse(raw);
+        }
+      } catch {
+        // keep as is
+      }
+    }
+
+    const url = body?.url;
     if (!url || typeof url !== 'string') {
       res.status(400).json({ success: false, error: 'Parameter URL wajib disertakan.' });
       return;
     }
 
-    const data = await extractMedia(url, apiKey);
+    // Extract media: API key is loaded securely from process.env.NEOXR_API_KEY in server environment
+    const data = await extractMedia(url);
     res.status(200).json({ success: true, data });
   } catch (err: any) {
-    console.error('Vercel API error:', err);
+    console.error('API Extraction Error:', err?.message || err);
     res.status(400).json({
       success: false,
       error: err.message || 'Gagal mengekstrak media dari URL.'

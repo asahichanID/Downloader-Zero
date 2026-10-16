@@ -18,16 +18,40 @@ export default async function handler(req: any, res: any) {
 
     const sanitizedFilename = rawFilename.replace(/[^a-zA-Z0-9_.-]/g, '_');
 
-    const remoteRes = await fetch(targetUrl, {
+    // Determine correct Referer per platform CDN
+    let referer = 'https://www.google.com/';
+    if (targetUrl.includes('tiktok') || targetUrl.includes('byteoversea') || targetUrl.includes('ibyteimg')) {
+      referer = 'https://www.tiktok.com/';
+    } else if (targetUrl.includes('facebook') || targetUrl.includes('fbcdn')) {
+      referer = 'https://www.facebook.com/';
+    } else if (targetUrl.includes('instagram') || targetUrl.includes('cdninstagram')) {
+      referer = 'https://www.instagram.com/';
+    } else if (targetUrl.includes('youtube') || targetUrl.includes('googlevideo')) {
+      referer = 'https://www.youtube.com/';
+    } else if (targetUrl.includes('pinterest') || targetUrl.includes('pinimg')) {
+      referer = 'https://www.pinterest.com/';
+    }
+
+    let remoteRes = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
         'Accept': '*/*',
-        'Referer': targetUrl.includes('tiktok') ? 'https://www.tiktok.com/' : targetUrl.includes('facebook') ? 'https://www.facebook.com/' : targetUrl
+        'Referer': referer
       }
     });
 
+    // If forbidden (anti-hotlink), retry without Referer header
+    if (remoteRes.status === 403) {
+      remoteRes = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+          'Accept': '*/*'
+        }
+      });
+    }
+
     if (!remoteRes.ok || !remoteRes.body) {
-      res.status(remoteRes.status).send('Gagal mengunduh berkas dari sumber.');
+      res.status(remoteRes.status || 500).send('Gagal mengunduh berkas dari tautan sumber.');
       return;
     }
 

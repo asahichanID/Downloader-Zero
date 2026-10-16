@@ -1,6 +1,7 @@
 import React from 'react';
-import { Link2, Clipboard, X, AlertCircle } from 'lucide-react';
+import { Link2, Clipboard, X, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
 import type { PlatformType } from '../types/index.ts';
+import { detectPlatform } from '../services/scraper.ts';
 
 interface UrlInputCardProps {
   url: string;
@@ -8,6 +9,8 @@ interface UrlInputCardProps {
   selectedPlatform: PlatformType;
   errorMessage: string | null;
   onClearError: () => void;
+  isAutoDetected?: boolean;
+  onOpenPlatformModal?: () => void;
 }
 
 export const UrlInputCard: React.FC<UrlInputCardProps> = ({
@@ -15,21 +18,30 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
   setUrl,
   selectedPlatform,
   errorMessage,
-  onClearError
+  onClearError,
+  isAutoDetected = false,
+  onOpenPlatformModal
 }) => {
   const getPlaceholder = () => {
     switch (selectedPlatform) {
       case 'youtube':
-        return 'https://www.youtube.com/watch?v=...';
+        return 'Tempel link YouTube (video, shorts, atau audio)...';
       case 'tiktok':
-        return 'https://www.tiktok.com/@user/video/...';
+        return 'Tempel link TikTok (video tanpa watermark atau slide foto)...';
       case 'facebook':
-        return 'https://www.facebook.com/watch/?v=...';
+        return 'Tempel link Facebook (video publik atau reels)...';
       case 'instagram':
-        return 'https://www.instagram.com/reel/...';
+        return 'Tempel link Instagram (reels, video, carousel foto)...';
+      case 'pinterest':
+        return 'Tempel link Pinterest (video pin, reels, atau foto 4K)...';
       default:
-        return 'https://www.youtube.com/watch?v=...';
+        return 'Tempel tautan video/audio apa saja di sini...';
     }
+  };
+
+  const handleInputChange = (newVal: string) => {
+    setUrl(newVal);
+    onClearError();
   };
 
   const handlePaste = async () => {
@@ -40,7 +52,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
         onClearError();
       }
     } catch {
-      // If clipboard permission is restricted in iframe, user can paste with keyboard/tap
+      // If clipboard permission is restricted in iframe, user can paste manually
     }
   };
 
@@ -49,12 +61,25 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
     onClearError();
   };
 
+  const detectedNow = url ? detectPlatform(url) : 'unknown';
+  const showDetectedBadge = detectedNow !== 'unknown';
+
   return (
-    <div className="dz-card rounded-2xl p-3 sm:p-4 w-full shadow-lg transition-all">
-      {/* Card Header: Link icon + Label */}
-      <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-cyan-300 mb-2.5">
-        <Link2 className="h-4 w-4 text-cyan-400 rotate-45" />
-        <span className="tracking-wide">Tempelkan URL di sini...</span>
+    <div className="dz-card rounded-2xl p-3.5 sm:p-5 w-full shadow-lg transition-all border border-blue-900/60 hover:border-cyan-500/40">
+      {/* Card Header: Link icon + Label + Auto-detect indicator */}
+      <div className="flex items-center justify-between gap-2 mb-2.5">
+        <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-cyan-300">
+          <Link2 className="h-4 w-4 text-cyan-400 rotate-45 shrink-0" />
+          <span className="tracking-wide">Tempelkan Tautan Media</span>
+        </div>
+
+        {/* Dynamic Auto-Detect Badge */}
+        {showDetectedBadge && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/50 text-[11px] font-bold text-emerald-300 shadow-sm animate-in fade-in zoom-in-95">
+            <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+            <span className="capitalize">{detectedNow} Terdeteksi Otomatis</span>
+          </div>
+        )}
       </div>
 
       {/* Input Row */}
@@ -63,10 +88,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
           <input
             type="url"
             value={url}
-            onChange={(e) => {
-              setUrl(e.target.value);
-              onClearError();
-            }}
+            onChange={(e) => handleInputChange(e.target.value)}
             placeholder={getPlaceholder()}
             className="w-full h-11 sm:h-12 pl-3.5 pr-8 bg-[#050e24] border border-blue-900/80 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 font-mono transition-all"
           />
@@ -74,7 +96,8 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
             <button
               type="button"
               onClick={handleClear}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 transition-colors"
+              title="Hapus teks tautan"
             >
               <X className="h-4 w-4" />
             </button>
@@ -86,21 +109,40 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
           type="button"
           onClick={handlePaste}
           className="h-11 sm:h-12 px-3.5 sm:px-4 rounded-xl border border-cyan-500/60 bg-[#0c224a] hover:bg-[#12316b] text-white flex items-center gap-1.5 text-xs sm:text-sm font-bold shadow-md hover:shadow-[0_0_12px_rgba(6,182,212,0.4)] transition-all cursor-pointer shrink-0"
+          title="Tempel dari papan klip"
         >
           <Clipboard className="h-4 w-4 text-cyan-400" />
           <span>Paste</span>
         </button>
       </div>
 
+      {/* Helper text under input */}
+      <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1">
+        <span className="flex items-center gap-1">
+          <Sparkles className="h-3 w-3 text-cyan-400" />
+          Platform langsung terpilih otomatis begitu tautan ditempelkan.
+        </span>
+        {onOpenPlatformModal && (
+          <button
+            type="button"
+            onClick={onOpenPlatformModal}
+            className="text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer underline underline-offset-2 ml-2 shrink-0 hidden sm:inline"
+          >
+            Ganti Manual
+          </button>
+        )}
+      </div>
+
       {/* Error Message */}
       {errorMessage && (
-        <div className="mt-2.5 p-2.5 rounded-xl bg-red-950/70 border border-red-800/80 text-red-200 text-xs flex items-start gap-2">
+        <div className="mt-3 p-3 rounded-xl bg-red-950/70 border border-red-800/80 text-red-200 text-xs flex items-start gap-2">
           <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-          <span className="flex-1">{errorMessage}</span>
+          <span className="flex-1 leading-relaxed">{errorMessage}</span>
           <button
             type="button"
             onClick={onClearError}
-            className="text-red-400 hover:text-red-200"
+            className="text-red-400 hover:text-red-200 p-0.5"
+            aria-label="Tutup pesan galat"
           >
             <X className="h-3.5 w-3.5" />
           </button>

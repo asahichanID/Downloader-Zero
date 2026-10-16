@@ -1,4 +1,4 @@
-export type PlatformType = 'youtube' | 'tiktok' | 'facebook' | 'instagram' | 'unknown';
+export type PlatformType = 'youtube' | 'tiktok' | 'facebook' | 'instagram' | 'pinterest' | 'unknown';
 
 export type MediaType = 'video' | 'audio';
 
@@ -7,7 +7,7 @@ export interface MediaFormat {
   quality: string; // e.g., '360p', '480p', '720p HD', '1080p FHD', '2K', '4K', '128 kbps', '320 kbps'
   resolution?: string; // '1080p', '720p', etc.
   type: 'video' | 'audio';
-  extension: 'mp4' | 'mp3' | 'm4a';
+  extension: 'mp4' | 'mp3' | 'm4a' | 'jpg' | 'png' | 'zip';
   filesize?: string; // e.g. '15.4 MB'
   filesizeBytes?: number;
   url: string; // direct download or conversion URL

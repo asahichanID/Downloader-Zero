@@ -2,6 +2,10 @@
   "version": 2,
   "rewrites": [
     {
+      "source": "/api/progress/(.*)",
+      "destination": "/api/progress?jobId=$1"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },
@@ -12,7 +16,7 @@
   ],
   "functions": {
     "api/*.ts": {
-      "maxDuration": 15
+      "maxDuration": 30
     }
   }
 }

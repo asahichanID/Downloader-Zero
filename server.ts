@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import type { Request, Response } from 'express';
 import path from 'path';
@@ -21,20 +22,20 @@ async function startServer() {
       status: 'online',
       service: 'DownloaderZero (DZ) Media Engine',
       version: '2026.1',
-      platforms: ['youtube', 'tiktok', 'facebook', 'instagram']
+      platforms: ['youtube', 'tiktok', 'facebook', 'instagram', 'pinterest']
     });
   });
 
-  // 2. Extract media metadata and formats
+  // 2. Extract media metadata and formats (API key is loaded from server environment)
   app.post('/api/extract', async (req: Request, res: Response) => {
     try {
-      const { url, apiKey } = req.body;
+      const { url } = req.body || {};
       if (!url || typeof url !== 'string') {
         res.status(400).json({ success: false, error: 'Parameter URL wajib disertakan.' });
         return;
       }
 
-      const media = await extractMedia(url, apiKey);
+      const media = await extractMedia(url);
       res.json({ success: true, data: media });
     } catch (err: any) {
       console.error('Extraction error:', err.message);
@@ -94,17 +95,40 @@ async function startServer() {
 
       const sanitizedFilename = rawFilename.replace(/[^a-zA-Z0-9_.-]/g, '_');
 
-      // Fetch from real source with proper referrer and modern user agent
-      const response = await fetch(targetUrl, {
+      // Determine correct Referer per platform CDN
+      let referer = 'https://www.google.com/';
+      if (targetUrl.includes('tiktok') || targetUrl.includes('byteoversea') || targetUrl.includes('ibyteimg')) {
+        referer = 'https://www.tiktok.com/';
+      } else if (targetUrl.includes('facebook') || targetUrl.includes('fbcdn')) {
+        referer = 'https://www.facebook.com/';
+      } else if (targetUrl.includes('instagram') || targetUrl.includes('cdninstagram')) {
+        referer = 'https://www.instagram.com/';
+      } else if (targetUrl.includes('youtube') || targetUrl.includes('googlevideo')) {
+        referer = 'https://www.youtube.com/';
+      } else if (targetUrl.includes('pinterest') || targetUrl.includes('pinimg')) {
+        referer = 'https://www.pinterest.com/';
+      }
+
+      let response = await fetch(targetUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
           'Accept': '*/*',
-          'Referer': targetUrl.includes('tiktok') ? 'https://www.tiktok.com/' : targetUrl.includes('facebook') ? 'https://www.facebook.com/' : targetUrl
+          'Referer': referer
         }
       });
 
+      // If forbidden, retry without Referer
+      if (response.status === 403) {
+        response = await fetch(targetUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+            'Accept': '*/*'
+          }
+        });
+      }
+
       if (!response.ok || !response.body) {
-        res.status(response.status).send('Gagal mengunduh media dari tautan sumber.');
+        res.status(response.status || 500).send('Gagal mengunduh media dari tautan sumber.');
         return;
       }
 

@@ -96,6 +96,18 @@ export const MenuModal: React.FC<MenuModalProps> = ({
               <Music className="h-4 w-4 text-pink-500 shrink-0" />
               <span>Instagram</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onSelectPlatform('pinterest');
+                onClose();
+              }}
+              className="flex items-center gap-2 p-2.5 rounded-xl bg-[#07132e] border border-blue-900 hover:border-red-500 hover:bg-red-950/20 text-xs font-bold text-white cursor-pointer col-span-2"
+            >
+              <Film className="h-4 w-4 text-red-500 shrink-0" />
+              <span>Pinterest</span>
+            </button>
           </div>
         </div>
 

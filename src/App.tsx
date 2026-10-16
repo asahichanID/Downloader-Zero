@@ -53,10 +53,28 @@ export default function App() {
 
   // Theme setting
   const [isDark, setIsDark] = useState<boolean>(true);
+  const [isAutoDetected, setIsAutoDetected] = useState<boolean>(false);
 
-  // Handle platform change
+  // Handle URL change with immediate platform auto-detection
+  const handleUrlChange = (newUrl: string) => {
+    setUrl(newUrl);
+    setErrorMessage(null);
+
+    if (newUrl.trim()) {
+      const detected = detectPlatform(newUrl);
+      if (detected !== 'unknown') {
+        setSelectedPlatform(detected);
+        setIsAutoDetected(true);
+      }
+    } else {
+      setIsAutoDetected(false);
+    }
+  };
+
+  // Handle manual platform change
   const handleSelectPlatform = (platform: PlatformType) => {
     setSelectedPlatform(platform);
+    setIsAutoDetected(false);
     setErrorMessage(null);
   };
 
@@ -144,12 +162,11 @@ export default function App() {
     setErrorMessage(null);
 
     try {
-      // 1. Extract metadata from URL
-      const apiKey = localStorage.getItem('dz_neoxr_key') || undefined;
+      // 1. Extract metadata from URL (API key is securely loaded by server environment)
       const res = await fetch('/api/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim(), apiKey })
+        body: JSON.stringify({ url: url.trim() })
       });
 
       const json = await res.json();
@@ -247,19 +264,21 @@ export default function App() {
         {/* 2. Hero Mascot & Typography Banner */}
         <HeroBanner />
 
-        {/* 3. Platform Selection Cards (YouTube, TikTok, Facebook, Instagram) */}
+        {/* 3. Single Button Platform Selector with Floating Modal */}
         <PlatformCards
           selectedPlatform={selectedPlatform}
           onSelectPlatform={handleSelectPlatform}
+          isAutoDetected={isAutoDetected}
         />
 
-        {/* 4. URL Input Box Card with Paste Button */}
+        {/* 4. URL Input Box Card with Paste Button & Realtime Auto-Detect */}
         <UrlInputCard
           url={url}
-          setUrl={setUrl}
+          setUrl={handleUrlChange}
           selectedPlatform={selectedPlatform}
           errorMessage={errorMessage}
           onClearError={() => setErrorMessage(null)}
+          isAutoDetected={isAutoDetected}
         />
 
         {/* 5. Media Type Tabs (Video vs MP3 Audio) */}
