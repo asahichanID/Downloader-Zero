@@ -4,6 +4,8 @@
   :root {
     --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
+    --font-cyber: 'Orbitron', system-ui, sans-serif;
+    --font-doodle: 'Caveat', cursive;
   }
 
   body {
@@ -11,12 +13,46 @@
   }
 }
 
+.font-cyber {
+  font-family: var(--font-cyber);
+}
+
+.font-doodle {
+  font-family: var(--font-doodle);
+}
+
 /* 3D and Futuristic Glow Utilities */
-.glass-panel {
-  background: rgba(15, 23, 42, 0.75);
+.dz-card {
+  background: rgba(9, 21, 46, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(30, 58, 138, 0.6);
+}
+
+.dz-card-active {
+  background: rgba(12, 34, 74, 0.95);
+  border: 2px solid #22d3ee;
+  box-shadow: 0 0 16px -1px rgba(6, 182, 212, 0.55), inset 0 0 12px rgba(6, 182, 212, 0.2);
+}
+
+.dz-pill {
+  background: rgba(11, 27, 58, 0.75);
+  border: 1px solid rgba(30, 64, 175, 0.45);
+  color: #94a3b8;
+  transition: all 0.2s ease;
+}
+
+.dz-pill:hover {
+  border-color: rgba(6, 182, 212, 0.6);
+  color: #e2e8f0;
+}
+
+.dz-pill-active {
+  background: rgba(30, 58, 138, 0.5);
+  border: 2px solid #22d3ee;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.6), inset 0 0 8px rgba(6, 182, 212, 0.25);
+  font-weight: 700;
 }
 
 .light .glass-panel {

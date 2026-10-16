@@ -207,9 +207,9 @@ export const MediaResult: React.FC<MediaResultProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 my-6 items-start">
         {/* Thumbnail Preview */}
         <div className="md:col-span-5 relative group overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-900 shadow-lg aspect-video md:aspect-[4/3]">
-          {media.thumbnail ? (
+          {media.thumbnail && media.thumbnail.trim() ? (
             <img
-              src={media.thumbnail}
+              src={media.thumbnail.trim()}
               alt={media.title}
               className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
               referrerPolicy="no-referrer"

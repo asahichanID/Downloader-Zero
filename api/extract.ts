@@ -18,13 +18,13 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { url } = req.body || {};
+    const { url, apiKey } = req.body || {};
     if (!url || typeof url !== 'string') {
       res.status(400).json({ success: false, error: 'Parameter URL wajib disertakan.' });
       return;
     }
 
-    const data = await extractMedia(url);
+    const data = await extractMedia(url, apiKey);
     res.status(200).json({ success: true, data });
   } catch (err: any) {
     console.error('Vercel API error:', err);

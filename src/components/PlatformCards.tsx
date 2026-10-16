@@ -1,146 +1,98 @@
 import React from 'react';
-import { Youtube, Film, Music, Share2, Sparkles, CheckCircle2 } from 'lucide-react';
 import type { PlatformType } from '../types/index.ts';
 
 interface PlatformCardsProps {
-  onSelectSample: (url: string) => void;
-  activePlatform: PlatformType;
+  selectedPlatform: PlatformType;
+  onSelectPlatform: (platform: PlatformType) => void;
 }
 
-interface PlatformCardData {
-  type: PlatformType;
-  title: string;
-  badge: string;
-  icon: React.ComponentType<{ className?: string }>;
-  accentColor: string;
-  borderColor: string;
-  glowColor: string;
-  features: string[];
-  sampleUrl: string;
-  sampleLabel: string;
-}
-
-const PLATFORMS: PlatformCardData[] = [
-  {
-    type: 'youtube',
-    title: 'YouTube',
-    badge: '4K & MP3',
-    icon: Youtube,
-    accentColor: 'text-red-500',
-    borderColor: 'hover:border-red-500/40',
-    glowColor: 'group-hover:shadow-red-500/10',
-    features: ['360p, 720p, 1080p FHD, 2K, 4K', 'Audio MP3 128 - 320 kbps', 'Shorts & Long Form Videos'],
-    sampleUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    sampleLabel: 'Contoh: Rick Astley 4K Remaster'
-  },
-  {
-    type: 'tiktok',
-    title: 'TikTok',
-    badge: 'No Watermark HD',
-    icon: Film,
-    accentColor: 'text-cyan-400',
-    borderColor: 'hover:border-cyan-500/40',
-    glowColor: 'group-hover:shadow-cyan-500/10',
-    features: ['HD 1080p Tanpa Watermark', 'Original Sound MP3 High Quality', 'Video VT, VM & Regular URLs'],
-    sampleUrl: 'https://www.tiktok.com/@tiktok/video/7106594312292453675',
-    sampleLabel: 'Contoh: TikTok Official Video'
-  },
-  {
-    type: 'facebook',
-    title: 'Facebook',
-    badge: 'HD & SD MP4',
-    icon: Share2,
-    accentColor: 'text-blue-500',
-    borderColor: 'hover:border-blue-500/40',
-    glowColor: 'group-hover:shadow-blue-500/10',
-    features: ['Facebook Watch, Reels, Posts', 'Direct High Definition 720p/1080p', 'Ekstraksi Audio MP3'],
-    sampleUrl: 'https://www.facebook.com/watch/?v=1393572814172251',
-    sampleLabel: 'Contoh: Facebook Watch Video'
-  },
-  {
-    type: 'instagram',
-    title: 'Instagram',
-    badge: 'Reels & MP3',
-    icon: Music,
-    accentColor: 'text-pink-500',
-    borderColor: 'hover:border-pink-500/40',
-    glowColor: 'group-hover:shadow-pink-500/10',
-    features: ['Reels, IGTV & Post Videos', 'Kualitas Penuh Resolusi Asli', 'Penyimpanan Cepat 1-Klik'],
-    sampleUrl: 'https://www.instagram.com/reel/C_q-jOypD2V/',
-    sampleLabel: 'Contoh: Instagram Reels'
-  }
-];
-
-export const PlatformCards: React.FC<PlatformCardsProps> = ({ onSelectSample, activePlatform }) => {
-  return (
-    <section className="w-full my-8">
-      <div className="flex items-center justify-between mb-4 px-1">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 light:text-slate-600">
-            Platform Terintegrasi
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Ekstraksi gratis tanpa watermark dengan scraper aktif
-          </p>
+export const PlatformCards: React.FC<PlatformCardsProps> = ({
+  selectedPlatform,
+  onSelectPlatform
+}) => {
+  const platforms = [
+    {
+      id: 'youtube' as PlatformType,
+      name: 'YouTube',
+      subtitle: 'Video & Audio',
+      icon: (
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 flex items-center justify-center shadow-md shadow-red-600/30">
+          <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24">
+            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+          </svg>
         </div>
-      </div>
+      )
+    },
+    {
+      id: 'tiktok' as PlatformType,
+      name: 'TikTok',
+      subtitle: 'Video & Audio',
+      icon: (
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-black flex items-center justify-center border border-slate-700 shadow-md">
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path
+              fill="#25F4EE"
+              d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.24 1.07-.14 1.61.24 1.25 1.2 2.23 2.41 2.45.51.1 1.04.06 1.55-.08 1.19-.34 2.05-1.43 2.15-2.67.06-2.58.03-5.16.03-7.74.01-3.62.01-7.24.01-10.86z"
+            />
+            <path
+              fill="#FE2C55"
+              d="M16.435 0c-.08 1.53.47 3.09 1.59 4.17 1.12 1.11 2.7 1.62 4.24 1.79v1.98c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93V0h-.01z"
+            />
+          </svg>
+        </div>
+      )
+    },
+    {
+      id: 'facebook' as PlatformType,
+      name: 'Facebook',
+      subtitle: 'Video & Audio',
+      icon: (
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#1877F2] flex items-center justify-center shadow-md shadow-blue-500/30">
+          <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24">
+            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+          </svg>
+        </div>
+      )
+    },
+    {
+      id: 'instagram' as PlatformType,
+      name: 'Instagram',
+      subtitle: 'Video & Audio',
+      icon: (
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] flex items-center justify-center shadow-md shadow-pink-500/30">
+          <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24">
+            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+          </svg>
+        </div>
+      )
+    }
+  ];
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {PLATFORMS.map((p) => {
-          const Icon = p.icon;
-          const isCurrentActive = activePlatform === p.type;
-
-          return (
-            <div
-              key={p.type}
-              className={`group relative rounded-2xl border p-4 transition-all duration-200 glass-panel shadow-lg ${p.glowColor} ${
-                isCurrentActive
-                  ? 'border-cyan-500 ring-2 ring-cyan-500/30'
-                  : 'border-slate-800/80 light:border-slate-200 ' + p.borderColor
-              }`}
-            >
-              {/* Top Card Bar */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className={`p-2 rounded-xl bg-slate-900 border border-slate-800 light:bg-slate-100 light:border-slate-300 ${p.accentColor}`}>
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white light:text-slate-900 leading-tight">
-                      {p.title}
-                    </h3>
-                    <span className="text-[10px] text-cyan-400 font-medium">
-                      {p.badge}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Feature list */}
-              <ul className="space-y-1.5 my-3 text-xs text-slate-400 light:text-slate-600">
-                {p.features.map((feat, idx) => (
-                  <li key={idx} className="flex items-center gap-1.5">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-                    <span className="truncate">{feat}</span>
-                  </li>
-                ))}
-              </ul>
-
-              {/* Try sample button */}
-              <div className="pt-2 border-t border-slate-800/60 light:border-slate-200/80">
-                <button
-                  type="button"
-                  onClick={() => onSelectSample(p.sampleUrl)}
-                  className="w-full flex items-center justify-between text-[11px] font-medium text-slate-400 hover:text-cyan-400 py-1 px-2 rounded-lg hover:bg-slate-900/60 light:hover:bg-slate-100 transition-colors"
-                >
-                  <span className="truncate">{p.sampleLabel}</span>
-                  <span className="text-cyan-400 shrink-0 ml-1">Coba →</span>
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 w-full">
+      {platforms.map((p) => {
+        const isActive = selectedPlatform === p.id;
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onSelectPlatform(p.id)}
+            className={`flex flex-col items-center justify-center p-2 sm:p-3 rounded-2xl transition-all cursor-pointer select-none text-center ${
+              isActive
+                ? 'dz-card-active scale-[1.02]'
+                : 'dz-card hover:border-cyan-500/40 hover:bg-[#0c224a]/60'
+            }`}
+          >
+            <div className="mb-1.5 sm:mb-2">{p.icon}</div>
+            <span className="text-xs sm:text-sm font-bold text-white tracking-tight leading-tight">
+              {p.name}
+            </span>
+            <span className="text-[10px] sm:text-[11px] text-cyan-300/80 leading-tight mt-0.5 whitespace-nowrap">
+              {p.subtitle}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 };

@@ -11,20 +11,94 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@700;800;900&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
     <script>
-      // Ignore HMR WebSocket connection errors as per environment constraints
-      window.addEventListener('error', function(e) {
-        if (e && (e.message?.includes('WebSocket') || e.filename?.includes('@vite/client'))) {
-          e.stopImmediatePropagation();
-          e.preventDefault();
+      (function() {
+        // AI Studio Environment: HMR is disabled via environment constraints.
+        // Mock Vite HMR WebSocket so createWebSocketModuleRunnerTransport connects cleanly without throwing.
+        var NativeWebSocket = window.WebSocket;
+        if (typeof NativeWebSocket !== 'undefined') {
+          var MockWebSocket = function(url, protocols) {
+            var isViteHmr = 
+              protocols === 'vite-hmr' || 
+              protocols === 'vite-ping' || 
+              (Array.isArray(protocols) && (protocols.indexOf('vite-hmr') !== -1 || protocols.indexOf('vite-ping') !== -1)) ||
+              (typeof url === 'string' && (url.indexOf('token=') !== -1 || url.indexOf('/@vite') !== -1 || url.indexOf('vite') !== -1));
+
+            if (isViteHmr) {
+              var target = new EventTarget();
+              var mock = {
+                CONNECTING: 0,
+                OPEN: 1,
+                CLOSING: 2,
+                CLOSED: 3,
+                readyState: 1,
+                url: String(url),
+                protocol: typeof protocols === 'string' ? protocols : '',
+                extensions: '',
+                bufferedAmount: 0,
+                binaryType: 'blob',
+                send: function() {},
+                close: function() {
+                  this.readyState = 3;
+                  target.dispatchEvent(new Event('close'));
+                },
+                addEventListener: target.addEventListener.bind(target),
+                removeEventListener: target.removeEventListener.bind(target),
+                dispatchEvent: target.dispatchEvent.bind(target),
+                onopen: null,
+                onmessage: null,
+                onerror: null,
+                onclose: null
+              };
+              setTimeout(function() {
+                var ev = new Event('open');
+                target.dispatchEvent(ev);
+                if (typeof mock.onopen === 'function') mock.onopen(ev);
+              }, 0);
+              return mock;
+            }
+            return new NativeWebSocket(url, protocols);
+          };
+          MockWebSocket.prototype = NativeWebSocket.prototype;
+          MockWebSocket.CONNECTING = 0;
+          MockWebSocket.OPEN = 1;
+          MockWebSocket.CLOSING = 2;
+          MockWebSocket.CLOSED = 3;
+          window.WebSocket = MockWebSocket;
         }
-      });
-      window.addEventListener('unhandledrejection', function(e) {
-        if (e && String(e.reason).includes('WebSocket')) {
-          e.preventDefault();
-        }
-      });
+
+        // Suppress any residual Vite HMR WebSocket error reports in console
+        var origConsoleError = console.error;
+        console.error = function() {
+          var str = Array.prototype.slice.call(arguments).map(function(a) {
+            return (a && a.stack) ? a.stack : String(a);
+          }).join(' ');
+          if (str.indexOf('WebSocket') !== -1 || str.indexOf('@vite/client') !== -1 || str.indexOf('createWebSocketModuleRunnerTransport') !== -1) {
+            return;
+          }
+          origConsoleError.apply(console, arguments);
+        };
+
+        // Suppress unhandled rejections and global errors related to Vite HMR WebSocket
+        window.addEventListener('error', function(e) {
+          var errStr = (e.message || '') + ' ' + (e.filename || '') + ' ' + (e.error && e.error.stack ? e.error.stack : '');
+          if (errStr.indexOf('WebSocket') !== -1 || errStr.indexOf('@vite/client') !== -1 || errStr.indexOf('createWebSocketModuleRunnerTransport') !== -1) {
+            e.stopImmediatePropagation && e.stopImmediatePropagation();
+            e.preventDefault && e.preventDefault();
+            return true;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(e) {
+          var reasonStr = (e.reason && e.reason.stack) ? e.reason.stack : String(e.reason || '');
+          if (reasonStr.indexOf('WebSocket') !== -1 || reasonStr.indexOf('@vite/client') !== -1 || reasonStr.indexOf('createWebSocketModuleRunnerTransport') !== -1) {
+            e.stopImmediatePropagation && e.stopImmediatePropagation();
+            e.preventDefault && e.preventDefault();
+            return true;
+          }
+        }, true);
+      })();
     </script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased min-h-screen selection:bg-cyan-500/30 selection:text-cyan-200">

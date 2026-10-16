@@ -1,4 +1,5 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
@@ -27,13 +28,13 @@ async function startServer() {
   // 2. Extract media metadata and formats
   app.post('/api/extract', async (req: Request, res: Response) => {
     try {
-      const { url } = req.body;
+      const { url, apiKey } = req.body;
       if (!url || typeof url !== 'string') {
         res.status(400).json({ success: false, error: 'Parameter URL wajib disertakan.' });
         return;
       }
 
-      const media = await extractMedia(url);
+      const media = await extractMedia(url, apiKey);
       res.json({ success: true, data: media });
     } catch (err: any) {
       console.error('Extraction error:', err.message);

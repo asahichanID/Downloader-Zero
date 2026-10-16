@@ -3,277 +3,326 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Navbar } from './components/Navbar.tsx';
-import { DownloaderForm } from './components/DownloaderForm.tsx';
-import { MediaResult } from './components/MediaResult.tsx';
+import { HeroBanner } from './components/HeroBanner.tsx';
 import { PlatformCards } from './components/PlatformCards.tsx';
+import { UrlInputCard } from './components/UrlInputCard.tsx';
+import { MediaTypeTabs } from './components/MediaTypeTabs.tsx';
+import { QualitySelectorCard } from './components/QualitySelectorCard.tsx';
+import { DownloadButton } from './components/DownloadButton.tsx';
+import { VideoPreviewCard } from './components/VideoPreviewCard.tsx';
+import { FeaturesHighlightBar } from './components/FeaturesHighlightBar.tsx';
+import { FooterDZ } from './components/FooterDZ.tsx';
+import { MenuModal } from './components/MenuModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { TermsModal } from './components/TermsModal.tsx';
-import { Footer } from './components/Footer.tsx';
-import { detectPlatform } from './services/scraper.ts';
-import type { PlatformType, MediaType, MediaMetadata } from './types/index.ts';
+import { MediaResultModal } from './components/MediaResultModal.tsx';
+import { PhotoSlideCard } from './components/PhotoSlideCard.tsx';
+import JSZip from 'jszip';
 
-import hero3d from './assets/images/hero_3d_downloader_orb_1792076524936.jpg';
-import stream3d from './assets/images/platforms_3d_stream_1792076525876.jpg';
-import { Zap, ShieldCheck, Sparkles, Cpu, Layers } from 'lucide-react';
+import { detectPlatform } from './services/scraper.ts';
+import type { PlatformType, MediaType, MediaMetadata, MediaFormat } from './types/index.ts';
 
 export default function App() {
+  // Input and Platform states
   const [url, setUrl] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [mediaData, setMediaData] = useState<MediaMetadata | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [mediaTypeFilter, setMediaTypeFilter] = useState<MediaType>('video');
+  const [selectedPlatform, setSelectedPlatform] = useState<PlatformType>('youtube');
+  const [mediaType, setMediaType] = useState<MediaType>('video');
 
-  // Modal states
+  // Quality selection states
+  const [selectedVideoRes, setSelectedVideoRes] = useState<string>('1080p');
+  const [selectedAudioQuality, setSelectedAudioQuality] = useState<string>('128');
+
+  // Processing & Download states
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
+  const [downloadProgress, setDownloadProgress] = useState<number>(0);
+  const [downloadStatusText, setDownloadStatusText] = useState<string>('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Extracted media metadata
+  const [mediaData, setMediaData] = useState<MediaMetadata | null>(null);
+
+  // Modals state
+  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isTermsOpen, setIsTermsOpen] = useState<boolean>(false);
   const [termsDefaultTab, setTermsDefaultTab] = useState<'terms' | 'privacy'>('terms');
+  const [isFormatModalOpen, setIsFormatModalOpen] = useState<boolean>(false);
 
-  // Theme state: default dark, sync with localStorage and root class
-  const [isDark, setIsDark] = useState<boolean>(() => {
-    const saved = localStorage.getItem('dz_theme');
-    return saved ? saved === 'dark' : true;
-  });
+  // Theme setting
+  const [isDark, setIsDark] = useState<boolean>(true);
 
-  useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-      document.documentElement.classList.remove('light');
-      localStorage.setItem('dz_theme', 'dark');
-    } else {
-      document.documentElement.classList.add('light');
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('dz_theme', 'light');
-    }
-  }, [isDark]);
-
-  const toggleTheme = () => {
-    setIsDark((prev) => !prev);
+  // Handle platform change
+  const handleSelectPlatform = (platform: PlatformType) => {
+    setSelectedPlatform(platform);
+    setErrorMessage(null);
   };
 
-  const detectedPlatform = detectPlatform(url);
+  // Perform download execution
+  const executeDownload = async (targetFormat: MediaFormat, currentMedia: MediaMetadata) => {
+    setIsDownloading(true);
+    setDownloadProgress(15);
+    setDownloadStatusText('Menghubungkan ke server media...');
 
-  // Form submit handler
-  const handleExtract = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!url.trim()) return;
+    const ext = targetFormat.extension;
+    const sanitizedTitle = (currentMedia.title || 'media').slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `DownloaderZero_${sanitizedTitle}_${targetFormat.resolution || targetFormat.quality.split(' ')[0]}.${ext}`;
+
+    try {
+      let finalUrl = targetFormat.url;
+
+      // Handle async polling jobs (e.g. YouTube loader)
+      if (targetFormat.jobId) {
+        setDownloadStatusText('Memproses konversi resolusi...');
+        let finished = false;
+        let attempts = 0;
+
+        while (!finished && attempts < 20) {
+          attempts++;
+          await new Promise((r) => setTimeout(r, 1200));
+          setDownloadProgress((prev) => Math.min(85, prev + 5));
+
+          try {
+            const progRes = await fetch(`/api/progress/${encodeURIComponent(targetFormat.jobId)}`);
+            if (progRes.ok) {
+              const pData = await progRes.json();
+              if (pData.success && pData.downloadUrl) {
+                finalUrl = pData.downloadUrl;
+                finished = true;
+                break;
+              }
+            }
+          } catch (e) {
+            console.warn('Progress poll check:', e);
+          }
+        }
+      }
+
+      setDownloadProgress(90);
+      setDownloadStatusText('Mengirim berkas unduhan...');
+
+      // Trigger automatic direct browser download via proxy
+      const downloadHref = `/api/proxy-download?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(filename)}`;
+      const link = document.createElement('a');
+      link.href = downloadHref;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setDownloadProgress(100);
+      setDownloadStatusText('Unduhan berhasil dimulai!');
+
+      setTimeout(() => {
+        setIsDownloading(false);
+        setDownloadProgress(0);
+        setDownloadStatusText('');
+      }, 2500);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Gagal memulai unduhan.');
+      setIsDownloading(false);
+      setDownloadProgress(0);
+    }
+  };
+
+  // Main Download Trigger button
+  const handleMainDownload = async () => {
+    if (!url.trim()) {
+      setErrorMessage('Tempelkan URL video atau audio terlebih dahulu pada kolom input.');
+      return;
+    }
+
+    // Auto-detect platform from URL if entered
+    const detected = detectPlatform(url);
+    if (detected !== 'unknown') {
+      setSelectedPlatform(detected);
+    }
 
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
+      // 1. Extract metadata from URL
+      const apiKey = localStorage.getItem('dz_neoxr_key') || undefined;
       const res = await fetch('/api/extract', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ url: url.trim() })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url.trim(), apiKey })
       });
 
       const json = await res.json();
-
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Gagal mengekstrak media dari URL.');
       }
 
-      setMediaData(json.data);
-    } catch (err: any) {
-      setErrorMessage(
-        err.message || 'Terjadi gangguan jaringan atau konten tidak dapat diakses. Pastikan URL publik dan valid.'
-      );
-    } finally {
+      const media: MediaMetadata = json.data;
+      setMediaData(media);
       setIsLoading(false);
+
+      // If content is a Photo Slide and user is on Video tab, package all photos into a ZIP directly
+      if (media.isPhotoSlide && media.images && media.images.length > 0 && mediaType !== 'audio') {
+        setIsDownloading(true);
+        setDownloadProgress(20);
+        setDownloadStatusText(`Menyiapkan ${media.images.length} foto ke dalam ZIP...`);
+        try {
+          const zip = new JSZip();
+          const sanitizedTitle = (media.title || 'TikTok_Photos').slice(0, 30).replace(/[^a-zA-Z0-9_-]/g, '_');
+          const folder = zip.folder(sanitizedTitle) || zip;
+
+          for (let i = 0; i < media.images.length; i++) {
+            const pct = Math.min(85, 20 + Math.round(((i + 1) / media.images.length) * 65));
+            setDownloadProgress(pct);
+            setDownloadStatusText(`Mengunduh foto ${i + 1} dari ${media.images.length}...`);
+            const res = await fetch(`/api/proxy-download?url=${encodeURIComponent(media.images[i])}&filename=photo_${i + 1}.jpg`);
+            if (res.ok) {
+              const blob = await res.blob();
+              folder.file(`${sanitizedTitle}_foto_${String(i + 1).padStart(2, '0')}.jpg`, blob);
+            }
+          }
+
+          setDownloadProgress(90);
+          setDownloadStatusText('Membuat berkas ZIP...');
+          const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+          const dlUrl = URL.createObjectURL(zipBlob);
+          const link = document.createElement('a');
+          link.href = dlUrl;
+          link.download = `DownloaderZero_${sanitizedTitle}_Semua_Foto.zip`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(dlUrl);
+
+          setDownloadProgress(100);
+          setDownloadStatusText('Semua foto berhasil diunduh dalam ZIP!');
+          setTimeout(() => {
+            setIsDownloading(false);
+            setDownloadProgress(0);
+            setDownloadStatusText('');
+          }, 3000);
+          return;
+        } catch (zipErr) {
+          console.error('Auto zip error:', zipErr);
+          setIsDownloading(false);
+          setDownloadProgress(0);
+          return;
+        }
+      }
+
+      // 2. Find best matching format
+      const filteredFormats = media.formats.filter((f) => f.type === mediaType);
+      const searchPool = filteredFormats.length > 0 ? filteredFormats : media.formats;
+
+      let chosenFormat: MediaFormat | undefined;
+      if (mediaType === 'video') {
+        chosenFormat =
+          searchPool.find((f) => f.resolution?.includes(selectedVideoRes) || f.quality.includes(selectedVideoRes)) ||
+          searchPool[0];
+      } else {
+        chosenFormat =
+          searchPool.find((f) => f.quality.includes(selectedAudioQuality) || f.type === 'audio') ||
+          searchPool[0];
+      }
+
+      if (chosenFormat) {
+        await executeDownload(chosenFormat, media);
+      }
+    } catch (err: any) {
+      setIsLoading(false);
+      setErrorMessage(err.message || 'Gagal memproses media. Pastikan URL publik dan dapat diakses.');
     }
   };
 
-  const handleSelectSample = (sampleUrl: string) => {
-    setUrl(sampleUrl);
-    setErrorMessage(null);
-    window.scrollTo({ top: 120, behavior: 'smooth' });
-  };
-
-  const handleReset = () => {
-    setMediaData(null);
-    setUrl('');
-    setErrorMessage(null);
-  };
-
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 transition-colors dark:bg-slate-950 dark:text-slate-100 light:bg-slate-50 light:text-slate-900">
-      {/* Navigation */}
-      <Navbar
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenTerms={() => {
-          setTermsDefaultTab('terms');
-          setIsTermsOpen(true);
-        }}
-      />
+    <div className="min-h-screen w-full bg-[#030718] text-slate-100 flex flex-col items-center justify-start antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+      {/* Full-Screen Expansive Container */}
+      <main className="w-full max-w-5xl lg:max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-6 flex flex-col items-center gap-4 sm:gap-6">
+        {/* 1. Header & Brand Navigation */}
+        <Navbar
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenMenu={() => setIsMenuOpen(true)}
+        />
 
-      {/* Main Container */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10">
-        {/* Futuristic 3D Hero Section */}
-        <section className="relative overflow-hidden rounded-3xl border border-slate-800/80 light:border-slate-200 mb-8 p-6 sm:p-10 lg:p-12 glass-panel">
-          {/* Background Ambient Glow */}
-          <div className="absolute top-0 right-0 -z-10 h-96 w-96 rounded-full bg-cyan-500/10 blur-[100px] pointer-events-none" />
-          <div className="absolute bottom-0 left-0 -z-10 h-96 w-96 rounded-full bg-indigo-600/10 blur-[100px] pointer-events-none" />
+        {/* 2. Hero Mascot & Typography Banner */}
+        <HeroBanner />
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-            {/* Left Column: Headlines */}
-            <div className="lg:col-span-7 space-y-4">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/70 border border-cyan-800/60 text-cyan-300 text-xs font-mono font-medium">
-                <Zap className="h-3.5 w-3.5 text-cyan-400" />
-                <span>Engine 2026 · Resolusi Hingga 4K & Audio 320 kbps</span>
-              </div>
+        {/* 3. Platform Selection Cards (YouTube, TikTok, Facebook, Instagram) */}
+        <PlatformCards
+          selectedPlatform={selectedPlatform}
+          onSelectPlatform={handleSelectPlatform}
+        />
 
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white light:text-slate-900 leading-[1.15]">
-                Downloader<span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400">Zero</span>
-              </h1>
-
-              <p className="text-sm sm:text-base text-slate-300 light:text-slate-600 leading-relaxed max-w-xl">
-                Unduh video tanpa watermark dan audio MP3 berkecepatan tinggi dari YouTube, TikTok, Facebook, dan Instagram secara gratis, tanpa iklan pop-up, dan tanpa instalasi aplikasi.
-              </p>
-
-              {/* Trust Badges */}
-              <div className="pt-2 flex flex-wrap items-center gap-4 text-xs font-medium text-slate-400 light:text-slate-600">
-                <span className="flex items-center gap-1.5">
-                  <ShieldCheck className="h-4 w-4 text-cyan-400" />
-                  <span>100% Gratis & Aktif</span>
-                </span>
-                <span aria-hidden="true" className="text-slate-700">·</span>
-                <span className="flex items-center gap-1.5">
-                  <Cpu className="h-4 w-4 text-cyan-400" />
-                  <span>Vercel Cloud Serverless</span>
-                </span>
-                <span aria-hidden="true" className="text-slate-700">·</span>
-                <span className="flex items-center gap-1.5">
-                  <Layers className="h-4 w-4 text-cyan-400" />
-                  <span>Multi-Kualitas Terlengkap</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Right Column: 3D Orb Visual */}
-            <div className="lg:col-span-5 relative flex justify-center">
-              <div className="relative w-full max-w-md aspect-video sm:aspect-square rounded-2xl overflow-hidden border border-cyan-500/30 shadow-2xl shadow-cyan-500/10">
-                <img
-                  src={hero3d}
-                  alt="DownloaderZero 3D Engine Orb"
-                  className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent pointer-events-none" />
-                <div className="absolute bottom-3 left-3 right-3 p-2.5 rounded-xl bg-slate-950/70 backdrop-blur-md border border-white/10 flex items-center justify-between text-xs font-mono text-cyan-300">
-                  <span className="truncate">DZ High-Speed Proxy Engine</span>
-                  <span className="text-emerald-400 font-bold shrink-0 ml-2">● LIVE</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Downloader Input Form */}
-        <DownloaderForm
+        {/* 4. URL Input Box Card with Paste Button */}
+        <UrlInputCard
           url={url}
           setUrl={setUrl}
-          onSubmit={handleExtract}
-          isLoading={isLoading}
-          detectedPlatform={detectedPlatform}
-          mediaTypeFilter={mediaTypeFilter}
-          setMediaTypeFilter={setMediaTypeFilter}
+          selectedPlatform={selectedPlatform}
           errorMessage={errorMessage}
           onClearError={() => setErrorMessage(null)}
         />
 
-        {/* Media Result (if extracted) */}
-        {mediaData && (
-          <MediaResult
+        {/* 5. Media Type Tabs (Video vs MP3 Audio) */}
+        <MediaTypeTabs
+          mediaType={mediaType}
+          setMediaType={setMediaType}
+        />
+
+        {/* 6. "Pilih Kualitas" (Quality Selection Card - Video and Audio separated) */}
+        <QualitySelectorCard
+          mediaType={mediaType}
+          setMediaType={setMediaType}
+          selectedVideoRes={selectedVideoRes}
+          setSelectedVideoRes={setSelectedVideoRes}
+          selectedAudioQuality={selectedAudioQuality}
+          setSelectedAudioQuality={setSelectedAudioQuality}
+        />
+
+        {/* 7. Huge Download Button with Cyber Accents */}
+        <DownloadButton
+          onDownload={handleMainDownload}
+          isLoading={isLoading}
+          isDownloading={isDownloading}
+          downloadProgress={downloadProgress}
+          downloadStatusText={downloadStatusText}
+        />
+
+        {/* 8. Contoh Video Preview Card OR Photo Slide Card (Nimpa di tempat yang sama) */}
+        {mediaData?.isPhotoSlide && mediaData.images && mediaData.images.length > 0 ? (
+          <PhotoSlideCard media={mediaData} />
+        ) : (
+          <VideoPreviewCard
             media={mediaData}
-            activeFilter={mediaTypeFilter}
-            onReset={handleReset}
+            selectedResolution={selectedVideoRes}
+            onClick={() => {
+              if (mediaData) {
+                setIsFormatModalOpen(true);
+              }
+            }}
           />
         )}
 
-        {/* 4 Supported Platforms Grid */}
-        <PlatformCards
-          onSelectSample={handleSelectSample}
-          activePlatform={detectedPlatform}
+        {/* 9. Feature Highlights Badge Bar */}
+        <FeaturesHighlightBar />
+
+        {/* 10. Footer with Handwritten Doodle, Crown Copyright, and Cat Line-Art */}
+        <FooterDZ
+          onOpenTerms={() => {
+            setTermsDefaultTab('terms');
+            setIsTermsOpen(true);
+          }}
+          onOpenPrivacy={() => {
+            setTermsDefaultTab('privacy');
+            setIsTermsOpen(true);
+          }}
         />
-
-        {/* Extra Feature & Architecture Showcase */}
-        <section className="my-12 rounded-3xl border border-slate-800/80 light:border-slate-200 p-6 sm:p-8 glass-panel">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-            <div className="lg:col-span-6 space-y-4">
-              <h3 className="text-xl sm:text-2xl font-bold text-white light:text-slate-900">
-                Mengapa Memilih DownloaderZero?
-              </h3>
-              <p className="text-xs sm:text-sm text-slate-400 light:text-slate-600 leading-relaxed">
-                Kami membangun DownloaderZero dengan arsitektur modern yang ringan dan efisien. Tidak ada software berbahaya, tidak ada tombol unduhan palsu yang mengarahkan ke malware, dan tidak ada batasan kuota unduhan.
-              </p>
-
-              <div className="grid grid-cols-2 gap-4 pt-2">
-                <div className="p-3.5 rounded-xl bg-slate-900/60 light:bg-slate-100 border border-slate-800/80 light:border-slate-200">
-                  <span className="text-xs font-bold text-cyan-400 block mb-1">Kualitas 4K Ultra HD</span>
-                  <span className="text-[11px] text-slate-400 light:text-slate-600">Video resolusi penuh hingga 2160p untuk kejernihan maksimal.</span>
-                </div>
-                <div className="p-3.5 rounded-xl bg-slate-900/60 light:bg-slate-100 border border-slate-800/80 light:border-slate-200">
-                  <span className="text-xs font-bold text-cyan-400 block mb-1">Audio 320 kbps</span>
-                  <span className="text-[11px] text-slate-400 light:text-slate-600">Ekstraksi audio MP3 dengan frekuensi studio yang jernih.</span>
-                </div>
-                <div className="p-3.5 rounded-xl bg-slate-900/60 light:bg-slate-100 border border-slate-800/80 light:border-slate-200">
-                  <span className="text-xs font-bold text-cyan-400 block mb-1">Tanpa Watermark</span>
-                  <span className="text-[11px] text-slate-400 light:text-slate-600">Unduh klip TikTok murni bersih tanpa logo yang mengganggu.</span>
-                </div>
-                <div className="p-3.5 rounded-xl bg-slate-900/60 light:bg-slate-100 border border-slate-800/80 light:border-slate-200">
-                  <span className="text-xs font-bold text-cyan-400 block mb-1">Vercel Ready</span>
-                  <span className="text-[11px] text-slate-400 light:text-slate-600">Dukungan deployment Serverless Function dengan timeout optimal.</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="lg:col-span-6 relative overflow-hidden rounded-2xl border border-slate-800/80 aspect-video">
-              <img
-                src={stream3d}
-                alt="DownloaderZero Media Pipeline"
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 to-transparent pointer-events-none" />
-              <div className="absolute bottom-4 left-4 right-4 text-xs font-mono text-cyan-300">
-                High-Concurrency Data Pipeline · Zero In-Memory Buffering
-              </div>
-            </div>
-          </div>
-        </section>
       </main>
 
-      {/* Centered Settings Modal (With Light/Dark toggle and bright blue S&K) */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        onOpenTerms={() => {
-          setTermsDefaultTab('terms');
-          setIsTermsOpen(true);
-        }}
-        isDark={isDark}
-        toggleTheme={toggleTheme}
-      />
-
-      {/* Terms & Conditions / Privacy Modal */}
-      <TermsModal
-        isOpen={isTermsOpen}
-        onClose={() => setIsTermsOpen(false)}
-        defaultTab={termsDefaultTab}
-      />
-
-      {/* Footer with exact requirements */}
-      <Footer
+      {/* Navigation Menu Modal */}
+      <MenuModal
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        onSelectPlatform={handleSelectPlatform}
         onOpenTerms={() => {
           setTermsDefaultTab('terms');
           setIsTermsOpen(true);
@@ -283,6 +332,41 @@ export default function App() {
           setIsTermsOpen(true);
         }}
       />
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onOpenTerms={() => {
+          setTermsDefaultTab('terms');
+          setIsTermsOpen(true);
+        }}
+        isDark={isDark}
+        toggleTheme={() => setIsDark((p) => !p)}
+      />
+
+      {/* Terms & Privacy Modal */}
+      <TermsModal
+        isOpen={isTermsOpen}
+        onClose={() => setIsTermsOpen(false)}
+        defaultTab={termsDefaultTab}
+      />
+
+      {/* All Available Formats Modal (if media extracted) */}
+      {mediaData && (
+        <MediaResultModal
+          isOpen={isFormatModalOpen}
+          onClose={() => setIsFormatModalOpen(false)}
+          media={mediaData}
+          activeFilter={mediaType}
+          onDownloadFormat={(fmt) => {
+            setIsFormatModalOpen(false);
+            executeDownload(fmt, mediaData);
+          }}
+          isDownloading={isDownloading}
+          downloadProgress={downloadProgress}
+        />
+      )}
     </div>
   );
 }

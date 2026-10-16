@@ -27,6 +27,8 @@ export interface MediaMetadata {
   duration?: number; // in seconds
   durationFormatted?: string; // '03:45'
   formats: MediaFormat[];
+  images?: string[];
+  isPhotoSlide?: boolean;
   source: string;
   createdAt: string;
 }

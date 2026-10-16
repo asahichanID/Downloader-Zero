@@ -126,15 +126,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* 3. Vercel Serverless Architecture Note */}
-          <div className="p-4 rounded-2xl bg-slate-900/40 light:bg-slate-50 border border-slate-800 light:border-slate-200 text-xs text-slate-400 light:text-slate-600 space-y-2">
-            <div className="flex items-center gap-2 text-slate-300 light:text-slate-800 font-semibold">
-              <Server className="h-4 w-4 text-cyan-400" />
-              <span>Kompatibilitas Cloud & Vercel</span>
+          {/* 3. Neoxr API Engine Integration */}
+          <div className="p-4 rounded-2xl bg-slate-900/60 border border-blue-900/60 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-white font-semibold text-xs">
+                <Server className="h-4 w-4 text-cyan-400" />
+                <span>Mesin Utama: api.neoxr.eu</span>
+              </div>
+              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/60">
+                Utama + Fallback Aktif
+              </span>
             </div>
-            <p className="leading-relaxed text-[11px]">
-              Aplikasi ini 100% kompatibel dengan arsitektur Vercel Serverless Functions (`/api/extract` & `/api/proxy-download`). Scraper menggunakan koneksi REST ringan tanpa ketergantungan pada proses FFmpeg lokal yang berat sehingga selalu stabil dan cepat.
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Endpoint Neoxr aktif: <code className="text-cyan-300 font-mono">/youtube</code>, <code className="text-cyan-300 font-mono">/tiktok</code>, <code className="text-cyan-300 font-mono">/fb</code>, <code className="text-cyan-300 font-mono">/ig</code>. Scraper bawaan otomatis bekerja sebagai fallback darurat jika Neoxr offline atau kehabisan limit.
             </p>
+            <div className="pt-1">
+              <label className="text-[11px] font-bold text-cyan-300 block mb-1">
+                Neoxr API Key (Opsional):
+              </label>
+              <input
+                type="text"
+                placeholder="Masukkan API Key Neoxr jika ada..."
+                defaultValue={localStorage.getItem('dz_neoxr_key') || ''}
+                onChange={(e) => {
+                  localStorage.setItem('dz_neoxr_key', e.target.value.trim());
+                }}
+                className="w-full px-3 py-1.5 rounded-xl bg-[#050e24] border border-blue-900 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-cyan-400"
+              />
+            </div>
           </div>
         </div>
 
