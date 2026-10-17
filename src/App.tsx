@@ -19,9 +19,11 @@ import { SettingsModal } from './components/SettingsModal.tsx';
 import { TermsModal } from './components/TermsModal.tsx';
 import { MediaResultModal } from './components/MediaResultModal.tsx';
 import { PhotoSlideCard } from './components/PhotoSlideCard.tsx';
+import { HistoryModal } from './components/HistoryModal.tsx';
 import JSZip from 'jszip';
 
-import { detectPlatform } from './services/scraper.ts';
+import { detectPlatform, formatBytes } from './services/scraper.ts';
+import { saveDownloadedMedia, getAllHistory } from './services/historyStorage.ts';
 import type { PlatformType, MediaType, MediaMetadata, MediaFormat } from './types/index.ts';
 
 export default function App() {
@@ -50,6 +52,23 @@ export default function App() {
   const [isTermsOpen, setIsTermsOpen] = useState<boolean>(false);
   const [termsDefaultTab, setTermsDefaultTab] = useState<'terms' | 'privacy'>('terms');
   const [isFormatModalOpen, setIsFormatModalOpen] = useState<boolean>(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
+  const [historyCount, setHistoryCount] = useState<number>(0);
+
+  // Sync history count
+  React.useEffect(() => {
+    const updateCount = async () => {
+      try {
+        const items = await getAllHistory();
+        setHistoryCount(items.length);
+      } catch (err) {
+        console.warn('History count error:', err);
+      }
+    };
+    updateCount();
+    window.addEventListener('dz_history_updated', updateCount);
+    return () => window.removeEventListener('dz_history_updated', updateCount);
+  }, []);
 
   // Theme setting
   const [isDark, setIsDark] = useState<boolean>(true);
@@ -118,20 +137,65 @@ export default function App() {
         }
       }
 
-      setDownloadProgress(90);
-      setDownloadStatusText('Mengirim berkas unduhan...');
+      setDownloadProgress(85);
+      setDownloadStatusText('Mengunduh & menyimpan berkas ke riwayat lokal...');
 
-      // Trigger automatic direct browser download via proxy
       const downloadHref = `/api/proxy-download?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(filename)}`;
-      const link = document.createElement('a');
-      link.href = downloadHref;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      
+      try {
+        const response = await fetch(downloadHref);
+        if (response.ok) {
+          const blob = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+
+          // Automatically cache in local IndexedDB history
+          try {
+            await saveDownloadedMedia({
+              sourceUrl: finalUrl,
+              platform: currentMedia.platform,
+              title: currentMedia.title || 'Media DownloaderZero',
+              author: currentMedia.author || 'Creator',
+              thumbnail: currentMedia.thumbnail || '',
+              quality: targetFormat.quality,
+              resolution: targetFormat.resolution,
+              mediaType: targetFormat.type,
+              extension: targetFormat.extension,
+              filename,
+              filesize: targetFormat.filesize || formatBytes(blob.size),
+              filesizeBytes: blob.size,
+              blob
+            });
+          } catch (histErr) {
+            console.warn('History save notice:', histErr);
+          }
+        } else {
+          // Direct fallback link
+          const link = document.createElement('a');
+          link.href = downloadHref;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      } catch {
+        // Fallback
+        const link = document.createElement('a');
+        link.href = downloadHref;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
 
       setDownloadProgress(100);
-      setDownloadStatusText('Unduhan berhasil dimulai!');
+      setDownloadStatusText('Unduhan selesai & tersimpan di Riwayat!');
 
       setTimeout(() => {
         setIsDownloading(false);
@@ -202,17 +266,39 @@ export default function App() {
           setDownloadProgress(90);
           setDownloadStatusText('Membuat berkas ZIP...');
           const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+          const zipFilename = `DownloaderZero_${sanitizedTitle}_Semua_Foto.zip`;
           const dlUrl = URL.createObjectURL(zipBlob);
           const link = document.createElement('a');
           link.href = dlUrl;
-          link.download = `DownloaderZero_${sanitizedTitle}_Semua_Foto.zip`;
+          link.download = zipFilename;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
           URL.revokeObjectURL(dlUrl);
 
+          // Save to local offline history
+          try {
+            await saveDownloadedMedia({
+              sourceUrl: media.url,
+              platform: media.platform,
+              title: `${media.title || 'Foto TikTok'} (${media.images.length} Slide Foto)`,
+              author: media.author || 'Kreator',
+              thumbnail: media.thumbnail || media.images[0] || '',
+              quality: `${media.images.length} Foto HD (ZIP)`,
+              resolution: 'HD Foto',
+              mediaType: 'photos',
+              extension: 'zip',
+              filename: zipFilename,
+              filesize: formatBytes(zipBlob.size),
+              filesizeBytes: zipBlob.size,
+              blob: zipBlob
+            });
+          } catch (histErr) {
+            console.warn('ZIP history auto-save notice:', histErr);
+          }
+
           setDownloadProgress(100);
-          setDownloadStatusText('Semua foto berhasil diunduh dalam ZIP!');
+          setDownloadStatusText('Semua foto berhasil diunduh dalam ZIP & tersimpan di Riwayat!');
           setTimeout(() => {
             setIsDownloading(false);
             setDownloadProgress(0);
@@ -259,6 +345,8 @@ export default function App() {
         <Navbar
           onOpenSettings={() => setIsSettingsOpen(true)}
           onOpenMenu={() => setIsMenuOpen(true)}
+          onOpenHistory={() => setIsHistoryOpen(true)}
+          historyCount={historyCount}
         />
 
         {/* 2. Hero Mascot & Typography Banner */}
@@ -350,6 +438,7 @@ export default function App() {
           setTermsDefaultTab('privacy');
           setIsTermsOpen(true);
         }}
+        onOpenHistory={() => setIsHistoryOpen(true)}
       />
 
       {/* Settings Modal */}
@@ -362,6 +451,12 @@ export default function App() {
         }}
         isDark={isDark}
         toggleTheme={() => setIsDark((p) => !p)}
+      />
+
+      {/* History (Riwayat Unduhan Offline 24 Jam) Modal */}
+      <HistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
       />
 
       {/* Terms & Privacy Modal */}

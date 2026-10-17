@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import JSZip from 'jszip';
 import type { MediaMetadata } from '../types/index.ts';
+import { saveDownloadedMedia } from '../services/historyStorage.ts';
 
 interface PhotoSlideCardProps {
   media: MediaMetadata;
@@ -141,7 +142,29 @@ export const PhotoSlideCard: React.FC<PhotoSlideCardProps> = ({ media }) => {
       document.body.removeChild(link);
       URL.revokeObjectURL(downloadUrl);
 
-      setSuccessToast(`Semua ${total} foto berhasil dibungkus ke ZIP!`);
+      // Save to local offline history (available for 24 hours)
+      try {
+        const sizeMb = (zipBlob.size / (1024 * 1024)).toFixed(1);
+        await saveDownloadedMedia({
+          sourceUrl: media.url,
+          platform: media.platform,
+          title: `${media.title || 'Foto TikTok'} (${total} Foto Slide)`,
+          author: media.author || 'Kreator',
+          thumbnail: media.thumbnail || images[0] || '',
+          quality: `${total} Foto HD (ZIP)`,
+          resolution: 'HD Foto',
+          mediaType: 'photos',
+          extension: 'zip',
+          filename: zipFilename,
+          filesize: `${sizeMb} MB`,
+          filesizeBytes: zipBlob.size,
+          blob: zipBlob
+        });
+      } catch (histErr) {
+        console.warn('ZIP history save notice:', histErr);
+      }
+
+      setSuccessToast(`Semua ${total} foto berhasil dibungkus ke ZIP & tersimpan di Riwayat!`);
       setTimeout(() => setSuccessToast(null), 3500);
     } catch (err: any) {
       console.error('ZIP generation error:', err);

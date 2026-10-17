@@ -11,6 +11,7 @@ import {
   FileCheck
 } from 'lucide-react';
 import type { MediaMetadata, MediaFormat, MediaType } from '../types/index.ts';
+import { saveDownloadedMedia } from '../services/historyStorage.ts';
 
 interface MediaResultProps {
   media: MediaMetadata;
@@ -94,10 +95,11 @@ export const MediaResult: React.FC<MediaResultProps> = ({
       const contentLength = Number(response.headers.get('content-length')) || 0;
       const reader = response.body?.getReader();
 
+      let finalBlob: Blob;
       if (!reader) {
         // Fallback to direct blob
-        const blob = await response.blob();
-        saveBlobLocally(blob, filename);
+        finalBlob = await response.blob();
+        saveBlobLocally(finalBlob, filename);
       } else {
         const chunks: BlobPart[] = [];
         let received = 0;
@@ -119,8 +121,29 @@ export const MediaResult: React.FC<MediaResultProps> = ({
           setDownloadStatusText(`Mengunduh berkas: ${formatLoadedBytes(received)}...`);
         }
 
-        const fullBlob = new Blob(chunks, { type: 'application/octet-stream' });
-        saveBlobLocally(fullBlob, filename);
+        finalBlob = new Blob(chunks, { type: 'application/octet-stream' });
+        saveBlobLocally(finalBlob, filename);
+      }
+
+      // Automatically store in IndexedDB local history (available for 24 hours)
+      try {
+        await saveDownloadedMedia({
+          sourceUrl: targetDownloadUrl,
+          platform: media.platform,
+          title: media.title || 'Media DownloaderZero',
+          author: media.author || 'Creator',
+          thumbnail: media.thumbnail || '',
+          quality: fmt.quality,
+          resolution: fmt.resolution,
+          mediaType: fmt.type,
+          extension: fmt.extension,
+          filename,
+          filesize: fmt.filesize || formatLoadedBytes(finalBlob.size),
+          filesizeBytes: finalBlob.size,
+          blob: finalBlob
+        });
+      } catch (histErr) {
+        console.warn('History auto-save notice:', histErr);
       }
 
       setDownloadProgress(100);

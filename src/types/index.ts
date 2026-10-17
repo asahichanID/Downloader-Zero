@@ -46,3 +46,22 @@ export interface ProgressResponse {
   statusText?: string;
   error?: string;
 }
+
+export interface HistoryItem {
+  id: string;
+  sourceUrl: string;
+  platform: PlatformType;
+  title: string;
+  author: string;
+  thumbnail: string;
+  quality: string;
+  resolution?: string;
+  mediaType: 'video' | 'audio' | 'photos';
+  extension: 'mp4' | 'mp3' | 'm4a' | 'jpg' | 'png' | 'zip';
+  filename: string;
+  filesize: string;
+  filesizeBytes: number;
+  blob?: Blob;
+  downloadedAt: number;
+}
+

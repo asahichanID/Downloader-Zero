@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Youtube, Film, Music, Shield, Info, ExternalLink, Sparkles } from 'lucide-react';
+import { X, Youtube, Film, Music, Shield, Info, ExternalLink, Sparkles, Clock } from 'lucide-react';
 import type { PlatformType } from '../types/index.ts';
 
 interface MenuModalProps {
@@ -8,6 +8,7 @@ interface MenuModalProps {
   onSelectPlatform: (platform: PlatformType) => void;
   onOpenTerms: () => void;
   onOpenPrivacy: () => void;
+  onOpenHistory: () => void;
 }
 
 export const MenuModal: React.FC<MenuModalProps> = ({
@@ -15,7 +16,8 @@ export const MenuModal: React.FC<MenuModalProps> = ({
   onClose,
   onSelectPlatform,
   onOpenTerms,
-  onOpenPrivacy
+  onOpenPrivacy,
+  onOpenHistory
 }) => {
   if (!isOpen) return null;
 
@@ -111,8 +113,28 @@ export const MenuModal: React.FC<MenuModalProps> = ({
           </div>
         </div>
 
+        {/* History Menu Button */}
+        <div className="pt-2 pb-1 border-t border-blue-900/60">
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onOpenHistory();
+            }}
+            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-500/40 hover:border-cyan-400 text-xs font-bold text-cyan-300 hover:text-white transition-all cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-cyan-400" />
+              <span>Riwayat Unduhan (24 Jam)</span>
+            </div>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+              Offline
+            </span>
+          </button>
+        </div>
+
         {/* Legal Links */}
-        <div className="pt-3 border-t border-blue-900/60 space-y-2">
+        <div className="pt-2 border-t border-blue-900/60 space-y-2">
           <button
             type="button"
             onClick={() => {
