@@ -46,6 +46,42 @@ async function startServer() {
     }
   });
 
+  // 2b. Start async job for YouTube conversion
+  app.post('/api/start-job', async (req: Request, res: Response) => {
+    try {
+      const { format, url } = req.body || {};
+      if (!url) {
+        res.status(400).json({ success: false, error: 'URL target wajib disertakan.' });
+        return;
+      }
+
+      const response = await fetch(
+        `https://loader.to/ajax/download.php?format=${encodeURIComponent(format || '1080')}&url=${encodeURIComponent(url)}`,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          },
+          signal: AbortSignal.timeout(10000)
+        }
+      );
+
+      if (!response.ok) {
+        res.status(502).json({ success: false, error: 'Gagal memulai konversi media.' });
+        return;
+      }
+
+      const data = await response.json();
+      res.json({
+        success: true,
+        id: data.id || null,
+        downloadUrl: data.download_url || null,
+        text: data.text || ''
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // 3. Progress check for async processing (e.g. YouTube loader.to jobs)
   app.get('/api/progress/:jobId', async (req: Request, res: Response) => {
     try {
@@ -132,26 +168,48 @@ async function startServer() {
         return;
       }
 
-      const contentLength = response.headers.get('content-length');
+      const rawContentType = response.headers.get('content-type') || '';
+      if (rawContentType.includes('application/json') || (rawContentType.includes('text/html') && !sanitizedFilename.endsWith('.html'))) {
+        res.status(400).send('Tautan unduhan tidak valid atau berkas belum siap dari server sumber.');
+        return;
+      }
 
-      // Force direct file download into Downloads folder without navigating or opening in browser
-      res.setHeader('Content-Type', 'application/octet-stream');
+      // Determine proper MIME type instead of generic octet-stream
+      let mimeType = 'application/octet-stream';
+      if (sanitizedFilename.endsWith('.mp4')) mimeType = 'video/mp4';
+      else if (sanitizedFilename.endsWith('.mp3')) mimeType = 'audio/mpeg';
+      else if (sanitizedFilename.endsWith('.jpg') || sanitizedFilename.endsWith('.jpeg')) mimeType = 'image/jpeg';
+      else if (sanitizedFilename.endsWith('.png')) mimeType = 'image/png';
+      else if (sanitizedFilename.endsWith('.zip')) mimeType = 'application/zip';
+      else if (rawContentType && !rawContentType.includes('text/')) mimeType = rawContentType;
+
+      res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`);
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type');
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
       res.setHeader('X-Content-Type-Options', 'nosniff');
 
-      if (contentLength) {
+      const contentLength = response.headers.get('content-length');
+      const contentEncoding = response.headers.get('content-encoding');
+      if (contentLength && !contentEncoding) {
         res.setHeader('Content-Length', contentLength);
       }
 
       // Stream chunks directly to user's browser
       const reader = response.body.getReader();
+      req.on('close', () => {
+        try {
+          reader.cancel();
+        } catch {}
+      });
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        res.write(value);
+        if (value) {
+          res.write(Buffer.from(value));
+        }
       }
       res.end();
     } catch (err: any) {

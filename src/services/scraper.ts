@@ -454,7 +454,7 @@ async function scrapeInstagram(url: string): Promise<MediaMetadata> {
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       },
       body: formData,
-      signal: AbortSignal.timeout(10000)
+      signal: AbortSignal.timeout(20000)
     });
 
     if (res.ok) {
@@ -497,7 +497,7 @@ async function scrapeInstagram(url: string): Promise<MediaMetadata> {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         },
         body: JSON.stringify({ url: url.trim() }),
-        signal: AbortSignal.timeout(8000)
+        signal: AbortSignal.timeout(10000)
       });
       if (res.ok) {
         const d = await res.json();
@@ -505,7 +505,7 @@ async function scrapeInstagram(url: string): Promise<MediaMetadata> {
           if (d.title) title = d.title;
           if (d.thumbnail) thumbnail = d.thumbnail;
           for (const [k, v] of Object.entries(d.links)) {
-            if (typeof v === 'string' && v.startsWith('http')) {
+            if (typeof v === 'string' && v.startsWith('http') && !v.includes('instagram.com/p/')) {
               formats.push({
                 id: `ig-${k}`,
                 quality: '1080p HD Video MP4',
@@ -525,19 +525,8 @@ async function scrapeInstagram(url: string): Promise<MediaMetadata> {
     }
   }
 
-  // Fallback: Embed stream / high quality media representation
-  if (formats.length === 0 && shortcode) {
-    // Provide direct Instagram media link
-    formats.push({
-      id: 'ig-direct-stream',
-      quality: '1080p HD Video',
-      resolution: '1080p',
-      type: 'video',
-      extension: 'mp4',
-      url: `https://www.instagram.com/p/${shortcode}/`,
-      isDirect: false,
-      note: 'Tautan media Instagram'
-    });
+  if (formats.length === 0) {
+    throw new Error('Tidak dapat mengekstrak media dari tautan Instagram ini. Pastikan konten bersifat publik.');
   }
 
   // Audio extraction format

@@ -169,6 +169,25 @@ export async function saveDownloadedMedia(
       req.onerror = () => reject(req.error);
     });
   } catch (err) {
+    // If Blob cloning failed (e.g. WebKit bug in some browsers), convert blob to ArrayBuffer and retry
+    if (record.blob) {
+      try {
+        const buffer = await record.blob.arrayBuffer();
+        const fallbackRecord = { ...record, buffer, blob: undefined };
+        const db = await openDB();
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          const store = tx.objectStore(STORE_NAME);
+          const req = store.put(fallbackRecord);
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        });
+        notifyHistoryChange();
+        return id;
+      } catch (bufErr) {
+        console.warn('ArrayBuffer save failed:', bufErr);
+      }
+    }
     console.warn('IndexedDB save failed, using memory fallback:', err);
     memoryHistoryFallback.set(id, record);
   }
@@ -193,6 +212,14 @@ export async function getAllHistory(): Promise<HistoryItem[]> {
       req.onsuccess = () => resolve((req.result as HistoryItem[]) || []);
       req.onerror = () => reject(req.error);
     });
+
+    // Reconstruct blob from buffer if stored in ArrayBuffer format
+    for (const item of items) {
+      if (!item.blob && (item as any).buffer) {
+        const mime = getMimeType(item.extension);
+        item.blob = new Blob([(item as any).buffer], { type: mime });
+      }
+    }
 
     // Sort descending (newest first)
     return items.sort((a, b) => b.downloadedAt - a.downloadedAt);
@@ -225,6 +252,25 @@ export async function deleteHistoryItem(id: string): Promise<void> {
 }
 
 /**
+ * Clean up any old corrupted items (e.g. 44-byte error responses from previous bugs).
+ */
+export async function removeCorruptedHistoryItems(): Promise<number> {
+  try {
+    const items = await getAllHistory();
+    let removedCount = 0;
+    for (const item of items) {
+      if (item.filesizeBytes && item.filesizeBytes <= 60 && item.mediaType !== 'photos') {
+        await deleteHistoryItem(item.id);
+        removedCount++;
+      }
+    }
+    return removedCount;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Clear all history manually and reset the 24-hour cycle.
  */
 export async function clearAllHistory(): Promise<void> {
@@ -245,53 +291,131 @@ export async function clearAllHistory(): Promise<void> {
   notifyHistoryChange();
 }
 
-/**
- * Save an already-downloaded history item directly into the user's gallery / downloads folder.
- * Uses the locally stored Blob, meaning zero network traffic and zero redownloading!
- */
-export function saveHistoryItemToDevice(item: HistoryItem): boolean {
-  if (item.blob) {
-    try {
-      const blobUrl = URL.createObjectURL(item.blob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = blobUrl;
-      a.download = item.filename;
-      document.body.appendChild(a);
-      a.click();
+export function getMimeType(extension: string): string {
+  switch (extension.toLowerCase()) {
+    case 'mp4':
+      return 'video/mp4';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'zip':
+      return 'application/zip';
+    default:
+      return 'application/octet-stream';
+  }
+}
 
-      setTimeout(() => {
-        try {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(blobUrl);
-        } catch {}
-      }, 8000);
-      return true;
-    } catch (e) {
-      console.error('Save from blob failed:', e);
+/**
+ * Save an already-downloaded history item directly into the user's gallery / device.
+ * ZERO RE-DOWNLOADING: Purely uses the local offline binary blob already in storage.
+ * - Mobile (Android/iOS): Invokes Web Share API so user can pick "Simpan ke Galeri / Foto" directly.
+ * - Desktop/Chromium: Uses showSaveFilePicker to write to user's desired folder directly.
+ * - Fallback: Creates local memory blob link without making any network request.
+ */
+export async function saveHistoryItemToDevice(
+  item: HistoryItem
+): Promise<{ success: boolean; method: 'share' | 'filesystem' | 'download' | 'cancelled' | 'failed'; message?: string }> {
+  if (!item.blob) {
+    return {
+      success: false,
+      method: 'failed',
+      message: 'Berkas lokal belum ada atau telah terhapus. Silakan unduh baru dari halaman utama.'
+    };
+  }
+
+  // Ensure blob has proper media MIME type
+  const mimeType = getMimeType(item.extension);
+  const properBlob = item.blob.type === mimeType ? item.blob : new Blob([item.blob], { type: mimeType });
+  const file = new File([properBlob], item.filename, {
+    type: mimeType,
+    lastModified: Date.now()
+  });
+
+  // 1. Primary for Mobile Devices (Android / iOS): Native Web Share API
+  // This opens the native Android/iOS system sheet where user can tap "Simpan ke Galeri / Foto / Google Photos"
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: item.title,
+          text: `Simpan ke Galeri: ${item.title}`
+        });
+        return {
+          success: true,
+          method: 'share',
+          message: 'Menu Galeri / Foto HP terbuka! Berkas masuk langsung ke Galeri perangkat.'
+        };
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        return { success: true, method: 'cancelled' };
+      }
+      console.warn('Web Share notice:', err);
     }
   }
 
-  // Fallback if Blob was evicted: download via proxy
-  if (item.sourceUrl) {
-    const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(
-      item.sourceUrl
-    )}&filename=${encodeURIComponent(item.filename)}`;
+  // 2. Desktop / Chromium File System Access API
+  // Directly writes binary bytes from memory to user's chosen folder without browser download prompt
+  if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+    try {
+      const handle = await (window as any).showSaveFilePicker({
+        suggestedName: item.filename,
+        types: [
+          {
+            description: item.mediaType === 'video' ? 'Video File' : item.mediaType === 'audio' ? 'Audio File' : item.mediaType === 'photos' ? 'ZIP Archive' : 'Media File',
+            accept: { [mimeType]: [`.${item.extension}`] }
+          }
+        ]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(properBlob);
+      await writable.close();
+      return {
+        success: true,
+        method: 'filesystem',
+        message: 'Berkas berhasil disimpan langsung dari memori lokal ke folder pilihan Anda.'
+      };
+    } catch (fsErr: any) {
+      if (fsErr.name === 'AbortError') {
+        return { success: true, method: 'cancelled' };
+      }
+      console.warn('File System Access notice:', fsErr);
+    }
+  }
+
+  // 3. Direct In-Memory Blob Save (100% Offline, 0 KB Internet Data)
+  try {
+    const blobUrl = URL.createObjectURL(properBlob);
     const a = document.createElement('a');
     a.style.display = 'none';
-    a.href = proxyUrl;
+    a.href = blobUrl;
     a.download = item.filename;
     document.body.appendChild(a);
     a.click();
+
     setTimeout(() => {
       try {
         document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
       } catch {}
-    }, 5000);
-    return true;
-  }
+    }, 15000);
 
-  return false;
+    return {
+      success: true,
+      method: 'download',
+      message: 'Berkas dipindahkan langsung dari memori lokal ke Galeri / Download perangkat (0 KB kuota internet).'
+    };
+  } catch (e: any) {
+    console.error('Save from blob failed:', e);
+    return { success: false, method: 'failed', message: e.message };
+  }
 }
 
 export function notifyHistoryChange() {

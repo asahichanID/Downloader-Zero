@@ -58,24 +58,47 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const contentLength = remoteRes.headers.get('content-length');
+    const rawContentType = remoteRes.headers.get('content-type') || '';
+    if (rawContentType.includes('application/json') || (rawContentType.includes('text/html') && !sanitizedFilename.endsWith('.html'))) {
+      res.status(400).send('Tautan unduhan tidak valid atau berkas belum siap dari server sumber.');
+      return;
+    }
 
-    // Force automatic direct attachment download
-    res.setHeader('Content-Type', 'application/octet-stream');
+    // Determine proper MIME type instead of generic octet-stream
+    let mimeType = 'application/octet-stream';
+    if (sanitizedFilename.endsWith('.mp4')) mimeType = 'video/mp4';
+    else if (sanitizedFilename.endsWith('.mp3')) mimeType = 'audio/mpeg';
+    else if (sanitizedFilename.endsWith('.jpg') || sanitizedFilename.endsWith('.jpeg')) mimeType = 'image/jpeg';
+    else if (sanitizedFilename.endsWith('.png')) mimeType = 'image/png';
+    else if (sanitizedFilename.endsWith('.zip')) mimeType = 'application/zip';
+    else if (rawContentType && !rawContentType.includes('text/')) mimeType = rawContentType;
+
+    res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`);
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.setHeader('X-Content-Type-Options', 'nosniff');
 
-    if (contentLength) {
+    const contentLength = remoteRes.headers.get('content-length');
+    const contentEncoding = remoteRes.headers.get('content-encoding');
+    if (contentLength && !contentEncoding) {
       res.setHeader('Content-Length', contentLength);
     }
 
     const reader = remoteRes.body.getReader();
+    req.on?.('close', () => {
+      try {
+        reader.cancel();
+      } catch {}
+    });
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      res.write(value);
+      if (value) {
+        res.write(Buffer.from(value));
+      }
     }
     res.end();
   } catch (err: any) {

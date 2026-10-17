@@ -51,32 +51,63 @@ export const MediaResult: React.FC<MediaResultProps> = ({
 
     try {
       let targetDownloadUrl = fmt.url;
+      let jobId = fmt.jobId;
 
       // If format requires async conversion job (e.g. YouTube loader)
-      if (fmt.jobId) {
-        setDownloadStatusText('Memproses konversi resolusi/audio...');
-        let finished = false;
-        let attempts = 0;
-
-        while (!finished && attempts < 25) {
-          attempts++;
-          await new Promise((r) => setTimeout(r, 1200));
-
+      if (!fmt.isDirect || fmt.url.includes('loader.to') || fmt.id.startsWith('yt-')) {
+        if (!jobId) {
+          setDownloadStatusText('Memulai antrean konversi media...');
           try {
-            const progRes = await fetch(`/api/progress/${encodeURIComponent(fmt.jobId)}`);
-            if (progRes.ok) {
-              const pData = await progRes.json();
-              if (pData.success && pData.downloadUrl) {
-                targetDownloadUrl = pData.downloadUrl;
-                finished = true;
-                break;
-              } else if (typeof pData.progress === 'number' && pData.progress > 0) {
-                setDownloadProgress(Math.min(85, Math.round(pData.progress)));
-                setDownloadStatusText(pData.statusText || 'Sedang memproses konversi video...');
+            const startRes = await fetch('/api/start-job', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                format: fmt.resolution?.replace(/p$/i, '') || (fmt.type === 'audio' ? 'mp3' : '1080'),
+                url: media.url
+              })
+            });
+            if (startRes.ok) {
+              const startData = await startRes.json();
+              if (startData.downloadUrl) {
+                targetDownloadUrl = startData.downloadUrl;
+              } else if (startData.id) {
+                jobId = startData.id;
               }
             }
-          } catch {
-            // Keep polling
+          } catch (e) {
+            console.warn('Start job notice:', e);
+          }
+        }
+
+        if (jobId && (!targetDownloadUrl.startsWith('http') || targetDownloadUrl.includes('loader.to'))) {
+          setDownloadStatusText('Sedang memproses konversi video...');
+          let finished = false;
+          let attempts = 0;
+
+          while (!finished && attempts < 35) {
+            attempts++;
+            await new Promise((r) => setTimeout(r, 1200));
+
+            try {
+              const progRes = await fetch(`/api/progress/${encodeURIComponent(jobId)}`);
+              if (progRes.ok) {
+                const pData = await progRes.json();
+                if (pData.success && pData.downloadUrl) {
+                  targetDownloadUrl = pData.downloadUrl;
+                  finished = true;
+                  break;
+                } else if (typeof pData.progress === 'number' && pData.progress > 0) {
+                  setDownloadProgress(Math.min(85, Math.round(pData.progress)));
+                  setDownloadStatusText(pData.statusText || 'Sedang memproses konversi...');
+                }
+              }
+            } catch {
+              // Keep polling
+            }
+          }
+
+          if (!finished || !targetDownloadUrl.startsWith('http') || targetDownloadUrl.includes('loader.to')) {
+            throw new Error('Waktu tunggu konversi habis. Silakan coba kembali.');
           }
         }
       }
@@ -100,15 +131,14 @@ export const MediaResult: React.FC<MediaResultProps> = ({
         // Fallback to direct blob
         finalBlob = await response.blob();
         saveBlobLocally(finalBlob, filename);
-      } else {
-        const chunks: BlobPart[] = [];
+        const chunks: Uint8Array[] = [];
         let received = 0;
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           if (value) {
-            chunks.push(value.buffer as ArrayBuffer);
+            chunks.push(value);
             received += value.length;
           }
 
@@ -121,7 +151,8 @@ export const MediaResult: React.FC<MediaResultProps> = ({
           setDownloadStatusText(`Mengunduh berkas: ${formatLoadedBytes(received)}...`);
         }
 
-        finalBlob = new Blob(chunks, { type: 'application/octet-stream' });
+        const mimeType = fmt.type === 'video' ? 'video/mp4' : fmt.type === 'audio' ? 'audio/mpeg' : 'application/octet-stream';
+        finalBlob = new Blob(chunks, { type: mimeType });
         saveBlobLocally(finalBlob, filename);
       }
 

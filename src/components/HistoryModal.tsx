@@ -27,6 +27,7 @@ import {
   deleteHistoryItem,
   clearAllHistory,
   saveHistoryItemToDevice,
+  removeCorruptedHistoryItems,
   getCycleStatus
 } from '../services/historyStorage.ts';
 
@@ -48,10 +49,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
     url: string;
   } | null>(null);
 
-  // Load history from IndexedDB
+  // Load history from IndexedDB and auto-remove any old corrupted items from previous bug
   const refreshHistory = async () => {
     setIsLoading(true);
     try {
+      await removeCorruptedHistoryItems();
       const data = await getAllHistory();
       setItems(data);
     } catch (e) {
@@ -105,12 +107,22 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
   if (!isOpen) return null;
 
   // Handle instant save to device/gallery
-  const handleSaveToDevice = (item: HistoryItem) => {
-    const success = saveHistoryItemToDevice(item);
-    if (success) {
-      showToast(`Berkas "${item.title.slice(0, 25)}..." berhasil disimpan ke galeri/perangkat!`);
-    } else {
-      showToast('Gagal mengekspor berkas.');
+  const handleSaveToDevice = async (item: HistoryItem) => {
+    try {
+      const res = await saveHistoryItemToDevice(item);
+      if (res.method === 'share') {
+        showToast('✓ Menu Galeri / Foto HP terbuka! Berkas masuk langsung ke Galeri.');
+      } else if (res.method === 'filesystem') {
+        showToast(`✓ Berkas "${item.title.slice(0, 20)}..." tersimpan ke folder pilihan.`);
+      } else if (res.method === 'download') {
+        showToast(`✓ Berkas dipindahkan dari memori offline ke Galeri / Download HP (0 KB kuota).`);
+      } else if (res.method === 'cancelled') {
+        // User cancelled
+      } else {
+        showToast(res.message || 'Gagal mengekspor berkas.');
+      }
+    } catch {
+      showToast('Gagal memproses penyimpanan ke galeri.');
     }
   };
 
@@ -403,17 +415,22 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                       <span>·</span>
                       <span>{new Date(item.downloadedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
+
+                    <div className="flex items-center gap-1.5 mt-1 text-[10px] text-emerald-400 font-semibold">
+                      <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+                      <span>Tersimpan di Penyimpanan Lokal (0 KB Kuota)</span>
+                    </div>
                   </div>
                 </div>
 
                 {/* Action Buttons */}
                 <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                   {/* Preview / Play button */}
-                  {item.blob && (item.mediaType === 'video' || item.mediaType === 'audio') && (
+                  {item.blob && (
                     <button
                       type="button"
                       onClick={() => handleOpenPreview(item)}
-                      title="Putar Pratinjau Berkas"
+                      title="Lihat / Putar Berkas Offline"
                       className="h-9 px-2.5 rounded-xl bg-[#0c224a] hover:bg-[#12316b] border border-blue-800 hover:border-cyan-400 text-cyan-300 hover:text-white flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-all"
                     >
                       <Play className="h-3.5 w-3.5 fill-current" />
@@ -425,7 +442,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                   <button
                     type="button"
                     onClick={() => handleSaveToDevice(item)}
-                    title="Simpan langsung ke Galeri / Folder Download tanpa kuota"
+                    title="Simpan langsung ke Galeri HP tanpa unduh ulang"
                     className="h-9 px-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/30 hover:shadow-cyan-500/50 cursor-pointer transition-all active:scale-95"
                   >
                     <HardDrive className="h-3.5 w-3.5" />
@@ -447,13 +464,13 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
           )}
         </div>
 
-        {/* Video / Audio Preview Overlay */}
+        {/* Video / Audio / Photo Preview Overlay */}
         {previewItem && (
           <div className="absolute inset-0 z-50 rounded-3xl bg-slate-950/95 p-4 flex flex-col justify-between border border-cyan-400 animate-in fade-in">
             <div className="flex items-center justify-between pb-2 border-b border-blue-900/60">
               <div className="min-w-0 flex-1 pr-2">
                 <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">
-                  Pratinjau Berkas Offline Lokal
+                  Pratinjau Berkas Offline Lokal (Tanpa Internet)
                 </span>
                 <h4 className="text-xs sm:text-sm font-bold text-white truncate">
                   {previewItem.item.title}
@@ -485,10 +502,30 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                     className="w-full mt-2 accent-cyan-400"
                   />
                 </div>
+              ) : previewItem.item.extension === 'zip' ? (
+                <div className="w-full max-w-md p-6 rounded-2xl bg-[#09152e] border border-cyan-500/40 text-center space-y-3">
+                  <div className="w-16 h-16 mx-auto rounded-full bg-pink-950 border border-pink-400 flex items-center justify-center text-pink-400">
+                    <Images className="h-8 w-8" />
+                  </div>
+                  <div>
+                    <h5 className="text-sm font-bold text-white">{previewItem.item.title}</h5>
+                    <p className="text-xs text-slate-400">Arsip Koleksi Foto Slide HD (ZIP)</p>
+                  </div>
+                  <p className="text-xs text-cyan-300">
+                    Berkas ZIP ini tersimpan lengkap di memori HP Anda. Tekan tombol di bawah untuk langsung menyimpannya ke Galeri / File.
+                  </p>
+                </div>
+              ) : previewItem.item.extension === 'jpg' || previewItem.item.extension === 'jpeg' || previewItem.item.extension === 'png' ? (
+                <img
+                  src={previewItem.url}
+                  alt={previewItem.item.title}
+                  className="max-h-[50vh] max-w-full rounded-2xl border border-cyan-500/40 shadow-xl object-contain bg-black"
+                />
               ) : (
                 <video
                   src={previewItem.url}
                   controls
+                  playsInline
                   autoPlay
                   className="max-h-[50vh] max-w-full rounded-2xl border border-cyan-500/40 shadow-xl bg-black"
                 />

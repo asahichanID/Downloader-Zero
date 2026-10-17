@@ -109,30 +109,63 @@ export default function App() {
 
     try {
       let finalUrl = targetFormat.url;
+      let jobId = targetFormat.jobId;
 
-      // Handle async polling jobs (e.g. YouTube loader)
-      if (targetFormat.jobId) {
-        setDownloadStatusText('Memproses konversi resolusi...');
-        let finished = false;
-        let attempts = 0;
-
-        while (!finished && attempts < 20) {
-          attempts++;
-          await new Promise((r) => setTimeout(r, 1200));
-          setDownloadProgress((prev) => Math.min(85, prev + 5));
-
+      // If format requires async conversion job (e.g. YouTube loader)
+      if (!targetFormat.isDirect || targetFormat.url.includes('loader.to') || targetFormat.id.startsWith('yt-')) {
+        if (!jobId) {
+          setDownloadStatusText('Memulai antrean konversi media...');
           try {
-            const progRes = await fetch(`/api/progress/${encodeURIComponent(targetFormat.jobId)}`);
-            if (progRes.ok) {
-              const pData = await progRes.json();
-              if (pData.success && pData.downloadUrl) {
-                finalUrl = pData.downloadUrl;
-                finished = true;
-                break;
+            const startRes = await fetch('/api/start-job', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                format: targetFormat.resolution?.replace(/p$/i, '') || (targetFormat.type === 'audio' ? 'mp3' : '1080'),
+                url: currentMedia.url
+              })
+            });
+            if (startRes.ok) {
+              const startData = await startRes.json();
+              if (startData.downloadUrl) {
+                finalUrl = startData.downloadUrl;
+              } else if (startData.id) {
+                jobId = startData.id;
               }
             }
           } catch (e) {
-            console.warn('Progress poll check:', e);
+            console.warn('Start job notice:', e);
+          }
+        }
+
+        if (jobId && (!finalUrl.startsWith('http') || finalUrl.includes('loader.to'))) {
+          setDownloadStatusText(`Sedang memproses ${targetFormat.quality}...`);
+          let finished = false;
+          let attempts = 0;
+
+          while (!finished && attempts < 35) {
+            attempts++;
+            await new Promise((r) => setTimeout(r, 1200));
+            setDownloadProgress((prev) => Math.min(85, prev + 2));
+
+            try {
+              const progRes = await fetch(`/api/progress/${encodeURIComponent(jobId)}`);
+              if (progRes.ok) {
+                const pData = await progRes.json();
+                if (pData.success && pData.downloadUrl) {
+                  finalUrl = pData.downloadUrl;
+                  finished = true;
+                  break;
+                } else if (pData.statusText) {
+                  setDownloadStatusText(pData.statusText);
+                }
+              }
+            } catch (e) {
+              console.warn('Progress poll check:', e);
+            }
+          }
+
+          if (!finished || !finalUrl.startsWith('http') || finalUrl.includes('loader.to')) {
+            throw new Error('Waktu tunggu konversi habis. Silakan pilih resolusi lain atau coba kembali.');
           }
         }
       }
@@ -144,54 +177,53 @@ export default function App() {
       
       try {
         const response = await fetch(downloadHref);
-        if (response.ok) {
-          const blob = await response.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = blobUrl;
-          link.download = filename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-
-          // Automatically cache in local IndexedDB history
-          try {
-            await saveDownloadedMedia({
-              sourceUrl: finalUrl,
-              platform: currentMedia.platform,
-              title: currentMedia.title || 'Media DownloaderZero',
-              author: currentMedia.author || 'Creator',
-              thumbnail: currentMedia.thumbnail || '',
-              quality: targetFormat.quality,
-              resolution: targetFormat.resolution,
-              mediaType: targetFormat.type,
-              extension: targetFormat.extension,
-              filename,
-              filesize: targetFormat.filesize || formatBytes(blob.size),
-              filesizeBytes: blob.size,
-              blob
-            });
-          } catch (histErr) {
-            console.warn('History save notice:', histErr);
-          }
-        } else {
-          // Direct fallback link
-          const link = document.createElement('a');
-          link.href = downloadHref;
-          link.download = filename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
+        if (!response.ok) {
+          const errText = await response.text().catch(() => '');
+          throw new Error(errText || `Gagal mengunduh berkas dari server (kode: ${response.status})`);
         }
-      } catch {
-        // Fallback
+
+        const rawBlob = await response.blob();
+        if (rawBlob.size <= 60 && targetFormat.type !== 'photos') {
+          const text = await rawBlob.text();
+          if (text.includes('gagal') || text.includes('Error')) {
+            throw new Error(text);
+          }
+        }
+
+        const targetMime = targetFormat.type === 'video' ? 'video/mp4' : targetFormat.type === 'audio' ? 'audio/mpeg' : rawBlob.type || 'application/octet-stream';
+        const blob = rawBlob.type === targetMime ? rawBlob : new Blob([rawBlob], { type: targetMime });
+
+        const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = downloadHref;
+        link.href = blobUrl;
         link.download = filename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+
+        // Automatically cache in local IndexedDB history
+        try {
+          await saveDownloadedMedia({
+            sourceUrl: finalUrl,
+            platform: currentMedia.platform,
+            title: currentMedia.title || 'Media DownloaderZero',
+            author: currentMedia.author || 'Creator',
+            thumbnail: currentMedia.thumbnail || '',
+            quality: targetFormat.quality,
+            resolution: targetFormat.resolution,
+            mediaType: targetFormat.type,
+            extension: targetFormat.extension,
+            filename,
+            filesize: targetFormat.filesize || formatBytes(blob.size),
+            filesizeBytes: blob.size,
+            blob
+          });
+        } catch (histErr) {
+          console.warn('History save notice:', histErr);
+        }
+      } catch (fetchErr: any) {
+        throw new Error(fetchErr.message || 'Gagal mengunduh berkas media.');
       }
 
       setDownloadProgress(100);
