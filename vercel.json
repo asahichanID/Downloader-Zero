@@ -1,22 +1,15 @@
 {
-  "version": 2,
+  "framework": "vite",
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/api/progress/(.*)",
       "destination": "/api/progress?jobId=$1"
     },
     {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
-  ],
-  "functions": {
-    "api/*.ts": {
-      "maxDuration": 30
-    }
-  }
+  ]
 }
