@@ -177,6 +177,10 @@ export default function App() {
         }
       }
 
+      if (!finalUrl || typeof finalUrl !== 'string' || (!finalUrl.startsWith('http') && !finalUrl.startsWith('//'))) {
+        throw new Error('Tautan unduhan tidak valid atau berkas belum siap dari server sumber.');
+      }
+
       setDownloadProgress(85);
       setDownloadStatusText('Mengunduh & menyimpan berkas ke riwayat lokal...');
 
@@ -352,6 +356,11 @@ export default function App() {
         }
       }
 
+      // If content is a Spotify Playlist / Album, SpotifyPlaylistSlideCard handles slide preview & background ZIP
+      if (media.platform === 'spotify' && media.isAudioPlaylist) {
+        return;
+      }
+
       // 2. Find best matching format
       const filteredFormats = media.formats.filter((f) => f.type === mediaType);
       const searchPool = filteredFormats.length > 0 ? filteredFormats : media.formats;
@@ -367,7 +376,7 @@ export default function App() {
           searchPool[0];
       }
 
-      if (chosenFormat) {
+      if (chosenFormat && chosenFormat.url && (chosenFormat.url.startsWith('http') || chosenFormat.isDirect === false)) {
         await executeDownload(chosenFormat, media);
       }
     } catch (err: any) {

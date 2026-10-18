@@ -121,12 +121,68 @@ async function startServer() {
   // 4. Proxy stream for instant automatic download attachment
   app.get('/api/proxy-download', async (req: Request, res: Response) => {
     try {
-      const targetUrl = req.query.url as string;
+      // 1. Extract targetUrl reliably from query or raw URL
+      let targetUrl = '';
+      if (req.query?.url && typeof req.query.url === 'string') {
+        targetUrl = req.query.url;
+      } else if (Array.isArray(req.query?.url) && typeof req.query.url[0] === 'string') {
+        targetUrl = req.query.url[0];
+      }
+
+      // Check raw request URL if query param was truncated by unencoded ampersands
+      if (!targetUrl || !targetUrl.startsWith('http')) {
+        const rawReqUrl = req.url || '';
+        const urlMatch = rawReqUrl.match(/[?&]url=([^&]+)/);
+        if (urlMatch && urlMatch[1]) {
+          try {
+            targetUrl = decodeURIComponent(urlMatch[1]);
+          } catch {
+            targetUrl = urlMatch[1];
+          }
+        }
+      }
+
+      if (targetUrl) {
+        targetUrl = targetUrl.trim().replace(/^["']|["']$/g, '');
+        if (targetUrl.startsWith('//')) {
+          targetUrl = 'https:' + targetUrl;
+        }
+        if (targetUrl.startsWith('http%3A') || targetUrl.startsWith('https%3A')) {
+          try {
+            targetUrl = decodeURIComponent(targetUrl);
+          } catch {}
+        }
+      }
+
       const rawFilename = (req.query.filename as string) || 'DownloaderZero_Media.mp4';
 
-      if (!targetUrl || !targetUrl.startsWith('http')) {
+      if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
         res.status(400).send('Target URL tidak valid.');
         return;
+      }
+
+      // Auto-resolve Spotify track page to real mp3 audio preview
+      if (targetUrl.includes('spotify.com/track/') || targetUrl.includes('spotify.com/intl-')) {
+        try {
+          const spMatch = targetUrl.match(/track\/([a-zA-Z0-9]+)/);
+          if (spMatch && spMatch[1]) {
+            const embedRes = await fetch(`https://open.spotify.com/embed/track/${spMatch[1]}`, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              },
+              signal: AbortSignal.timeout(6000)
+            });
+            if (embedRes.ok) {
+              const html = await embedRes.text();
+              const prevMatch = html.match(/https:\/\/p\.scdn\.co\/mp3-preview\/[a-zA-Z0-9]+/);
+              if (prevMatch && prevMatch[0]) {
+                targetUrl = prevMatch[0];
+              }
+            }
+          }
+        } catch (spErr) {
+          console.warn('Spotify track preview resolve notice:', spErr);
+        }
       }
 
       const sanitizedFilename = rawFilename.replace(/[^a-zA-Z0-9_.-]/g, '_');

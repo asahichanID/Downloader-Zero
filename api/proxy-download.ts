@@ -11,12 +11,60 @@ export default async function handler(req: any, res: any) {
     const parsedUrl = new URL(req.url || '', `http://${req.headers?.host || 'localhost'}`);
     const query = Object.fromEntries(parsedUrl.searchParams.entries());
 
-    const targetUrl = query.url || req.query?.url || '';
+    let targetUrl = query.url || req.query?.url || '';
+    if (!targetUrl || !targetUrl.startsWith('http')) {
+      const rawReqUrl = req.url || '';
+      const urlMatch = rawReqUrl.match(/[?&]url=([^&]+)/);
+      if (urlMatch && urlMatch[1]) {
+        try {
+          targetUrl = decodeURIComponent(urlMatch[1]);
+        } catch {
+          targetUrl = urlMatch[1];
+        }
+      }
+    }
+
+    if (targetUrl) {
+      targetUrl = targetUrl.trim().replace(/^["']|["']$/g, '');
+      if (targetUrl.startsWith('//')) {
+        targetUrl = 'https:' + targetUrl;
+      }
+      if (targetUrl.startsWith('http%3A') || targetUrl.startsWith('https%3A')) {
+        try {
+          targetUrl = decodeURIComponent(targetUrl);
+        } catch {}
+      }
+    }
+
     const rawFilename = query.filename || req.query?.filename || 'DownloaderZero_Media.mp4';
 
-    if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('http')) {
+    if (!targetUrl || typeof targetUrl !== 'string' || !/^https?:\/\//i.test(targetUrl)) {
       res.status(400).send('Target URL tidak valid.');
       return;
+    }
+
+    // Auto-resolve Spotify track page to real mp3 audio preview
+    if (targetUrl.includes('spotify.com/track/') || targetUrl.includes('spotify.com/intl-')) {
+      try {
+        const spMatch = targetUrl.match(/track\/([a-zA-Z0-9]+)/);
+        if (spMatch && spMatch[1]) {
+          const embedRes = await fetch(`https://open.spotify.com/embed/track/${spMatch[1]}`, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            signal: AbortSignal.timeout(6000)
+          });
+          if (embedRes.ok) {
+            const html = await embedRes.text();
+            const prevMatch = html.match(/https:\/\/p\.scdn\.co\/mp3-preview\/[a-zA-Z0-9]+/);
+            if (prevMatch && prevMatch[0]) {
+              targetUrl = prevMatch[0];
+            }
+          }
+        }
+      } catch (spErr) {
+        console.warn('Spotify track preview resolve notice:', spErr);
+      }
     }
 
     const sanitizedFilename = rawFilename.replace(/[^a-zA-Z0-9_.-]/g, '_');
