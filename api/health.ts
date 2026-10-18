@@ -12,7 +12,7 @@ export default function handler(req: any, res: any) {
     status: 'online',
     service: 'DownloaderZero (DZ) Media Engine',
     version: '2026.1',
-    platforms: ['youtube', 'tiktok', 'facebook', 'instagram', 'pinterest'],
+    platforms: ['youtube', 'tiktok', 'facebook', 'instagram', 'pinterest', 'spotify'],
     environment: 'vercel-serverless'
   });
 }

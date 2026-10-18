@@ -9,6 +9,7 @@ interface QualitySelectorCardProps {
   setSelectedVideoRes: (res: string) => void;
   selectedAudioQuality: string;
   setSelectedAudioQuality: (qual: string) => void;
+  isAudioOnly?: boolean;
 }
 
 export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
@@ -17,7 +18,8 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
   selectedVideoRes,
   setSelectedVideoRes,
   selectedAudioQuality,
-  setSelectedAudioQuality
+  setSelectedAudioQuality,
+  isAudioOnly = false
 }) => {
   const videoOptions = [
     { id: '360p', label: '360p', desc: 'Ringan' },
@@ -37,6 +39,8 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
     { id: '320', label: '320 kbps', desc: 'Studio' }
   ];
 
+  const currentMediaType = isAudioOnly ? 'audio' : mediaType;
+
   return (
     <div className="dz-card rounded-2xl p-4 sm:p-5 w-full shadow-lg space-y-4 select-none transition-all">
       {/* Header: Crown + Title + Sub-mode badge */}
@@ -44,41 +48,53 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
         <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base tracking-wide">
           <Crown className="h-4 w-4 text-cyan-400 fill-cyan-400 drop-shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
           <span>
-            {mediaType === 'video' ? 'Pilih Resolusi Video' : 'Pilih Kualitas Audio MP3'}
+            {currentMediaType === 'video' ? 'Pilih Resolusi Video' : 'Pilih Kualitas Audio MP3'}
           </span>
+          {isAudioOnly && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-emerald-950/80 text-emerald-400 border border-emerald-500/50">
+              Spotify Audio Saja
+            </span>
+          )}
         </div>
 
         {/* Mode Indicator Button to switch cleanly */}
-        <div className="flex items-center bg-[#050e24] p-1 rounded-xl border border-blue-900/60 text-xs">
-          <button
-            type="button"
-            onClick={() => setMediaType('video')}
-            className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-              mediaType === 'video'
-                ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Film className="h-3 w-3" />
-            <span>Video</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMediaType('audio')}
-            className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-              mediaType === 'audio'
-                ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Music className="h-3 w-3" />
-            <span>Audio</span>
-          </button>
-        </div>
+        {!isAudioOnly ? (
+          <div className="flex items-center bg-[#050e24] p-1 rounded-xl border border-blue-900/60 text-xs">
+            <button
+              type="button"
+              onClick={() => setMediaType('video')}
+              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                mediaType === 'video'
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Film className="h-3 w-3" />
+              <span>Video</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMediaType('audio')}
+              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                mediaType === 'audio'
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Music className="h-3 w-3" />
+              <span>Audio</span>
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-[11px] font-bold text-emerald-300">
+            <Music className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Format MP3</span>
+          </div>
+        )}
       </div>
 
       {/* DEDICATED VIDEO RESOLUTION VIEW (Audio completely separated) */}
-      {mediaType === 'video' && (
+      {!isAudioOnly && mediaType === 'video' && (
         <div className="space-y-3 animate-in fade-in duration-150">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

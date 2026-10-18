@@ -22,7 +22,7 @@ async function startServer() {
       status: 'online',
       service: 'DownloaderZero (DZ) Media Engine',
       version: '2026.1',
-      platforms: ['youtube', 'tiktok', 'facebook', 'instagram', 'pinterest']
+      platforms: ['youtube', 'tiktok', 'facebook', 'instagram', 'pinterest', 'spotify']
     });
   });
 
@@ -143,6 +143,8 @@ async function startServer() {
         referer = 'https://www.youtube.com/';
       } else if (targetUrl.includes('pinterest') || targetUrl.includes('pinimg')) {
         referer = 'https://www.pinterest.com/';
+      } else if (targetUrl.includes('spotify') || targetUrl.includes('scdn.co')) {
+        referer = 'https://open.spotify.com/';
       }
 
       let response = await fetch(targetUrl, {

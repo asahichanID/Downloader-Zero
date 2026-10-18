@@ -108,6 +108,21 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
           </svg>
         </div>
       )
+    },
+    {
+      id: 'spotify' as PlatformType,
+      name: 'Spotify',
+      subtitle: 'Audio MP3 Jernih, Single Track & Koleksi Playlist ZIP',
+      badge: 'Khusus Audio & Playlist',
+      accentColor: 'border-emerald-500/60 shadow-emerald-500/20 hover:border-emerald-400',
+      activeRing: 'ring-2 ring-emerald-500 bg-emerald-950/30 border-emerald-500',
+      icon: (
+        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#1DB954] flex items-center justify-center shadow-lg shadow-emerald-500/40 shrink-0">
+          <svg className="w-6 h-6 text-black fill-current" viewBox="0 0 24 24">
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.494 17.303c-.217.356-.677.469-1.033.252-2.83-1.73-6.393-2.12-10.59-1.162-.407.094-.814-.16-.907-.568-.094-.407.16-.814.568-.907 4.593-1.049 8.528-.607 11.71 1.352.356.217.469.677.252 1.033zm1.464-3.257c-.273.444-.855.586-1.299.313-3.24-1.992-8.18-2.568-12.012-1.405-.498.152-1.032-.132-1.184-.63-.152-.498.132-1.032.63-1.184 4.382-1.33 9.821-.689 13.552 1.607.444.273.586.855.313 1.299zm.126-3.398c-3.886-2.308-10.297-2.52-14.018-1.391-.595.181-1.233-.16-1.414-.755-.181-.595.16-1.233.755-1.414 4.277-1.299 11.352-1.05 15.828 1.607.534.317.708 1.01.391 1.544-.317.534-1.01.708-1.544.391z"/>
+          </svg>
+        </div>
+      )
     }
   ];
 

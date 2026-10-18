@@ -1,6 +1,19 @@
-export type PlatformType = 'youtube' | 'tiktok' | 'facebook' | 'instagram' | 'pinterest' | 'unknown';
+export type PlatformType = 'youtube' | 'tiktok' | 'facebook' | 'instagram' | 'pinterest' | 'spotify' | 'unknown';
 
 export type MediaType = 'video' | 'audio' | 'photos';
+
+export interface AudioTrack {
+  id: string;
+  title: string;
+  artist: string;
+  album?: string;
+  thumbnail: string;
+  duration?: number;
+  durationFormatted?: string;
+  url: string;
+  previewUrl?: string;
+  filesize?: string;
+}
 
 export interface MediaFormat {
   id: string;
@@ -29,6 +42,8 @@ export interface MediaMetadata {
   formats: MediaFormat[];
   images?: string[];
   isPhotoSlide?: boolean;
+  tracks?: AudioTrack[];
+  isAudioPlaylist?: boolean;
   source: string;
   createdAt: string;
 }

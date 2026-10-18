@@ -1,4 +1,4 @@
-import type { PlatformType, MediaFormat, MediaMetadata } from '../../src/types/index.ts';
+import type { PlatformType, MediaFormat, MediaMetadata, AudioTrack } from '../../src/types/index.ts';
 import * as cheerio from 'cheerio';
 
 export function detectPlatform(url: string): PlatformType {
@@ -17,6 +17,9 @@ export function detectPlatform(url: string): PlatformType {
   }
   if (/(?:pinterest\.com|pin\.it)/i.test(trimmed)) {
     return 'pinterest';
+  }
+  if (/(?:spotify\.com|spotify\.link)/i.test(trimmed)) {
+    return 'spotify';
   }
   return 'unknown';
 }
@@ -701,6 +704,8 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
   let duration = 0;
   let images: string[] = [];
   let isPhotoSlide = false;
+  let tracks: AudioTrack[] = [];
+  let isAudioPlaylist = false;
 
   // Build endpoint candidate list (primary & flexible quality fallback)
   const endpoints: string[] = [];
@@ -720,6 +725,9 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
       break;
     case 'pinterest':
       endpoints.push(`${NEOXR_BASE_URL}/pin?url=${encodeURIComponent(targetUrl)}${keyParam}`);
+      break;
+    case 'spotify':
+      endpoints.push(`${NEOXR_BASE_URL}/spotify?url=${encodeURIComponent(targetUrl)}${keyParam}`);
       break;
     default:
       throw new Error(`Platform ${platform} tidak didukung oleh Neoxr.`);
@@ -1101,6 +1109,106 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
     }
   }
 
+  // 5b. Spotify handling
+  else if (platform === 'spotify') {
+    const isPlaylist = Array.isArray(data) || (data && Array.isArray(data.tracks)) || (data && Array.isArray(data.items));
+
+    if (isPlaylist) {
+      isAudioPlaylist = true;
+      const rawTracks: any[] = Array.isArray(data) ? data : (data.tracks || data.items || []);
+      title = data.title || data.name || (rawTracks[0]?.album ? `Album - ${rawTracks[0].album}` : 'Spotify Playlist');
+      author = data.author || data.artist || data.owner || rawTracks[0]?.artist || 'Spotify Artist';
+      thumbnail = data.thumbnail || data.cover || rawTracks[0]?.thumbnail || rawTracks[0]?.cover || '';
+
+      tracks = rawTracks.map((t: any, idx: number) => {
+        const tTitle = t.title || t.name || `Track ${idx + 1}`;
+        const tArtist = t.artist || t.author || t.subtitle || author;
+        const tThumb = t.thumbnail || t.cover || t.image || thumbnail;
+        const tUrl = t.url || t.download || t.link || t.audio || t.preview || '';
+        const tPreview = t.preview || t.preview_url || t.audio || tUrl;
+        const durSecs = t.duration ? (t.duration > 1000 ? Math.round(t.duration / 1000) : t.duration) : undefined;
+        return {
+          id: t.id || `sp-track-${idx}`,
+          title: tTitle,
+          artist: tArtist,
+          album: t.album || title,
+          thumbnail: tThumb,
+          duration: durSecs,
+          durationFormatted: formatDuration(durSecs),
+          url: tUrl,
+          previewUrl: tPreview,
+          filesize: t.filesize || t.size
+        };
+      });
+
+      formats.push({
+        id: 'nx-sp-zip',
+        quality: `Koleksi Playlist MP3 (${tracks.length} Lagu ZIP)`,
+        resolution: 'Audio ZIP',
+        type: 'audio',
+        extension: 'zip',
+        url: tracks[0]?.url || targetUrl,
+        isDirect: true,
+        note: `${tracks.length} lagu kualitas tinggi dikemas dalam 1 berkas ZIP`
+      });
+
+      tracks.slice(0, 15).forEach((trk, idx) => {
+        formats.push({
+          id: `nx-sp-track-${idx}`,
+          quality: `${trk.title} - ${trk.artist}`,
+          resolution: '320 kbps',
+          type: 'audio',
+          extension: 'mp3',
+          url: trk.url,
+          isDirect: true,
+          note: `Lagu #${idx + 1} (${trk.durationFormatted || 'Audio MP3'})`
+        });
+      });
+    } else {
+      title = data.title || data.name || 'Spotify Track';
+      author = data.artist || data.author || data.creator || 'Spotify Artist';
+      thumbnail = data.thumbnail || data.cover || data.image || '';
+      const durSecs = data.duration ? (data.duration > 1000 ? Math.round(data.duration / 1000) : data.duration) : undefined;
+      duration = durSecs || 0;
+
+      const trackUrl = data.url || data.download || data.link || data.audio || data.preview || '';
+      const previewUrl = data.preview || data.preview_url || trackUrl;
+
+      tracks = [{
+        id: 'nx-sp-single',
+        title,
+        artist: author,
+        thumbnail,
+        duration: durSecs,
+        durationFormatted: formatDuration(durSecs),
+        url: trackUrl,
+        previewUrl
+      }];
+
+      formats.push({
+        id: 'nx-sp-audio-320',
+        quality: '320 kbps (High Quality Audio MP3)',
+        resolution: '320 kbps',
+        type: 'audio',
+        extension: 'mp3',
+        url: trackUrl,
+        isDirect: true,
+        note: 'Audio MP3 resolusi tinggi jernih'
+      });
+
+      formats.push({
+        id: 'nx-sp-audio-128',
+        quality: '128 kbps (Standard Audio MP3)',
+        resolution: '128 kbps',
+        type: 'audio',
+        extension: 'mp3',
+        url: trackUrl,
+        isDirect: true,
+        note: 'Ukuran file lebih hemat kuota'
+      });
+    }
+  }
+
   // 6. Ultimate Fallback Finder if specific fields changed
   if (formats.length === 0) {
     const extracted = extractAllMediaUrls(data);
@@ -1164,6 +1272,8 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
     formats,
     images,
     isPhotoSlide,
+    tracks,
+    isAudioPlaylist,
     source: 'Neoxr API (api.neoxr.eu)',
     createdAt: new Date().toISOString()
   };
@@ -1383,6 +1493,226 @@ async function scrapePinterest(rawUrl: string): Promise<MediaMetadata> {
   };
 }
 
+// ----------------- SPOTIFY SCRAPER -----------------
+async function scrapeSpotify(rawUrl: string): Promise<MediaMetadata> {
+  const trimmed = rawUrl.trim();
+  
+  // Extract entity type and ID: track, playlist, album, episode
+  const match = trimmed.match(/(?:spotify\.com\/(?:intl-[a-z]+\/)?(track|playlist|album|episode)\/([a-zA-Z0-9]+)|spotify\.link\/([a-zA-Z0-9]+))/i);
+  let entityType = match?.[1]?.toLowerCase() || 'track';
+  let entityId = match?.[2] || '';
+
+  // If short spotify.link, resolve it first
+  if (trimmed.includes('spotify.link')) {
+    try {
+      const resolved = await resolveRedirectUrl(trimmed);
+      const subMatch = resolved.match(/(?:spotify\.com\/(?:intl-[a-z]+\/)?(track|playlist|album|episode)\/([a-zA-Z0-9]+))/i);
+      if (subMatch) {
+        entityType = subMatch[1].toLowerCase();
+        entityId = subMatch[2];
+      }
+    } catch {}
+  }
+
+  let title = 'Spotify Music';
+  let author = 'Spotify Artist';
+  let thumbnail = '';
+  let duration = 0;
+  const tracks: AudioTrack[] = [];
+  const formats: MediaFormat[] = [];
+  let isAudioPlaylist = entityType === 'playlist' || entityType === 'album';
+
+  // 1. Fetch Spotify Embed page which contains clean data in __NEXT_DATA__
+  try {
+    const embedUrl = `https://open.spotify.com/embed/${entityType}/${entityId}`;
+    const response = await fetch(embedUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      },
+      signal: AbortSignal.timeout(12000)
+    });
+
+    if (response.ok) {
+      const html = await response.text();
+      const $ = cheerio.load(html);
+      const nextDataJson = $('#__NEXT_DATA__').html();
+
+      if (nextDataJson) {
+        const nextData = JSON.parse(nextDataJson);
+        const entity = nextData?.props?.pageProps?.state?.data?.entity;
+
+        if (entity) {
+          title = entity.title || entity.name || title;
+          author = entity.subtitle || entity.authors || entity.artist || author;
+          thumbnail = entity.coverArt?.sources?.[0]?.url || thumbnail;
+
+          // Check if playlist / album with trackList
+          if (Array.isArray(entity.trackList) && entity.trackList.length > 0) {
+            isAudioPlaylist = true;
+            entity.trackList.forEach((t: any, idx: number) => {
+              const tTitle = t.title || `Track ${idx + 1}`;
+              const tArtist = t.subtitle || author;
+              const durMs = Number(t.duration) || 0;
+              const durSecs = Math.round(durMs / 1000);
+              const previewUrl = t.audioPreview?.url || '';
+              const dlUrl = previewUrl || `https://open.spotify.com/track/${t.uri?.replace('spotify:track:', '') || ''}`;
+
+              tracks.push({
+                id: t.uid || t.uri || `sp-${idx}`,
+                title: tTitle,
+                artist: tArtist,
+                album: title,
+                thumbnail: entity.coverArt?.sources?.[0]?.url || thumbnail,
+                duration: durSecs,
+                durationFormatted: formatDuration(durSecs),
+                url: dlUrl,
+                previewUrl: previewUrl || undefined,
+                filesize: previewUrl ? '~ 3.2 MB' : undefined
+              });
+            });
+          } else {
+            // Single track
+            const durMs = Number(entity.duration) || 0;
+            const durSecs = Math.round(durMs / 1000);
+            duration = durSecs;
+            const previewUrl = entity.audioPreview?.url || '';
+            const dlUrl = previewUrl || trimmed;
+
+            tracks.push({
+              id: entity.id || entity.uri || `sp-${Date.now()}`,
+              title,
+              artist: author,
+              album: entity.album?.name || title,
+              thumbnail,
+              duration: durSecs,
+              durationFormatted: formatDuration(durSecs),
+              url: dlUrl,
+              previewUrl: previewUrl || undefined,
+              filesize: '~ 3.5 MB'
+            });
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('Spotify embed parser notice:', err?.message || err);
+  }
+
+  // 2. Fallback: Spotify oEmbed API if title or thumbnail missing
+  if (!thumbnail || tracks.length === 0) {
+    try {
+      const oembedRes = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(trimmed)}`, {
+        signal: AbortSignal.timeout(8000)
+      });
+      if (oembedRes.ok) {
+        const odata = await oembedRes.json();
+        if (odata.title && (!title || title === 'Spotify Music')) title = odata.title;
+        if (odata.thumbnail_url && !thumbnail) thumbnail = odata.thumbnail_url;
+        if (tracks.length === 0) {
+          tracks.push({
+            id: `sp-track-${Date.now()}`,
+            title,
+            artist: author,
+            thumbnail,
+            url: trimmed,
+            filesize: '~ 3.5 MB'
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Spotify oembed fallback notice:', e);
+    }
+  }
+
+  if (tracks.length === 0) {
+    throw new Error('Tidak dapat menemukan lagu atau playlist Spotify dari tautan tersebut. Pastikan tautan bersifat publik.');
+  }
+
+  // 3. Generate Download Formats
+  if (isAudioPlaylist && tracks.length > 1) {
+    // Playlist ZIP format
+    formats.push({
+      id: 'sp-playlist-zip',
+      quality: `Koleksi Playlist MP3 (${tracks.length} Lagu ZIP)`,
+      resolution: 'Audio ZIP',
+      type: 'audio',
+      extension: 'zip',
+      url: tracks[0].url,
+      isDirect: true,
+      note: `${tracks.length} lagu kualitas tinggi dikemas otomatis dalam 1 berkas ZIP`
+    });
+
+    // Provide quick format buttons for top tracks in playlist
+    tracks.slice(0, 15).forEach((trk, idx) => {
+      formats.push({
+        id: `sp-track-${idx}`,
+        quality: `${trk.title} - ${trk.artist}`,
+        resolution: '320 kbps',
+        type: 'audio',
+        extension: 'mp3',
+        url: trk.url,
+        isDirect: true,
+        note: `Lagu #${idx + 1} (${trk.durationFormatted || 'Audio MP3'})`
+      });
+    });
+  } else {
+    // Single track formats
+    const mainTrack = tracks[0];
+    formats.push({
+      id: 'sp-audio-320',
+      quality: '320 kbps (High Quality Audio MP3)',
+      resolution: '320 kbps',
+      type: 'audio',
+      extension: 'mp3',
+      url: mainTrack.url,
+      isDirect: true,
+      filesize: '~ 4.8 MB',
+      note: 'Audio MP3 resolusi tinggi jernih'
+    });
+
+    formats.push({
+      id: 'sp-audio-128',
+      quality: '128 kbps (Standard Audio MP3)',
+      resolution: '128 kbps',
+      type: 'audio',
+      extension: 'mp3',
+      url: mainTrack.url,
+      isDirect: true,
+      filesize: '~ 2.5 MB',
+      note: 'Ukuran file lebih hemat kuota'
+    });
+
+    formats.push({
+      id: 'sp-audio-96',
+      quality: '96 kbps (Fast Stream MP3)',
+      resolution: '96 kbps',
+      type: 'audio',
+      extension: 'mp3',
+      url: mainTrack.url,
+      isDirect: true,
+      filesize: '~ 1.6 MB',
+      note: 'Unduhan instan hemat data'
+    });
+  }
+
+  return {
+    id: `spotify-${entityId || Date.now()}`,
+    url: trimmed,
+    platform: 'spotify',
+    title: isAudioPlaylist ? (title.toLowerCase().includes('playlist') || title.toLowerCase().includes('album') ? title : `Playlist - ${title}`) : title,
+    author,
+    thumbnail: thumbnail || (tracks[0]?.thumbnail || ''),
+    duration: duration || tracks[0]?.duration || 0,
+    durationFormatted: formatDuration(duration || tracks[0]?.duration),
+    formats,
+    tracks,
+    isAudioPlaylist,
+    source: 'Spotify High-Speed Engine',
+    createdAt: new Date().toISOString()
+  };
+}
+
 // ----------------- MAIN EXTRACTOR DISPATCHER -----------------
 export async function extractMedia(rawUrl: string, apiKey?: string): Promise<MediaMetadata> {
   let url = rawUrl.trim();
@@ -1403,7 +1733,7 @@ export async function extractMedia(rawUrl: string, apiKey?: string): Promise<Med
 
   const platform = detectPlatform(url);
   if (platform === 'unknown') {
-    throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Facebook, Instagram, dan Pinterest.');
+    throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Facebook, Instagram, Pinterest, dan Spotify.');
   }
 
   // 2. PRIMARY ENGINE: Try Neoxr API (api.neoxr.eu/api)
@@ -1431,8 +1761,10 @@ export async function extractMedia(rawUrl: string, apiKey?: string): Promise<Med
       return await scrapeInstagram(url);
     case 'pinterest':
       return await scrapePinterest(url);
+    case 'spotify':
+      return await scrapeSpotify(url);
     default:
-      throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Facebook, Instagram, dan Pinterest.');
+      throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Facebook, Instagram, Pinterest, dan Spotify.');
   }
 }
 

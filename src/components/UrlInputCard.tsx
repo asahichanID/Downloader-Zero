@@ -34,6 +34,8 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
         return 'Tempel link Instagram (reels, video, carousel foto)...';
       case 'pinterest':
         return 'Tempel link Pinterest (video pin, reels, atau foto 4K)...';
+      case 'spotify':
+        return 'Tempel link Spotify (lagu, album, atau playlist)...';
       default:
         return 'Tempel tautan video/audio apa saja di sini...';
     }

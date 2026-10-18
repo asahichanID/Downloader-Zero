@@ -33,6 +33,8 @@ export default async function handler(req: any, res: any) {
       referer = 'https://www.youtube.com/';
     } else if (targetUrl.includes('pinterest') || targetUrl.includes('pinimg')) {
       referer = 'https://www.pinterest.com/';
+    } else if (targetUrl.includes('spotify') || targetUrl.includes('scdn.co')) {
+      referer = 'https://open.spotify.com/';
     }
 
     let remoteRes = await fetch(targetUrl, {

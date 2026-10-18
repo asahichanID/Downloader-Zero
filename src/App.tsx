@@ -19,6 +19,7 @@ import { SettingsModal } from './components/SettingsModal.tsx';
 import { TermsModal } from './components/TermsModal.tsx';
 import { MediaResultModal } from './components/MediaResultModal.tsx';
 import { PhotoSlideCard } from './components/PhotoSlideCard.tsx';
+import { SpotifyPlaylistSlideCard } from './components/SpotifyPlaylistSlideCard.tsx';
 import { HistoryModal } from './components/HistoryModal.tsx';
 import JSZip from 'jszip';
 
@@ -84,6 +85,9 @@ export default function App() {
       if (detected !== 'unknown') {
         setSelectedPlatform(detected);
         setIsAutoDetected(true);
+        if (detected === 'spotify') {
+          setMediaType('audio');
+        }
       }
     } else {
       setIsAutoDetected(false);
@@ -95,6 +99,9 @@ export default function App() {
     setSelectedPlatform(platform);
     setIsAutoDetected(false);
     setErrorMessage(null);
+    if (platform === 'spotify') {
+      setMediaType('audio');
+    }
   };
 
   // Perform download execution
@@ -405,6 +412,7 @@ export default function App() {
         <MediaTypeTabs
           mediaType={mediaType}
           setMediaType={setMediaType}
+          isAudioOnly={selectedPlatform === 'spotify'}
         />
 
         {/* 6. "Pilih Kualitas" (Quality Selection Card - Video and Audio separated) */}
@@ -415,6 +423,7 @@ export default function App() {
           setSelectedVideoRes={setSelectedVideoRes}
           selectedAudioQuality={selectedAudioQuality}
           setSelectedAudioQuality={setSelectedAudioQuality}
+          isAudioOnly={selectedPlatform === 'spotify'}
         />
 
         {/* 7. Huge Download Button with Cyber Accents */}
@@ -426,8 +435,10 @@ export default function App() {
           downloadStatusText={downloadStatusText}
         />
 
-        {/* 8. Contoh Video Preview Card OR Photo Slide Card (Nimpa di tempat yang sama) */}
-        {mediaData?.isPhotoSlide && mediaData.images && mediaData.images.length > 0 ? (
+        {/* 8. Contoh Video Preview Card OR Photo Slide Card OR Spotify Playlist Slide */}
+        {mediaData?.platform === 'spotify' && mediaData.isAudioPlaylist && mediaData.tracks && mediaData.tracks.length > 0 ? (
+          <SpotifyPlaylistSlideCard media={mediaData} />
+        ) : mediaData?.isPhotoSlide && mediaData.images && mediaData.images.length > 0 ? (
           <PhotoSlideCard media={mediaData} />
         ) : (
           <VideoPreviewCard
