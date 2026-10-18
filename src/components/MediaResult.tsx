@@ -131,6 +131,7 @@ export const MediaResult: React.FC<MediaResultProps> = ({
         // Fallback to direct blob
         finalBlob = await response.blob();
         saveBlobLocally(finalBlob, filename);
+      } else {
         const chunks: Uint8Array[] = [];
         let received = 0;
 
@@ -152,7 +153,7 @@ export const MediaResult: React.FC<MediaResultProps> = ({
         }
 
         const mimeType = fmt.type === 'video' ? 'video/mp4' : fmt.type === 'audio' ? 'audio/mpeg' : 'application/octet-stream';
-        finalBlob = new Blob(chunks, { type: mimeType });
+        finalBlob = new Blob(chunks as BlobPart[], { type: mimeType });
         saveBlobLocally(finalBlob, filename);
       }
 
