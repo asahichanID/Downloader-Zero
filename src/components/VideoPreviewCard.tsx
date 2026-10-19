@@ -14,11 +14,16 @@ export const VideoPreviewCard: React.FC<VideoPreviewCardProps> = ({
   selectedResolution,
   onClick
 }) => {
-  // If media is extracted, display real data; otherwise show "Contoh Video" as in screenshot
-  const title = media?.title || 'Contoh Video';
-  const duration = media?.durationFormatted || 'Durasi: 03:45';
-  const thumbnail = (media?.thumbnail && media.thumbnail.trim()) ? media.thumbnail : animeMascot;
-  const filesize = media?.formats?.[0]?.filesize || 'Ukuran: ~ 45.2 MB';
+  // If no real media or media is Spotify, do not render preview card (per user requirement to remove contoh video and avoid preview on Spotify)
+  if (!media || media.platform === 'spotify') {
+    return null;
+  }
+
+  const title = media.title || 'Video';
+  const duration = media.durationFormatted || 'Durasi: --:--';
+  const thumbnail = (media.thumbnail && media.thumbnail.trim()) ? media.thumbnail : animeMascot;
+  const filesize = media.formats?.[0]?.filesize || 'Format HD';
+
 
   return (
     <div

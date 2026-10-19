@@ -16,6 +16,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isDark,
   toggleTheme
 }) => {
+  const [neoxrKey, setNeoxrKey] = React.useState<string>(() => {
+    try {
+      return localStorage.getItem('dz_neoxr_api_key') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [keySaved, setKeySaved] = React.useState<boolean>(false);
+
   // Close on Escape key press
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -126,8 +135,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* 3. Neoxr API Engine Status */}
-          <div className="p-4 rounded-2xl bg-slate-900/60 border border-blue-900/60 space-y-2.5">
+          {/* 3. Neoxr API Engine Status & Custom API Key */}
+          <div className="p-4 rounded-2xl bg-slate-900/60 border border-blue-900/60 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-white font-semibold text-xs">
                 <Server className="h-4 w-4 text-cyan-400" />
@@ -135,15 +144,49 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
               <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/60 flex items-center gap-1">
                 <CheckCircle2 className="h-3 w-3" />
-                Server Environment Aktif
+                Dual Engine Aktif
               </span>
             </div>
-            <p className="text-[11px] text-slate-300 leading-relaxed">
-              API Key Neoxr dikonfigurasi langsung melalui environment server (Vercel) untuk keamanan maksimal tanpa mengekspos kredensial ke sisi klien.
-            </p>
+
+            <div className="space-y-1.5">
+              <label htmlFor="neoxr-key" className="text-[11px] font-bold text-slate-300 block">
+                API Key Neoxr (Opsional / Kustom):
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="neoxr-key"
+                  type="text"
+                  value={neoxrKey}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNeoxrKey(val);
+                    try {
+                      if (val.trim()) {
+                        localStorage.setItem('dz_neoxr_api_key', val.trim());
+                      } else {
+                        localStorage.removeItem('dz_neoxr_api_key');
+                      }
+                      setKeySaved(true);
+                      setTimeout(() => setKeySaved(false), 2000);
+                    } catch {}
+                  }}
+                  placeholder="Masukkan API Key Neoxr jika ada..."
+                  className="flex-1 h-9 px-3 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                />
+                {keySaved && (
+                  <span className="text-[10px] font-bold text-emerald-400 shrink-0">
+                    Tersimpan!
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                Jika Anda memiliki akun atau kuota di api.neoxr.eu, masukkan API Key di sini agar permintaan Spotify & media lainnya langsung diprioritaskan melalui jalur Neoxr Anda.
+              </p>
+            </div>
+
             <div className="flex items-center gap-2 pt-1 text-[11px] text-slate-400">
               <Info className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-              <span>Sistem cerdas akan otomatis beralih ke mesin cadangan jika server Neoxr sedang dalam antrean.</span>
+              <span>Jika API Key kosong, sistem otomatis memakai server fallback berkecepatan tinggi.</span>
             </div>
           </div>
         </div>

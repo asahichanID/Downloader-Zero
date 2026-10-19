@@ -692,11 +692,12 @@ function extractAllMediaUrls(data: any): { videos: string[]; audios: string[]; i
 
 // ----------------- NEOXR API SCRAPER (PRIMARY ENGINE) -----------------
 const NEOXR_BASE_URL = 'https://api.neoxr.eu/api';
+const DEFAULT_NEOXR_KEY = 'j3i3mg';
 
 async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: string): Promise<MediaMetadata> {
-  const envKey = (process.env.NEOXR_API_KEY || '').trim().replace(/^["']|["']$/g, '');
-  const key = (apiKey || envKey).trim().replace(/^["']|["']$/g, '');
-  const keyParam = key ? `&apikey=${encodeURIComponent(key)}` : '';
+  const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const key = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const keyParam = key ? `&apikey=${encodeURIComponent(key)}` : `&apikey=${DEFAULT_NEOXR_KEY}`;
   const formats: MediaFormat[] = [];
   let title = `${platform.toUpperCase()} Media`;
   let author = 'Creator';
@@ -1165,14 +1166,35 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
         });
       });
     } else {
-      title = data.title || data.name || 'Spotify Track';
-      author = data.artist || data.author || data.creator || 'Spotify Artist';
-      thumbnail = data.thumbnail || data.cover || data.image || '';
-      const durSecs = data.duration ? (data.duration > 1000 ? Math.round(data.duration / 1000) : data.duration) : undefined;
+      const d = (typeof data === 'object' && data !== null && 'data' in data && typeof data.data === 'object' && !Array.isArray(data.data))
+        ? data.data
+        : (typeof data === 'object' && data !== null && 'result' in data && typeof data.result === 'object')
+        ? data.result
+        : data;
+
+      title = d.title || d.name || 'Spotify Track';
+      author = d.artist || d.author || d.creator || 'Spotify Artist';
+      thumbnail = d.thumbnail || d.cover || d.image || '';
+
+      let durSecs: number | undefined = undefined;
+      if (typeof d.duration === 'string') {
+        if (d.duration.includes(':')) {
+          const parts = d.duration.split(':').map((p: string) => Number(p.trim()));
+          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) durSecs = parts[0] * 60 + parts[1];
+          else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) durSecs = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        } else {
+          const num = Number(d.duration);
+          durSecs = isNaN(num) ? undefined : (num > 1000 ? Math.round(num / 1000) : num);
+        }
+      } else if (typeof d.duration === 'number') {
+        durSecs = d.duration > 1000 ? Math.round(d.duration / 1000) : d.duration;
+      }
       duration = durSecs || 0;
 
-      const trackUrl = data.url || data.download || data.link || data.audio || data.preview || '';
-      const previewUrl = data.preview || data.preview_url || trackUrl;
+      // Ensure full audio song is prioritized; previewUrl is only for playback
+      const fullAudioUrl = d.url || d.download || d.link || d.audio || d.stream || d.mp3 || d.audio_url || d.music || '';
+      const previewUrl = d.preview || d.preview_url || '';
+      const trackUrl = fullAudioUrl || previewUrl || '';
 
       tracks = [{
         id: 'nx-sp-single',
@@ -1182,30 +1204,35 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
         duration: durSecs,
         durationFormatted: formatDuration(durSecs),
         url: trackUrl,
-        previewUrl
+        previewUrl: previewUrl || undefined,
+        filesize: '~ 10.8 MB'
       }];
 
-      formats.push({
-        id: 'nx-sp-audio-320',
-        quality: '320 kbps (High Quality Audio MP3)',
-        resolution: '320 kbps',
-        type: 'audio',
-        extension: 'mp3',
-        url: trackUrl,
-        isDirect: true,
-        note: 'Audio MP3 resolusi tinggi jernih'
-      });
+      if (trackUrl) {
+        formats.push({
+          id: 'nx-sp-audio-320',
+          quality: '320 kbps (Lagu Penuh MP3 HD)',
+          resolution: '320 kbps',
+          type: 'audio',
+          extension: 'mp3',
+          url: trackUrl,
+          isDirect: true,
+          filesize: '~ 10.8 MB',
+          note: 'Audio MP3 Neoxr Full Version 320 kbps'
+        });
 
-      formats.push({
-        id: 'nx-sp-audio-128',
-        quality: '128 kbps (Standard Audio MP3)',
-        resolution: '128 kbps',
-        type: 'audio',
-        extension: 'mp3',
-        url: trackUrl,
-        isDirect: true,
-        note: 'Ukuran file lebih hemat kuota'
-      });
+        formats.push({
+          id: 'nx-sp-audio-128',
+          quality: '128 kbps (Standar MP3)',
+          resolution: '128 kbps',
+          type: 'audio',
+          extension: 'mp3',
+          url: trackUrl,
+          isDirect: true,
+          filesize: '~ 4.5 MB',
+          note: 'Ukuran file hemat kuota'
+        });
+      }
     }
   }
 
@@ -1556,19 +1583,20 @@ async function scrapeSpotify(rawUrl: string): Promise<MediaMetadata> {
               const durMs = Number(t.duration) || 0;
               const durSecs = Math.round(durMs / 1000);
               const previewUrl = t.audioPreview?.url || '';
-              const dlUrl = previewUrl || `https://open.spotify.com/track/${t.uri?.replace('spotify:track:', '') || ''}`;
+              const trackId = t.uri?.replace('spotify:track:', '') || t.id || t.uid || '';
+              const canonicalUrl = trackId ? `https://open.spotify.com/track/${trackId}` : trimmed;
 
               tracks.push({
-                id: t.uid || t.uri || `sp-${idx}`,
+                id: trackId || `sp-${idx}`,
                 title: tTitle,
                 artist: tArtist,
                 album: title,
                 thumbnail: entity.coverArt?.sources?.[0]?.url || thumbnail,
                 duration: durSecs,
                 durationFormatted: formatDuration(durSecs),
-                url: dlUrl,
+                url: canonicalUrl,
                 previewUrl: previewUrl || undefined,
-                filesize: previewUrl ? '~ 3.2 MB' : undefined
+                filesize: '~ 10.8 MB'
               });
             });
           } else {
@@ -1577,19 +1605,20 @@ async function scrapeSpotify(rawUrl: string): Promise<MediaMetadata> {
             const durSecs = Math.round(durMs / 1000);
             duration = durSecs;
             const previewUrl = entity.audioPreview?.url || '';
-            const dlUrl = previewUrl || trimmed;
+            const trackId = entity.id || entity.uri?.replace('spotify:track:', '') || '';
+            const canonicalUrl = trackId ? `https://open.spotify.com/track/${trackId}` : trimmed;
 
             tracks.push({
-              id: entity.id || entity.uri || `sp-${Date.now()}`,
+              id: trackId || `sp-${Date.now()}`,
               title,
               artist: author,
               album: entity.album?.name || title,
               thumbnail,
               duration: durSecs,
               durationFormatted: formatDuration(durSecs),
-              url: dlUrl,
+              url: canonicalUrl,
               previewUrl: previewUrl || undefined,
-              filesize: '~ 3.5 MB'
+              filesize: '~ 10.8 MB'
             });
           }
         }

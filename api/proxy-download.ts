@@ -43,27 +43,25 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // Auto-resolve Spotify track page to real mp3 audio preview
-    if (targetUrl.includes('spotify.com/track/') || targetUrl.includes('spotify.com/intl-')) {
+    // Auto-resolve Spotify track page to real full MP3 song via Neoxr
+    if (targetUrl.includes('spotify.com/track/') || targetUrl.includes('spotify.com/intl-') || targetUrl.includes('spotify.link')) {
       try {
-        const spMatch = targetUrl.match(/track\/([a-zA-Z0-9]+)/);
-        if (spMatch && spMatch[1]) {
-          const embedRes = await fetch(`https://open.spotify.com/embed/track/${spMatch[1]}`, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
-            signal: AbortSignal.timeout(6000)
-          });
-          if (embedRes.ok) {
-            const html = await embedRes.text();
-            const prevMatch = html.match(/https:\/\/p\.scdn\.co\/mp3-preview\/[a-zA-Z0-9]+/);
-            if (prevMatch && prevMatch[0]) {
-              targetUrl = prevMatch[0];
-            }
+        const neoxrKey = ((query.apiKey as string) || (req.query?.apiKey as string) || process.env.NEOXR_API_KEY || 'j3i3mg').trim();
+        const neoRes = await fetch(`https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(targetUrl)}&apikey=${encodeURIComponent(neoxrKey)}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          },
+          signal: AbortSignal.timeout(12000)
+        });
+        if (neoRes.ok) {
+          const neoJson = await neoRes.json();
+          const fullSongUrl = neoJson.data?.url || neoJson.data?.download || neoJson.data?.link;
+          if (fullSongUrl && typeof fullSongUrl === 'string' && fullSongUrl.startsWith('http') && !fullSongUrl.includes('mp3-preview')) {
+            targetUrl = fullSongUrl;
           }
         }
       } catch (spErr) {
-        console.warn('Spotify track preview resolve notice:', spErr);
+        console.warn('Neoxr spotify track resolve notice:', spErr);
       }
     }
 
@@ -81,20 +79,22 @@ export default async function handler(req: any, res: any) {
       referer = 'https://www.youtube.com/';
     } else if (targetUrl.includes('pinterest') || targetUrl.includes('pinimg')) {
       referer = 'https://www.pinterest.com/';
-    } else if (targetUrl.includes('spotify') || targetUrl.includes('scdn.co')) {
+    } else if (targetUrl.includes('open.spotify.com')) {
       referer = 'https://open.spotify.com/';
+    } else if (targetUrl.includes('scdn.co') || targetUrl.includes('neoxr.eu') || targetUrl.includes('pages.dev')) {
+      referer = '';
     }
 
     let remoteRes = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
         'Accept': '*/*',
-        'Referer': referer
+        ...(referer ? { 'Referer': referer } : {})
       }
     });
 
     // If forbidden (anti-hotlink), retry without Referer header
-    if (remoteRes.status === 403) {
+    if (remoteRes.status === 403 || remoteRes.status === 401) {
       remoteRes = await fetch(targetUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
@@ -109,7 +109,9 @@ export default async function handler(req: any, res: any) {
     }
 
     const rawContentType = remoteRes.headers.get('content-type') || '';
-    if (rawContentType.includes('application/json') || (rawContentType.includes('text/html') && !sanitizedFilename.endsWith('.html'))) {
+    const isHtml = rawContentType.includes('text/html');
+    const isKnownMediaUrl = targetUrl.includes('pages.dev') || targetUrl.includes('neoxr') || targetUrl.includes('scdn.co');
+    if (rawContentType.includes('application/json') || (isHtml && !isKnownMediaUrl && !sanitizedFilename.endsWith('.html'))) {
       res.status(400).send('Tautan unduhan tidak valid atau berkas belum siap dari server sumber.');
       return;
     }

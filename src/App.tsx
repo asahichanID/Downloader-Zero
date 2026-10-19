@@ -19,7 +19,7 @@ import { SettingsModal } from './components/SettingsModal.tsx';
 import { TermsModal } from './components/TermsModal.tsx';
 import { MediaResultModal } from './components/MediaResultModal.tsx';
 import { PhotoSlideCard } from './components/PhotoSlideCard.tsx';
-import { SpotifyPlaylistSlideCard } from './components/SpotifyPlaylistSlideCard.tsx';
+import { SpotifyPlaylistModal } from './components/SpotifyPlaylistModal.tsx';
 import { HistoryModal } from './components/HistoryModal.tsx';
 import JSZip from 'jszip';
 
@@ -54,6 +54,7 @@ export default function App() {
   const [termsDefaultTab, setTermsDefaultTab] = useState<'terms' | 'privacy'>('terms');
   const [isFormatModalOpen, setIsFormatModalOpen] = useState<boolean>(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
+  const [isSpotifyModalOpen, setIsSpotifyModalOpen] = useState<boolean>(false);
   const [historyCount, setHistoryCount] = useState<number>(0);
 
   // Sync history count
@@ -181,8 +182,8 @@ export default function App() {
         throw new Error('Tautan unduhan tidak valid atau berkas belum siap dari server sumber.');
       }
 
-      setDownloadProgress(85);
-      setDownloadStatusText('Mengunduh & menyimpan berkas ke riwayat lokal...');
+      setDownloadProgress(70);
+      setDownloadStatusText('Mengunduh & menyiapkan berkas...');
 
       const downloadHref = `/api/proxy-download?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(filename)}`;
       
@@ -193,7 +194,35 @@ export default function App() {
           throw new Error(errText || `Gagal mengunduh berkas dari server (kode: ${response.status})`);
         }
 
-        const rawBlob = await response.blob();
+        const contentLength = +(response.headers.get('content-length') || 0);
+        let rawBlob: Blob;
+
+        if (response.body && typeof response.body.getReader === 'function') {
+          const reader = response.body.getReader();
+          const chunks: Uint8Array[] = [];
+          let received = 0;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              chunks.push(value);
+              received += value.length;
+              if (contentLength > 0) {
+                const streamPct = Math.min(97, 70 + Math.round((received / contentLength) * 27));
+                setDownloadProgress(streamPct);
+              } else {
+                setDownloadProgress((prev) => Math.min(95, prev + 1));
+              }
+            }
+          }
+          const targetMime = targetFormat.type === 'video' ? 'video/mp4' : targetFormat.type === 'audio' ? 'audio/mpeg' : 'application/octet-stream';
+          rawBlob = new Blob(chunks as any, { type: targetMime });
+        } else {
+          setDownloadProgress(90);
+          rawBlob = await response.blob();
+        }
+
         if (rawBlob.size <= 60 && targetFormat.type !== 'photos') {
           const text = await rawBlob.text();
           if (text.includes('gagal') || text.includes('Error')) {
@@ -204,6 +233,9 @@ export default function App() {
         const targetMime = targetFormat.type === 'video' ? 'video/mp4' : targetFormat.type === 'audio' ? 'audio/mpeg' : rawBlob.type || 'application/octet-stream';
         const blob = rawBlob.type === targetMime ? rawBlob : new Blob([rawBlob], { type: targetMime });
 
+        setDownloadProgress(98);
+        setDownloadStatusText('Menyimpan berkas...');
+
         const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = blobUrl;
@@ -213,26 +245,24 @@ export default function App() {
         document.body.removeChild(link);
         setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
 
-        // Automatically cache in local IndexedDB history
-        try {
-          await saveDownloadedMedia({
-            sourceUrl: finalUrl,
-            platform: currentMedia.platform,
-            title: currentMedia.title || 'Media DownloaderZero',
-            author: currentMedia.author || 'Creator',
-            thumbnail: currentMedia.thumbnail || '',
-            quality: targetFormat.quality,
-            resolution: targetFormat.resolution,
-            mediaType: targetFormat.type,
-            extension: targetFormat.extension,
-            filename,
-            filesize: targetFormat.filesize || formatBytes(blob.size),
-            filesizeBytes: blob.size,
-            blob
-          });
-        } catch (histErr) {
+        // Automatically cache in local IndexedDB history without blocking completion
+        saveDownloadedMedia({
+          sourceUrl: finalUrl,
+          platform: currentMedia.platform,
+          title: currentMedia.title || 'Media DownloaderZero',
+          author: currentMedia.author || 'Creator',
+          thumbnail: currentMedia.thumbnail || '',
+          quality: targetFormat.quality,
+          resolution: targetFormat.resolution,
+          mediaType: targetFormat.type,
+          extension: targetFormat.extension,
+          filename,
+          filesize: targetFormat.filesize || formatBytes(blob.size),
+          filesizeBytes: blob.size,
+          blob
+        }).catch((histErr) => {
           console.warn('History save notice:', histErr);
-        }
+        });
       } catch (fetchErr: any) {
         throw new Error(fetchErr.message || 'Gagal mengunduh berkas media.');
       }
@@ -244,7 +274,7 @@ export default function App() {
         setIsDownloading(false);
         setDownloadProgress(0);
         setDownloadStatusText('');
-      }, 2500);
+      }, 2000);
     } catch (err: any) {
       setErrorMessage(err.message || 'Gagal memulai unduhan.');
       setIsDownloading(false);
@@ -265,15 +295,21 @@ export default function App() {
       setSelectedPlatform(detected);
     }
 
+    const isPlaylist =
+      (detected === 'spotify' || selectedPlatform === 'spotify') &&
+      /(?:spotify\.com\/(?:intl-[a-z]+\/)?(playlist|album)\/|spotify\.link\/)/i.test(url.trim());
+
     setIsLoading(true);
     setErrorMessage(null);
 
+    const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
+
     try {
-      // 1. Extract metadata from URL (API key is securely loaded by server environment)
+      // 1. Extract metadata from URL (sending optional user API key to backend)
       const res = await fetch('/api/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() })
+        body: JSON.stringify({ url: url.trim(), apiKey: customKey })
       });
 
       const json = await res.json();
@@ -282,8 +318,28 @@ export default function App() {
       }
 
       const media: MediaMetadata = json.data;
-      setMediaData(media);
       setIsLoading(false);
+
+      // 1. If Spotify Playlist/Album: Open SpotifyPlaylistModal floating panel immediately
+      if (media.platform === 'spotify' && (media.isAudioPlaylist || isPlaylist)) {
+        setMediaData(media);
+        setIsSpotifyModalOpen(true);
+        return;
+      }
+
+      // 2. If Spotify Single Track: Directly download without showing preview card!
+      if (media.platform === 'spotify') {
+        setMediaData(null); // No preview shown per requirement
+        const chosenFormat = media.formats.find((f) => f.type === 'audio') || media.formats[0];
+        if (chosenFormat) {
+          await executeDownload(chosenFormat, media);
+        } else {
+          throw new Error('Format audio Spotify tidak ditemukan.');
+        }
+        return;
+      }
+
+      setMediaData(media);
 
       // If content is a Photo Slide and user is on Video tab, package all photos into a ZIP directly
       if (media.isPhotoSlide && media.images && media.images.length > 0 && mediaType !== 'audio') {
@@ -356,12 +412,7 @@ export default function App() {
         }
       }
 
-      // If content is a Spotify Playlist / Album, SpotifyPlaylistSlideCard handles slide preview & background ZIP
-      if (media.platform === 'spotify' && media.isAudioPlaylist) {
-        return;
-      }
-
-      // 2. Find best matching format
+      // 3. Find best matching format for video or other platforms
       const filteredFormats = media.formats.filter((f) => f.type === mediaType);
       const searchPool = filteredFormats.length > 0 ? filteredFormats : media.formats;
 
@@ -384,6 +435,10 @@ export default function App() {
       setErrorMessage(err.message || 'Gagal memproses media. Pastikan URL publik dan dapat diakses.');
     }
   };
+
+  const isSpotifyPlaylist =
+    selectedPlatform === 'spotify' &&
+    /(?:spotify\.com\/(?:intl-[a-z]+\/)?(playlist|album)\/|spotify\.link\/)/i.test(url.trim());
 
   return (
     <div className="min-h-screen w-full bg-[#030718] text-slate-100 flex flex-col items-center justify-start antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
@@ -442,14 +497,13 @@ export default function App() {
           isDownloading={isDownloading}
           downloadProgress={downloadProgress}
           downloadStatusText={downloadStatusText}
+          isSpotifyPlaylist={isSpotifyPlaylist}
         />
 
-        {/* 8. Contoh Video Preview Card OR Photo Slide Card OR Spotify Playlist Slide */}
-        {mediaData?.platform === 'spotify' && mediaData.isAudioPlaylist && mediaData.tracks && mediaData.tracks.length > 0 ? (
-          <SpotifyPlaylistSlideCard media={mediaData} />
-        ) : mediaData?.isPhotoSlide && mediaData.images && mediaData.images.length > 0 ? (
+        {/* 8. Media Preview Card: only real video or photo slide; no dummy Contoh Video, and no preview on Spotify */}
+        {mediaData?.isPhotoSlide && mediaData.images && mediaData.images.length > 0 ? (
           <PhotoSlideCard media={mediaData} />
-        ) : (
+        ) : mediaData && mediaData.platform !== 'spotify' ? (
           <VideoPreviewCard
             media={mediaData}
             selectedResolution={selectedVideoRes}
@@ -459,7 +513,7 @@ export default function App() {
               }
             }}
           />
-        )}
+        ) : null}
 
         {/* 9. Feature Highlights Badge Bar */}
         <FeaturesHighlightBar />
@@ -531,6 +585,15 @@ export default function App() {
           }}
           isDownloading={isDownloading}
           downloadProgress={downloadProgress}
+        />
+      )}
+
+      {/* Spotify Playlist Modal (Floating large square panel with signature Spotify look) */}
+      {mediaData && mediaData.platform === 'spotify' && (mediaData.isAudioPlaylist || (mediaData.tracks && mediaData.tracks.length > 1)) && (
+        <SpotifyPlaylistModal
+          isOpen={isSpotifyModalOpen}
+          onClose={() => setIsSpotifyModalOpen(false)}
+          media={mediaData}
         />
       )}
     </div>

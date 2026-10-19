@@ -1,5 +1,4 @@
-import React from 'react';
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, ListMusic } from 'lucide-react';
 
 interface DownloadButtonProps {
   onDownload: () => void;
@@ -7,6 +6,7 @@ interface DownloadButtonProps {
   isDownloading: boolean;
   downloadProgress: number;
   downloadStatusText: string;
+  isSpotifyPlaylist?: boolean;
 }
 
 export const DownloadButton: React.FC<DownloadButtonProps> = ({
@@ -14,15 +14,16 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
   isLoading,
   isDownloading,
   downloadProgress,
-  downloadStatusText
+  downloadStatusText,
+  isSpotifyPlaylist = false
 }) => {
   return (
     <div className="w-full flex flex-col items-center gap-2 select-none">
       {/* Button Row with Cyber Slashes */}
       <div className="w-full flex items-center justify-between gap-3">
         {/* Left Cyber Accents */}
-        <div className="hidden xs:flex items-center gap-1 text-cyan-400 opacity-90 select-none">
-          <span className="font-cyber font-black text-xl italic tracking-tighter drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]">///</span>
+        <div className="hidden xs:flex items-center gap-1 opacity-90 select-none">
+          <span className={`font-cyber font-black text-xl italic tracking-tighter ${isSpotifyPlaylist ? 'text-[#1DB954] drop-shadow-[0_0_8px_rgba(29,185,84,0.8)]' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]'}`}>///</span>
         </div>
 
         {/* Big Glow CTA Button */}
@@ -30,12 +31,21 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
           type="button"
           onClick={onDownload}
           disabled={isLoading || isDownloading}
-          className="flex-1 h-14 sm:h-15 rounded-2xl bg-gradient-to-r from-[#00c6ff] via-[#0072ff] to-[#0052d4] hover:from-[#26d0ce] hover:to-[#1a2980] text-white flex items-center justify-center gap-2.5 text-base sm:text-lg font-extrabold tracking-wide shadow-[0_0_25px_rgba(6,182,212,0.65)] hover:shadow-[0_0_35px_rgba(6,182,212,0.85)] border-t border-cyan-200/50 active:scale-[0.99] transition-all cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
+          className={`flex-1 h-14 sm:h-15 rounded-2xl text-white flex items-center justify-center gap-2.5 text-base sm:text-lg font-extrabold tracking-wide active:scale-[0.99] transition-all cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed ${
+            isSpotifyPlaylist
+              ? 'bg-gradient-to-r from-[#1DB954] via-emerald-600 to-teal-700 hover:from-[#1ed760] hover:to-emerald-500 shadow-[0_0_25px_rgba(29,185,84,0.65)] hover:shadow-[0_0_35px_rgba(29,185,84,0.85)] border-t border-emerald-300/50'
+              : 'bg-gradient-to-r from-[#00c6ff] via-[#0072ff] to-[#0052d4] hover:from-[#26d0ce] hover:to-[#1a2980] shadow-[0_0_25px_rgba(6,182,212,0.65)] hover:shadow-[0_0_35px_rgba(6,182,212,0.85)] border-t border-cyan-200/50'
+          }`}
         >
           {isLoading || isDownloading ? (
             <>
               <Loader2 className="h-6 w-6 animate-spin text-white" />
-              <span>{isDownloading ? 'Mengunduh...' : 'Memproses...'}</span>
+              <span>{isDownloading ? 'Mengunduh...' : isSpotifyPlaylist ? 'Memproses Playlist...' : 'Memproses...'}</span>
+            </>
+          ) : isSpotifyPlaylist ? (
+            <>
+              <ListMusic className="h-6 w-6 text-white stroke-[2.5]" />
+              <span className="drop-shadow-md">Proses Playlist Spotify</span>
             </>
           ) : (
             <>
@@ -46,8 +56,8 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
         </button>
 
         {/* Right Cyber Accents */}
-        <div className="hidden xs:flex items-center gap-1 text-cyan-400 opacity-90 select-none">
-          <span className="font-cyber font-black text-xl italic tracking-tighter drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]">///</span>
+        <div className="hidden xs:flex items-center gap-1 opacity-90 select-none">
+          <span className={`font-cyber font-black text-xl italic tracking-tighter ${isSpotifyPlaylist ? 'text-[#1DB954] drop-shadow-[0_0_8px_rgba(29,185,84,0.8)]' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]'}`}>///</span>
         </div>
       </div>
 

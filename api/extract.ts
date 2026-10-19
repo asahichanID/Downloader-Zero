@@ -43,9 +43,13 @@ export default async function handler(req: any, res: any) {
     }
 
     let url = body?.url;
+    let apiKey = body?.apiKey;
     if (!url) {
       const parsedUrl = new URL(req.url || '', `http://${req.headers?.host || 'localhost'}`);
       url = parsedUrl.searchParams.get('url');
+      if (!apiKey) {
+        apiKey = parsedUrl.searchParams.get('apiKey') || undefined;
+      }
     }
 
     if (!url || typeof url !== 'string') {
@@ -53,7 +57,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const data = await extractMedia(url);
+    const data = await extractMedia(url, apiKey);
     res.status(200).json({ success: true, data });
   } catch (err: any) {
     console.error('API Extraction Error:', err?.message || err);
