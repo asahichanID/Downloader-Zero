@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const isProduction = process.env.NODE_ENV === 'production';
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 async function startServer() {
   const app = express();
@@ -83,9 +83,9 @@ async function startServer() {
   });
 
   // 3. Progress check for async processing (e.g. YouTube loader.to jobs)
-  app.get('/api/progress/:jobId', async (req: Request, res: Response) => {
+  app.get(['/api/progress', '/api/progress/:jobId'], async (req: Request, res: Response) => {
     try {
-      const { jobId } = req.params;
+      const jobId = (req.params.jobId || req.query.jobId || req.query.id || '') as string;
       if (!jobId) {
         res.status(400).json({ success: false, error: 'Job ID tidak valid.' });
         return;

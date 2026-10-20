@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { Navbar } from './components/Navbar.tsx';
-import { HeroBanner } from './components/HeroBanner.tsx';
+import { BannerDZ } from './components/BannerDZ.tsx';
 import { PlatformCards } from './components/PlatformCards.tsx';
 import { UrlInputCard } from './components/UrlInputCard.tsx';
 import { MediaTypeTabs } from './components/MediaTypeTabs.tsx';
@@ -452,8 +452,8 @@ export default function App() {
           historyCount={historyCount}
         />
 
-        {/* 2. Hero Mascot & Typography Banner */}
-        <HeroBanner />
+        {/* 2. Full Image Banner with Blue Decorative Frame */}
+        <BannerDZ />
 
         {/* 3. Single Button Platform Selector with Floating Modal */}
         <PlatformCards
