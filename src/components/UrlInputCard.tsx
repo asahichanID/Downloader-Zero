@@ -36,6 +36,8 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
         return 'Tempel link Pinterest (video pin, reels, atau foto 4K)...';
       case 'spotify':
         return 'Tempel link Spotify (lagu, album, atau playlist)...';
+      case 'terabox':
+        return 'Tempel link TeraBox (video atau berkas cloud link)...';
       default:
         return 'Tempel tautan video/audio apa saja di sini...';
     }

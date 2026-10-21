@@ -22,7 +22,7 @@ async function startServer() {
       status: 'online',
       service: 'DownloaderZero (DZ) Media Engine',
       version: '2026.1',
-      platforms: ['youtube', 'tiktok', 'facebook', 'instagram', 'pinterest', 'spotify']
+      platforms: ['youtube', 'tiktok', 'facebook', 'instagram', 'pinterest', 'spotify', 'terabox']
     });
   });
 
@@ -199,6 +199,8 @@ async function startServer() {
         referer = 'https://www.pinterest.com/';
       } else if (targetUrl.includes('open.spotify.com')) {
         referer = 'https://open.spotify.com/';
+      } else if (targetUrl.includes('terabox') || targetUrl.includes('1024tera')) {
+        referer = 'https://www.terabox.com/';
       } else if (targetUrl.includes('scdn.co') || targetUrl.includes('neoxr.eu') || targetUrl.includes('pages.dev')) {
         referer = '';
       }

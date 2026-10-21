@@ -21,6 +21,9 @@ export function detectPlatform(url: string): PlatformType {
   if (/(?:spotify\.com|spotify\.link)/i.test(trimmed)) {
     return 'spotify';
   }
+  if (/(?:terabox\.com|1024tera\.com|teraboxapp\.com|terasharelink\.com|freeterabox\.com|4funbox\.com|mirrobox\.com|nephobox\.com|tibibox\.com)/i.test(trimmed)) {
+    return 'terabox';
+  }
   return 'unknown';
 }
 
@@ -730,6 +733,9 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
     case 'spotify':
       endpoints.push(`${NEOXR_BASE_URL}/spotify?url=${encodeURIComponent(targetUrl)}${keyParam}`);
       break;
+    case 'terabox':
+      endpoints.push(`${NEOXR_BASE_URL}/terabox?url=${encodeURIComponent(targetUrl)}${keyParam}`);
+      break;
     default:
       throw new Error(`Platform ${platform} tidak didukung oleh Neoxr.`);
   }
@@ -1233,6 +1239,35 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
           note: 'Ukuran file hemat kuota'
         });
       }
+    }
+  }
+
+  // 6. TeraBox handling
+  else if (platform === 'terabox') {
+    const rawItems = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : [data]);
+    const fileItem = rawItems[0] || {};
+    title = fileItem.server_filename || fileItem.path?.replace(/^\//, '') || 'TeraBox Media File';
+    author = 'TeraBox Cloud';
+    thumbnail = fileItem.thumbs?.url3 || fileItem.thumbs?.url2 || fileItem.thumbs?.url1 || fileItem.thumbs?.icon || '';
+    duration = typeof fileItem.duration === 'number' ? fileItem.duration : 0;
+
+    const directDownloadUrl = fileItem.dlink || fileItem.url || fileItem.download;
+    const filename = fileItem.server_filename || 'file.mp4';
+    const ext = (filename.split('.').pop() || 'mp4').toLowerCase();
+
+    if (directDownloadUrl && typeof directDownloadUrl === 'string') {
+      formats.push({
+        id: `nx-tb-${fileItem.fs_id || Date.now()}`,
+        quality: fileItem.size ? `Original (${fileItem.size})` : 'Download Langsung',
+        resolution: fileItem.width && fileItem.height ? `${fileItem.width}x${fileItem.height}` : undefined,
+        type: 'video',
+        extension: (ext as any) || 'mp4',
+        filesize: fileItem.size,
+        filesizeBytes: fileItem.bytes ? Number(fileItem.bytes) : undefined,
+        url: directDownloadUrl,
+        isDirect: true,
+        note: 'Tautan unduh langsung TeraBox'
+      });
     }
   }
 
@@ -1742,6 +1777,71 @@ async function scrapeSpotify(rawUrl: string): Promise<MediaMetadata> {
   };
 }
 
+// ----------------- TERABOX SCRAPER -----------------
+async function scrapeTerabox(url: string, apiKey?: string): Promise<MediaMetadata> {
+  const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const key = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const endpoint = `https://api.neoxr.eu/api/terabox?url=${encodeURIComponent(url.trim())}&apikey=${encodeURIComponent(key)}`;
+
+  const response = await fetch(endpoint, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+      'Accept': 'application/json'
+    },
+    signal: AbortSignal.timeout(18000)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gagal menghubungi server TeraBox (status HTTP: ${response.status})`);
+  }
+
+  const json = await response.json();
+  if (!json || (!json.status && !json.data)) {
+    throw new Error(json?.message || json?.msg || 'Gagal mengekstrak berkas dari link TeraBox ini.');
+  }
+
+  const rawItems = Array.isArray(json.data) ? json.data : (json.data && Array.isArray(json.data.data) ? json.data.data : [json.data]);
+  const fileItem = rawItems[0] || {};
+  const filename = fileItem.server_filename || fileItem.path?.replace(/^\//, '') || 'TeraBox_File.mp4';
+  const ext = (filename.split('.').pop() || 'mp4').toLowerCase();
+  const directDownloadUrl = fileItem.dlink || fileItem.url || fileItem.download;
+
+  if (!directDownloadUrl) {
+    throw new Error('Link download langsung dari TeraBox tidak tersedia.');
+  }
+
+  const thumb = fileItem.thumbs?.url3 || fileItem.thumbs?.url2 || fileItem.thumbs?.url1 || fileItem.thumbs?.icon || '';
+
+  const formats: MediaFormat[] = [
+    {
+      id: `tb-${fileItem.fs_id || Date.now()}`,
+      quality: fileItem.size ? `Original (${fileItem.size})` : 'Download Langsung',
+      resolution: fileItem.width && fileItem.height ? `${fileItem.width}x${fileItem.height}` : undefined,
+      type: 'video',
+      extension: (ext as any) || 'mp4',
+      filesize: fileItem.size,
+      filesizeBytes: fileItem.bytes ? Number(fileItem.bytes) : undefined,
+      url: directDownloadUrl,
+      isDirect: true,
+      note: 'Unduh Langsung TeraBox (Direct Cloud)'
+    }
+  ];
+
+  return {
+    id: `tb_${fileItem.fs_id || Date.now()}`,
+    url: url.trim(),
+    platform: 'terabox',
+    title: filename,
+    author: 'TeraBox Cloud',
+    thumbnail: thumb,
+    duration: typeof fileItem.duration === 'number' ? fileItem.duration : undefined,
+    durationFormatted: typeof fileItem.duration === 'number' ? formatDuration(fileItem.duration) : undefined,
+    formats,
+    source: 'TeraBox Neoxr Engine',
+    createdAt: new Date().toISOString()
+  };
+}
+
 // ----------------- MAIN EXTRACTOR DISPATCHER -----------------
 export async function extractMedia(rawUrl: string, apiKey?: string): Promise<MediaMetadata> {
   let url = rawUrl.trim();
@@ -1762,7 +1862,7 @@ export async function extractMedia(rawUrl: string, apiKey?: string): Promise<Med
 
   const platform = detectPlatform(url);
   if (platform === 'unknown') {
-    throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Facebook, Instagram, Pinterest, dan Spotify.');
+    throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Facebook, Instagram, Pinterest, Spotify, dan TeraBox.');
   }
 
   // 2. PRIMARY ENGINE: Try Neoxr API (api.neoxr.eu/api)
@@ -1792,8 +1892,11 @@ export async function extractMedia(rawUrl: string, apiKey?: string): Promise<Med
       return await scrapePinterest(url);
     case 'spotify':
       return await scrapeSpotify(url);
+    case 'terabox':
+      return await scrapeTerabox(url, apiKey);
     default:
-      throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Facebook, Instagram, Pinterest, dan Spotify.');
+      throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Facebook, Instagram, Pinterest, Spotify, dan TeraBox.');
   }
 }
+
 

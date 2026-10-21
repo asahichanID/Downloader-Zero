@@ -1,4 +1,4 @@
-export type PlatformType = 'youtube' | 'tiktok' | 'facebook' | 'instagram' | 'pinterest' | 'spotify' | 'unknown';
+export type PlatformType = 'youtube' | 'tiktok' | 'facebook' | 'instagram' | 'pinterest' | 'spotify' | 'terabox' | 'unknown';
 
 export type MediaType = 'video' | 'audio' | 'photos';
 

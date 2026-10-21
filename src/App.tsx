@@ -182,10 +182,52 @@ export default function App() {
         throw new Error('Tautan unduhan tidak valid atau berkas belum siap dari server sumber.');
       }
 
+      const downloadHref = `/api/proxy-download?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(filename)}`;
+
+      // TeraBox Direct Background Download: Browser downloads directly without buffering huge files into RAM
+      if (currentMedia.platform === 'terabox') {
+        setDownloadProgress(100);
+        setDownloadStatusText('Memulai unduhan langsung di browser...');
+
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = downloadHref;
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+          try {
+            document.body.removeChild(iframe);
+          } catch {}
+        }, 60000);
+
+        try {
+          await saveDownloadedMedia({
+            sourceUrl: finalUrl,
+            platform: currentMedia.platform,
+            title: currentMedia.title || 'Berkas TeraBox',
+            author: currentMedia.author || 'TeraBox Cloud',
+            thumbnail: currentMedia.thumbnail || '',
+            quality: targetFormat.quality,
+            resolution: targetFormat.resolution,
+            mediaType: targetFormat.type,
+            extension: targetFormat.extension,
+            filename,
+            filesize: targetFormat.filesize || 'Direct Cloud File',
+            filesizeBytes: targetFormat.filesizeBytes || 0
+          });
+        } catch (e) {
+          console.warn('History save notice:', e);
+        }
+
+        setTimeout(() => {
+          setIsDownloading(false);
+          setDownloadProgress(0);
+          setDownloadStatusText('');
+        }, 2200);
+        return;
+      }
+
       setDownloadProgress(70);
       setDownloadStatusText('Mengunduh & menyiapkan berkas...');
-
-      const downloadHref = `/api/proxy-download?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(filename)}`;
       
       try {
         const response = await fetch(downloadHref);
@@ -412,6 +454,17 @@ export default function App() {
         }
       }
 
+      // If TeraBox: Directly download the file without video/audio quality prompt
+      if (media.platform === 'terabox') {
+        const chosenFormat = media.formats[0];
+        if (chosenFormat && chosenFormat.url) {
+          await executeDownload(chosenFormat, media);
+        } else {
+          throw new Error('Tautan unduhan berkas TeraBox tidak ditemukan.');
+        }
+        return;
+      }
+
       // 3. Find best matching format for video or other platforms
       const filteredFormats = media.formats.filter((f) => f.type === mediaType);
       const searchPool = filteredFormats.length > 0 ? filteredFormats : media.formats;
@@ -472,23 +525,31 @@ export default function App() {
           isAutoDetected={isAutoDetected}
         />
 
-        {/* 5. Media Type Tabs (Video vs MP3 Audio) */}
-        <MediaTypeTabs
-          mediaType={mediaType}
-          setMediaType={setMediaType}
-          isAudioOnly={selectedPlatform === 'spotify'}
-        />
+        {/* 5. Media Type Tabs (Video vs MP3 Audio) - Disappears smoothly for TeraBox */}
+        {selectedPlatform !== 'terabox' && (
+          <div className="w-full transition-all duration-300 ease-in-out animate-in fade-in slide-in-from-top-2">
+            <MediaTypeTabs
+              mediaType={mediaType}
+              setMediaType={setMediaType}
+              isAudioOnly={selectedPlatform === 'spotify'}
+            />
+          </div>
+        )}
 
-        {/* 6. "Pilih Kualitas" (Quality Selection Card - Video and Audio separated) */}
-        <QualitySelectorCard
-          mediaType={mediaType}
-          setMediaType={setMediaType}
-          selectedVideoRes={selectedVideoRes}
-          setSelectedVideoRes={setSelectedVideoRes}
-          selectedAudioQuality={selectedAudioQuality}
-          setSelectedAudioQuality={setSelectedAudioQuality}
-          isAudioOnly={selectedPlatform === 'spotify'}
-        />
+        {/* 6. "Pilih Kualitas" (Quality Selection Card) - Disappears smoothly for TeraBox */}
+        {selectedPlatform !== 'terabox' && (
+          <div className="w-full transition-all duration-300 ease-in-out animate-in fade-in slide-in-from-top-2">
+            <QualitySelectorCard
+              mediaType={mediaType}
+              setMediaType={setMediaType}
+              selectedVideoRes={selectedVideoRes}
+              setSelectedVideoRes={setSelectedVideoRes}
+              selectedAudioQuality={selectedAudioQuality}
+              setSelectedAudioQuality={setSelectedAudioQuality}
+              isAudioOnly={selectedPlatform === 'spotify'}
+            />
+          </div>
+        )}
 
         {/* 7. Huge Download Button with Cyber Accents */}
         <DownloadButton

@@ -123,6 +123,21 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
           </svg>
         </div>
       )
+    },
+    {
+      id: 'terabox' as PlatformType,
+      name: 'TeraBox',
+      subtitle: 'Unduh Berkas Cloud, Video & File Langsung Cepat',
+      badge: 'Direct Cloud File',
+      accentColor: 'border-sky-500/60 shadow-sky-500/20 hover:border-sky-400',
+      activeRing: 'ring-2 ring-sky-500 bg-sky-950/30 border-sky-500',
+      icon: (
+        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#0086FF] flex items-center justify-center shadow-lg shadow-sky-500/40 shrink-0">
+          <svg className="w-6 h-6 text-white fill-current" viewBox="0 0 24 24">
+            <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+          </svg>
+        </div>
+      )
     }
   ];
 
@@ -177,7 +192,7 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-blue-900/40 text-[11px] text-slate-300">
         <Zap className="h-3.5 w-3.5 text-amber-400 shrink-0 animate-pulse" />
         <span>
-          <strong className="text-cyan-300">Tempel URL</strong> otomatis mendeteksi YouTube, TikTok, FB, IG, & Pinterest
+          <strong className="text-cyan-300">Tempel URL</strong> otomatis mendeteksi YouTube, TikTok, FB, IG, Pinterest, & TeraBox
         </span>
       </div>
 
