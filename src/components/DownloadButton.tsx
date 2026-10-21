@@ -1,4 +1,5 @@
 import { Download, Loader2, ListMusic } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface DownloadButtonProps {
   onDownload: () => void;
@@ -61,21 +62,31 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
         </div>
       </div>
 
-      {/* Real-time Progress Bar & Status (when active) */}
-      {isDownloading && (
-        <div className="w-full dz-card rounded-xl p-3 border border-cyan-500/40 shadow-lg animate-in fade-in">
-          <div className="flex items-center justify-between text-xs text-cyan-300 font-semibold mb-1.5">
-            <span>{downloadStatusText || 'Sedang memproses...'}</span>
-            <span className="font-mono text-white">{downloadProgress}%</span>
-          </div>
-          <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden border border-blue-900">
-            <div
-              className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-300 shadow-[0_0_8px_rgba(6,182,212,0.8)]"
-              style={{ width: `${Math.max(5, downloadProgress)}%` }}
-            />
-          </div>
-        </div>
-      )}
+      {/* Real-time Progress Bar & Status (when active) with fluid height and opacity */}
+      <AnimatePresence>
+        {isDownloading && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, y: -6 }}
+            animate={{ opacity: 1, height: 'auto', y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -6 }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full overflow-hidden"
+          >
+            <div className="w-full dz-card rounded-xl p-3 border border-cyan-500/40 shadow-lg mt-2">
+              <div className="flex items-center justify-between text-xs text-cyan-300 font-semibold mb-1.5">
+                <span>{downloadStatusText || 'Sedang memproses...'}</span>
+                <span className="font-mono text-white">{downloadProgress}%</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden border border-blue-900">
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-300 shadow-[0_0_8px_rgba(6,182,212,0.8)]"
+                  style={{ width: `${Math.max(5, downloadProgress)}%` }}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

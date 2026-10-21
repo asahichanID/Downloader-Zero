@@ -1,5 +1,6 @@
 import React from 'react';
 import { Crown, Tv, Music, Film } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import type { MediaType } from '../types/index.ts';
 
 interface QualitySelectorCardProps {
@@ -93,107 +94,120 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
         )}
       </div>
 
-      {/* DEDICATED VIDEO RESOLUTION VIEW (Audio completely separated) */}
-      {!isAudioOnly && mediaType === 'video' && (
-        <div className="space-y-3 transition-opacity duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] animate-in fade-in">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shrink-0">
-                <span className="text-[11px] font-black tracking-tighter">HD</span>
+      {/* DEDICATED RESOLUTION VIEWS WITH FLUID CROSSFADE */}
+      <AnimatePresence mode="wait">
+        {!isAudioOnly && mediaType === 'video' ? (
+          <motion.div
+            key="video-view"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shrink-0">
+                  <span className="text-[11px] font-black tracking-tighter">HD</span>
+                </div>
+                <div>
+                  <span className="text-xs sm:text-sm font-bold text-white block">
+                    Resolusi Video (MP4)
+                  </span>
+                  <span className="text-[11px] text-cyan-300/80">
+                    Unduh video tanpa watermark dari SD hingga 4K
+                  </span>
+                </div>
               </div>
-              <div>
-                <span className="text-xs sm:text-sm font-bold text-white block">
-                  Resolusi Video (MP4)
-                </span>
-                <span className="text-[11px] text-cyan-300/80">
-                  Unduh video tanpa watermark dari SD hingga 4K
-                </span>
-              </div>
+              <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-800/60">
+                Pilihan: {selectedVideoRes}
+              </span>
             </div>
-            <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-800/60">
-              Pilihan: {selectedVideoRes}
-            </span>
-          </div>
 
-          {/* Video Resolution Pills Grid */}
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-2.5">
-            {videoOptions.map((opt) => {
-              const isActive = selectedVideoRes === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setSelectedVideoRes(opt.id)}
-                  className={`py-2.5 px-2 rounded-xl text-center text-xs font-bold transition-all cursor-pointer flex flex-col items-center justify-center min-h-[46px] ${
-                    isActive
-                      ? 'dz-pill-active scale-[1.02]'
-                      : 'dz-pill'
-                  }`}
-                >
-                  <span className="text-xs sm:text-sm">{opt.label}</span>
-                  {opt.badge ? (
-                    <span className="text-[9px] font-bold text-cyan-300 leading-none mt-0.5">
-                      {opt.badge}
-                    </span>
-                  ) : (
+            {/* Video Resolution Pills Grid */}
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-2.5">
+              {videoOptions.map((opt) => {
+                const isActive = selectedVideoRes === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setSelectedVideoRes(opt.id)}
+                    className={`py-2.5 px-2 rounded-xl text-center text-xs font-bold cursor-pointer flex flex-col items-center justify-center min-h-[46px] touch-manipulation ${
+                      isActive
+                        ? 'dz-pill-active scale-[1.02]'
+                        : 'dz-pill'
+                    }`}
+                  >
+                    <span className="text-xs sm:text-sm">{opt.label}</span>
+                    {opt.badge ? (
+                      <span className="text-[9px] font-bold text-cyan-300 leading-none mt-0.5">
+                        {opt.badge}
+                      </span>
+                    ) : (
+                      <span className="text-[9px] text-slate-400 leading-none mt-0.5 font-normal">
+                        {opt.desc}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="audio-view"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shrink-0">
+                  <Music className="h-4 w-4" />
+                </div>
+                <div>
+                  <span className="text-xs sm:text-sm font-bold text-white block">
+                    Kualitas Bitrate Audio (MP3)
+                  </span>
+                  <span className="text-[11px] text-cyan-300/80">
+                    Audio murni jernih dari 64 kbps hingga 320 kbps Lossless
+                  </span>
+                </div>
+              </div>
+              <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-800/60">
+                Pilihan: {selectedAudioQuality} kbps
+              </span>
+            </div>
+
+            {/* Audio Bitrate Pills Grid */}
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-2.5">
+              {audioOptions.map((opt) => {
+                const isActive = selectedAudioQuality === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setSelectedAudioQuality(opt.id)}
+                    className={`py-2.5 px-2 rounded-xl text-center text-xs font-bold cursor-pointer flex flex-col items-center justify-center min-h-[46px] touch-manipulation ${
+                      isActive
+                        ? 'dz-pill-active scale-[1.02]'
+                        : 'dz-pill'
+                    }`}
+                  >
+                    <span className="text-xs sm:text-sm">{opt.label}</span>
                     <span className="text-[9px] text-slate-400 leading-none mt-0.5 font-normal">
                       {opt.desc}
                     </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* DEDICATED AUDIO QUALITY VIEW (Video completely separated) */}
-      {mediaType === 'audio' && (
-        <div className="space-y-3 animate-in fade-in duration-150">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shrink-0">
-                <Music className="h-4 w-4" />
-              </div>
-              <div>
-                <span className="text-xs sm:text-sm font-bold text-white block">
-                  Kualitas Bitrate Audio (MP3)
-                </span>
-                <span className="text-[11px] text-cyan-300/80">
-                  Audio murni jernih dari 64 kbps hingga 320 kbps Lossless
-                </span>
-              </div>
+                  </button>
+                );
+              })}
             </div>
-            <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-800/60">
-              Pilihan: {selectedAudioQuality} kbps
-            </span>
-          </div>
-
-          {/* Audio Bitrate Pills Grid */}
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-2.5">
-            {audioOptions.map((opt) => {
-              const isActive = selectedAudioQuality === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setSelectedAudioQuality(opt.id)}
-                  className={`py-2.5 px-2 rounded-xl text-center text-xs font-bold transition-all cursor-pointer flex flex-col items-center justify-center min-h-[46px] ${
-                    isActive
-                      ? 'dz-pill-active scale-[1.02]'
-                      : 'dz-pill'
-                  }`}
-                >
-                  <span className="text-xs sm:text-sm">{opt.label}</span>
-                  <span className="text-[9px] text-slate-400 leading-none mt-0.5 font-normal">
-                    {opt.desc}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

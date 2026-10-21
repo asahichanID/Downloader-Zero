@@ -22,6 +22,7 @@ import { PhotoSlideCard } from './components/PhotoSlideCard.tsx';
 import { SpotifyPlaylistModal } from './components/SpotifyPlaylistModal.tsx';
 import { HistoryModal } from './components/HistoryModal.tsx';
 import JSZip from 'jszip';
+import { motion, AnimatePresence } from 'motion/react';
 
 import { detectPlatform, formatBytes } from './services/scraper.ts';
 import { saveDownloadedMedia, getAllHistory } from './services/historyStorage.ts';
@@ -525,31 +526,35 @@ export default function App() {
           isAutoDetected={isAutoDetected}
         />
 
-        {/* 5. Media Type Tabs (Video vs MP3 Audio) - Disappears smoothly for TeraBox */}
-        {selectedPlatform !== 'terabox' && (
-          <div className="w-full transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] animate-in fade-in slide-in-from-top-1">
-            <MediaTypeTabs
-              mediaType={mediaType}
-              setMediaType={setMediaType}
-              isAudioOnly={selectedPlatform === 'spotify'}
-            />
-          </div>
-        )}
+        {/* 5 & 6. Media Type Tabs and Quality Selection Card (Fluidly collapses and expands for TeraBox) */}
+        <AnimatePresence initial={false}>
+          {selectedPlatform !== 'terabox' && (
+            <motion.div
+              key="platform-selectors-panel"
+              initial={{ opacity: 0, height: 0, y: -10 }}
+              animate={{ opacity: 1, height: 'auto', y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -10 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="w-full overflow-hidden flex flex-col gap-4 sm:gap-5"
+            >
+              <MediaTypeTabs
+                mediaType={mediaType}
+                setMediaType={setMediaType}
+                isAudioOnly={selectedPlatform === 'spotify'}
+              />
 
-        {/* 6. "Pilih Kualitas" (Quality Selection Card) - Disappears smoothly for TeraBox */}
-        {selectedPlatform !== 'terabox' && (
-          <div className="w-full transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] animate-in fade-in slide-in-from-top-1">
-            <QualitySelectorCard
-              mediaType={mediaType}
-              setMediaType={setMediaType}
-              selectedVideoRes={selectedVideoRes}
-              setSelectedVideoRes={setSelectedVideoRes}
-              selectedAudioQuality={selectedAudioQuality}
-              setSelectedAudioQuality={setSelectedAudioQuality}
-              isAudioOnly={selectedPlatform === 'spotify'}
-            />
-          </div>
-        )}
+              <QualitySelectorCard
+                mediaType={mediaType}
+                setMediaType={setMediaType}
+                selectedVideoRes={selectedVideoRes}
+                setSelectedVideoRes={setSelectedVideoRes}
+                selectedAudioQuality={selectedAudioQuality}
+                setSelectedAudioQuality={setSelectedAudioQuality}
+                isAudioOnly={selectedPlatform === 'spotify'}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* 7. Huge Download Button with Cyber Accents */}
         <DownloadButton
@@ -561,20 +566,40 @@ export default function App() {
           isSpotifyPlaylist={isSpotifyPlaylist}
         />
 
-        {/* 8. Media Preview Card: only real video or photo slide; no dummy Contoh Video, and no preview on Spotify */}
-        {mediaData?.isPhotoSlide && mediaData.images && mediaData.images.length > 0 ? (
-          <PhotoSlideCard media={mediaData} />
-        ) : mediaData && mediaData.platform !== 'spotify' ? (
-          <VideoPreviewCard
-            media={mediaData}
-            selectedResolution={selectedVideoRes}
-            onClick={() => {
-              if (mediaData) {
-                setIsFormatModalOpen(true);
-              }
-            }}
-          />
-        ) : null}
+        {/* 8. Media Preview Card: only real video or photo slide; animated fluid entrance */}
+        <AnimatePresence>
+          {mediaData?.isPhotoSlide && mediaData.images && mediaData.images.length > 0 ? (
+            <motion.div
+              key="photo-slide-preview"
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.98 }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              className="w-full"
+            >
+              <PhotoSlideCard media={mediaData} />
+            </motion.div>
+          ) : mediaData && mediaData.platform !== 'spotify' ? (
+            <motion.div
+              key="video-preview"
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.98 }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              className="w-full"
+            >
+              <VideoPreviewCard
+                media={mediaData}
+                selectedResolution={selectedVideoRes}
+                onClick={() => {
+                  if (mediaData) {
+                    setIsFormatModalOpen(true);
+                  }
+                }}
+              />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
         {/* 9. Feature Highlights Badge Bar */}
         <FeaturesHighlightBar />

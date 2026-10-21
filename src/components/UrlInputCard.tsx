@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link2, Clipboard, X, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import type { PlatformType } from '../types/index.ts';
 import { detectPlatform } from '../services/scraper.ts';
 
@@ -77,13 +78,22 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
           <span className="tracking-wide">Tempelkan Tautan Media</span>
         </div>
 
-        {/* Dynamic Auto-Detect Badge */}
-        {showDetectedBadge && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/50 text-[11px] font-bold text-emerald-300 shadow-sm animate-in fade-in zoom-in-95">
-            <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-            <span className="capitalize">{detectedNow} Terdeteksi Otomatis</span>
-          </div>
-        )}
+        {/* Dynamic Auto-Detect Badge with Fluid Entrance & Exit */}
+        <AnimatePresence>
+          {showDetectedBadge && (
+            <motion.div
+              key={`detected-${detectedNow}`}
+              initial={{ opacity: 0, scale: 0.88, y: -4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.88, y: -4 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/50 text-[11px] font-bold text-emerald-300 shadow-sm"
+            >
+              <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+              <span className="capitalize">{detectedNow} Terdeteksi Otomatis</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Input Row */}
@@ -94,18 +104,25 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
             value={url}
             onChange={(e) => handleInputChange(e.target.value)}
             placeholder={getPlaceholder()}
-            className="w-full h-11 sm:h-12 pl-3.5 pr-8 bg-[#050e24] border border-blue-900/80 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(6,182,212,0.25)] font-mono transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            className="w-full h-11 sm:h-12 pl-3.5 pr-9 bg-[#050e24] border border-blue-900/80 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(6,182,212,0.25)] font-mono transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
           />
-          {url && (
-            <button
-              type="button"
-              onClick={handleClear}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 active:scale-[0.88] transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer"
-              title="Hapus teks tautan"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+          <AnimatePresence>
+            {url && (
+              <motion.button
+                key="clear-url-btn"
+                initial={{ opacity: 0, scale: 0.7 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.7 }}
+                transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                type="button"
+                onClick={handleClear}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 active:scale-[0.88] transition-colors duration-150 cursor-pointer"
+                title="Hapus teks tautan"
+              >
+                <X className="h-4 w-4" />
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Paste Button */}
@@ -130,28 +147,39 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
           <button
             type="button"
             onClick={onOpenPlatformModal}
-            className="text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer underline underline-offset-2 ml-2 shrink-0 hidden sm:inline"
+            className="text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer underline underline-offset-2 ml-2 shrink-0 hidden sm:inline transition-colors duration-150"
           >
             Ganti Manual
           </button>
         )}
       </div>
 
-      {/* Error Message */}
-      {errorMessage && (
-        <div className="mt-3 p-3 rounded-xl bg-red-950/70 border border-red-800/80 text-red-200 text-xs flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-          <span className="flex-1 leading-relaxed">{errorMessage}</span>
-          <button
-            type="button"
-            onClick={onClearError}
-            className="text-red-400 hover:text-red-200 p-0.5"
-            aria-label="Tutup pesan galat"
+      {/* Error Message with Smooth Expansion & Collapse */}
+      <AnimatePresence>
+        {errorMessage && (
+          <motion.div
+            key="url-error-box"
+            initial={{ opacity: 0, height: 0, y: -6 }}
+            animate={{ opacity: 1, height: 'auto', y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -6 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
           >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+            <div className="mt-3 p-3 rounded-xl bg-red-950/70 border border-red-800/80 text-red-200 text-xs flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+              <span className="flex-1 leading-relaxed">{errorMessage}</span>
+              <button
+                type="button"
+                onClick={onClearError}
+                className="text-red-400 hover:text-red-200 p-0.5 active:scale-90 transition-transform cursor-pointer"
+                aria-label="Tutup pesan galat"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

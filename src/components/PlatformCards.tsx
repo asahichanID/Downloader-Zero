@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, Check, Sparkles, X, Layers, Zap } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import type { PlatformType } from '../types/index.ts';
 
 interface PlatformCardsProps {
@@ -197,17 +198,26 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       </div>
 
       {/* FLOATING SELECTOR MODAL (Bener-bener mengambang tanpa kepotong UI) */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
-          onClick={() => setIsOpen(false)}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div
-            className="relative w-full max-w-xl rounded-3xl p-5 sm:p-7 bg-[#07132e]/95 border border-cyan-500/40 shadow-[0_0_30px_rgba(6,182,212,0.22)] transition-all scale-100 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={() => setIsOpen(false)}
+            role="dialog"
+            aria-modal="true"
           >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 16 }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              className="relative w-full max-w-xl rounded-3xl p-5 sm:p-7 bg-[#07132e]/95 border border-cyan-500/40 shadow-[0_0_30px_rgba(6,182,212,0.22)] max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
             {/* Modal Header */}
             <div className="flex items-start justify-between pb-4 border-b border-cyan-900/50">
               <div className="space-y-1">
@@ -297,9 +307,10 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
                 Batal
               </button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+    </AnimatePresence>
     </div>
   );
 };

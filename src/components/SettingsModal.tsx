@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { X, Moon, Sun, Shield, Server, CheckCircle2, Info } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -36,21 +37,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="settings-title"
-    >
-      {/* Modal Card - Exactly Center */}
-      <div
-        className="relative w-full max-w-lg rounded-3xl p-6 sm:p-8 glass-panel border border-slate-700/80 light:border-slate-300 shadow-2xl transition-all scale-100"
-        onClick={(e) => e.stopPropagation()} // Prevent outside click close when clicking inside
-      >
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          key="settings-modal-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
+          onClick={onClose}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settings-title"
+        >
+          {/* Modal Card - Exactly Center */}
+          <motion.div
+            key="settings-modal-card"
+            initial={{ opacity: 0, scale: 0.94, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 8 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="relative w-full max-w-lg rounded-3xl p-6 sm:p-8 glass-panel border border-slate-700/80 light:border-slate-300 shadow-2xl"
+            onClick={(e) => e.stopPropagation()} // Prevent outside click close when clicking inside
+          >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800/80 light:border-slate-200">
           <div className="flex items-center gap-2.5">
@@ -196,12 +207,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 light:bg-slate-200 light:text-slate-900 light:hover:bg-slate-300 rounded-xl transition-colors"
+            className="px-5 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 light:bg-slate-200 light:text-slate-900 light:hover:bg-slate-300 rounded-xl active:scale-[0.96] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer"
           >
             Tutup
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
   );
 };

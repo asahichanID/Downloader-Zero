@@ -21,6 +21,7 @@ import {
   ExternalLink,
   Info
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import type { HistoryItem } from '../types/index.ts';
 import {
   getAllHistory,
@@ -103,8 +104,6 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
       }
     };
   }, [previewItem]);
-
-  if (!isOpen) return null;
 
   // Handle instant save to device/gallery
   const handleSaveToDevice = async (item: HistoryItem) => {
@@ -193,21 +192,42 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-2xl rounded-3xl p-4 sm:p-6 dz-card border border-cyan-500/60 shadow-2xl shadow-cyan-500/25 max-h-[92vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Toast Alert */}
-        {toastMessage && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-cyan-950/95 border border-cyan-400 text-cyan-200 text-xs font-semibold shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-3">
-            <CheckCircle2 className="h-4 w-4 text-cyan-400 shrink-0" />
-            <span>{toastMessage}</span>
-          </div>
-        )}
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          key="history-modal-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md"
+          onClick={onClose}
+        >
+          <motion.div
+            key="history-modal-card"
+            initial={{ opacity: 0, scale: 0.94, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 8 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="relative w-full max-w-2xl rounded-3xl p-4 sm:p-6 dz-card border border-cyan-500/60 shadow-2xl shadow-cyan-500/25 max-h-[92vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Toast Alert */}
+            <AnimatePresence>
+              {toastMessage && (
+                <motion.div
+                  key="history-toast"
+                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                  transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                  className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-cyan-950/95 border border-cyan-400 text-cyan-200 text-xs font-semibold shadow-xl flex items-center gap-2"
+                >
+                  <CheckCircle2 className="h-4 w-4 text-cyan-400 shrink-0" />
+                  <span>{toastMessage}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
         {/* Header */}
         <div className="flex items-center justify-between pb-3.5 border-b border-blue-900/60 shrink-0">
@@ -289,36 +309,47 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
         </div>
 
         {/* Confirmation Modal Overlay for Clear All */}
-        {confirmClearOpen && (
-          <div className="p-3.5 mb-3 rounded-2xl bg-red-950/80 border border-red-500/60 animate-in fade-in shrink-0">
-            <div className="flex items-start gap-2.5">
-              <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h5 className="text-xs font-bold text-white">Hapus Seluruh Riwayat Sekarang?</h5>
-                <p className="text-[11px] text-slate-300 mt-0.5">
-                  Semua berkas offline yang tersimpan dalam riwayat ini akan dihapus dari memori dan
-                  siklus 24 jam akan direset kembali.
-                </p>
-                <div className="flex items-center gap-2 mt-2.5">
-                  <button
-                    type="button"
-                    onClick={handleConfirmClearAll}
-                    className="px-3 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer transition-colors"
-                  >
-                    Ya, Bersihkan Sekarang
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmClearOpen(false)}
-                    className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
-                  >
-                    Batal
-                  </button>
+        <AnimatePresence>
+          {confirmClearOpen && (
+            <motion.div
+              key="confirm-clear-box"
+              initial={{ opacity: 0, height: 0, y: -6 }}
+              animate={{ opacity: 1, height: 'auto', y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -6 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden mb-3 shrink-0"
+            >
+              <div className="p-3.5 rounded-2xl bg-red-950/80 border border-red-500/60">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h5 className="text-xs font-bold text-white">Hapus Seluruh Riwayat Sekarang?</h5>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Semua berkas offline yang tersimpan dalam riwayat ini akan dihapus dari memori dan
+                      siklus 24 jam akan direset kembali.
+                    </p>
+                    <div className="flex items-center gap-2 mt-2.5">
+                      <button
+                        type="button"
+                        onClick={handleConfirmClearAll}
+                        className="px-3 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer active:scale-95 transition-all"
+                      >
+                        Ya, Bersihkan Sekarang
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmClearOpen(false)}
+                        className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer active:scale-95 transition-all"
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* History List or Empty State */}
         <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 -mr-1">
@@ -465,89 +496,100 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
         </div>
 
         {/* Video / Audio / Photo Preview Overlay */}
-        {previewItem && (
-          <div className="absolute inset-0 z-50 rounded-3xl bg-slate-950/95 p-4 flex flex-col justify-between border border-cyan-400 animate-in fade-in">
-            <div className="flex items-center justify-between pb-2 border-b border-blue-900/60">
-              <div className="min-w-0 flex-1 pr-2">
-                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">
-                  Pratinjau Berkas Offline Lokal (Tanpa Internet)
-                </span>
-                <h4 className="text-xs sm:text-sm font-bold text-white truncate">
-                  {previewItem.item.title}
-                </h4>
+        <AnimatePresence>
+          {previewItem && (
+            <motion.div
+              key="offline-preview-panel"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute inset-0 z-50 rounded-3xl bg-slate-950/95 p-4 flex flex-col justify-between border border-cyan-400"
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-blue-900/60">
+                <div className="min-w-0 flex-1 pr-2">
+                  <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">
+                    Pratinjau Berkas Offline Lokal (Tanpa Internet)
+                  </span>
+                  <h4 className="text-xs sm:text-sm font-bold text-white truncate">
+                    {previewItem.item.title}
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={closePreview}
+                  className="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer active:scale-90 transition-transform"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={closePreview}
-                className="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
 
-            <div className="flex-1 flex items-center justify-center p-2 min-h-0">
-              {previewItem.item.mediaType === 'audio' ? (
-                <div className="w-full max-w-md p-6 rounded-2xl bg-[#09152e] border border-cyan-500/40 text-center space-y-4">
-                  <div className="w-16 h-16 mx-auto rounded-full bg-cyan-950 border border-cyan-400 flex items-center justify-center text-cyan-400">
-                    <Music className="h-8 w-8" />
+              <div className="flex-1 flex items-center justify-center p-2 min-h-0">
+                {previewItem.item.mediaType === 'audio' ? (
+                  <div className="w-full max-w-md p-6 rounded-2xl bg-[#09152e] border border-cyan-500/40 text-center space-y-4">
+                    <div className="w-16 h-16 mx-auto rounded-full bg-cyan-950 border border-cyan-400 flex items-center justify-center text-cyan-400">
+                      <Music className="h-8 w-8" />
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-bold text-white">{previewItem.item.title}</h5>
+                      <p className="text-xs text-slate-400">{previewItem.item.author}</p>
+                    </div>
+                    <audio
+                      src={previewItem.url}
+                      controls
+                      autoPlay
+                      className="w-full mt-2 accent-cyan-400"
+                    />
                   </div>
-                  <div>
-                    <h5 className="text-sm font-bold text-white">{previewItem.item.title}</h5>
-                    <p className="text-xs text-slate-400">{previewItem.item.author}</p>
+                ) : previewItem.item.extension === 'zip' ? (
+                  <div className="w-full max-w-md p-6 rounded-2xl bg-[#09152e] border border-cyan-500/40 text-center space-y-3">
+                    <div className="w-16 h-16 mx-auto rounded-full bg-pink-950 border border-pink-400 flex items-center justify-center text-pink-400">
+                      <Images className="h-8 w-8" />
+                    </div>
+                    <div>
+                      <h5 className="text-sm font-bold text-white">{previewItem.item.title}</h5>
+                      <p className="text-xs text-slate-400">Arsip Koleksi Foto Slide HD (ZIP)</p>
+                    </div>
+                    <p className="text-xs text-cyan-300">
+                      Berkas ZIP ini tersimpan lengkap di memori HP Anda. Tekan tombol di bawah untuk langsung menyimpannya ke Galeri / File.
+                    </p>
                   </div>
-                  <audio
+                ) : previewItem.item.extension === 'jpg' || previewItem.item.extension === 'jpeg' || previewItem.item.extension === 'png' ? (
+                  <img
+                    src={previewItem.url}
+                    alt={previewItem.item.title}
+                    className="max-h-[50vh] max-w-full rounded-2xl border border-cyan-500/40 shadow-xl object-contain bg-black"
+                  />
+                ) : (
+                  <video
                     src={previewItem.url}
                     controls
+                    playsInline
                     autoPlay
-                    className="w-full mt-2 accent-cyan-400"
+                    className="max-h-[50vh] max-w-full rounded-2xl border border-cyan-500/40 shadow-xl bg-black"
                   />
-                </div>
-              ) : previewItem.item.extension === 'zip' ? (
-                <div className="w-full max-w-md p-6 rounded-2xl bg-[#09152e] border border-cyan-500/40 text-center space-y-3">
-                  <div className="w-16 h-16 mx-auto rounded-full bg-pink-950 border border-pink-400 flex items-center justify-center text-pink-400">
-                    <Images className="h-8 w-8" />
-                  </div>
-                  <div>
-                    <h5 className="text-sm font-bold text-white">{previewItem.item.title}</h5>
-                    <p className="text-xs text-slate-400">Arsip Koleksi Foto Slide HD (ZIP)</p>
-                  </div>
-                  <p className="text-xs text-cyan-300">
-                    Berkas ZIP ini tersimpan lengkap di memori HP Anda. Tekan tombol di bawah untuk langsung menyimpannya ke Galeri / File.
-                  </p>
-                </div>
-              ) : previewItem.item.extension === 'jpg' || previewItem.item.extension === 'jpeg' || previewItem.item.extension === 'png' ? (
-                <img
-                  src={previewItem.url}
-                  alt={previewItem.item.title}
-                  className="max-h-[50vh] max-w-full rounded-2xl border border-cyan-500/40 shadow-xl object-contain bg-black"
-                />
-              ) : (
-                <video
-                  src={previewItem.url}
-                  controls
-                  playsInline
-                  autoPlay
-                  className="max-h-[50vh] max-w-full rounded-2xl border border-cyan-500/40 shadow-xl bg-black"
-                />
-              )}
-            </div>
+                )}
+              </div>
 
-            <div className="pt-2 border-t border-blue-900/60 flex items-center justify-between">
-              <span className="text-[11px] text-slate-400">
-                {previewItem.item.quality} · {previewItem.item.filesize}
-              </span>
-              <button
-                type="button"
-                onClick={() => handleSaveToDevice(previewItem.item)}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/40 cursor-pointer"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Simpan ke Galeri Sekarang</span>
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+              <div className="pt-2 border-t border-blue-900/60 flex items-center justify-between">
+                <span className="text-[11px] text-slate-400">
+                  {previewItem.item.quality} · {previewItem.item.filesize}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleSaveToDevice(previewItem.item)}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/40 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Simpan ke Galeri Sekarang</span>
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
   );
 };

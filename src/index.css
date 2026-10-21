@@ -113,6 +113,48 @@ button, a, input, select {
   transition: box-shadow 200ms var(--ease-fluid);
 }
 
+/* Fluid Appearance Keyframes */
+@keyframes dzFadeInUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes dzFadeInDown {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes dzScaleIn {
+  from {
+    opacity: 0;
+    transform: scale3d(0.95, 0.95, 1);
+  }
+  to {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+.dz-animate-enter {
+  animation: dzFadeInUp 320ms var(--ease-fluid) both;
+}
+
+.dz-animate-scale {
+  animation: dzScaleIn 280ms var(--ease-fluid) both;
+}
+
 /* Accessibility: Support prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
