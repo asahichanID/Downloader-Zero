@@ -63,7 +63,7 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
             <button
               type="button"
               onClick={() => setMediaType('video')}
-              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all duration-200 ease-out cursor-pointer ${
+              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] cursor-pointer ${
                 mediaType === 'video'
                   ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.4)]'
                   : 'text-slate-400 hover:text-white'
@@ -75,7 +75,7 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
             <button
               type="button"
               onClick={() => setMediaType('audio')}
-              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all duration-200 ease-out cursor-pointer ${
+              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] cursor-pointer ${
                 mediaType === 'audio'
                   ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.4)]'
                   : 'text-slate-400 hover:text-white'
@@ -95,7 +95,7 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
 
       {/* DEDICATED VIDEO RESOLUTION VIEW (Audio completely separated) */}
       {!isAudioOnly && mediaType === 'video' && (
-        <div className="space-y-3 animate-in fade-in duration-150">
+        <div className="space-y-3 transition-opacity duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] animate-in fade-in">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shrink-0">

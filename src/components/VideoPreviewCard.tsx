@@ -28,21 +28,21 @@ export const VideoPreviewCard: React.FC<VideoPreviewCardProps> = ({
   return (
     <div
       onClick={onClick}
-      className="dz-card rounded-2xl p-2.5 sm:p-3 w-full flex items-center justify-between gap-3 shadow-lg border border-blue-800/60 hover:border-cyan-500/50 transition-all cursor-pointer group"
+      className="dz-card rounded-2xl p-2.5 sm:p-3 w-full flex items-center justify-between gap-3 border border-blue-800/60 hover:border-cyan-500/50 hover:-translate-y-0.5 active:scale-[0.985] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer group touch-manipulation"
     >
       {/* Left Thumbnail with Play Button & HD Badge */}
       <div className="relative w-28 sm:w-32 h-16 sm:h-18 rounded-xl overflow-hidden shrink-0 border border-cyan-500/30 bg-[#050e24]">
         <img
           src={thumbnail}
           alt={title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
           onError={(e) => {
             (e.target as HTMLElement).setAttribute('src', animeMascot);
           }}
         />
         {/* Dark overlay */}
         <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-          <div className="w-7 h-7 rounded-full bg-cyan-500/80 backdrop-blur-xs flex items-center justify-center text-white shadow-md shadow-cyan-500/40 group-hover:scale-110 transition-transform">
+          <div className="w-7 h-7 rounded-full bg-cyan-500/80 backdrop-blur-xs flex items-center justify-center text-white shadow-md shadow-cyan-500/40 group-hover:scale-110 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]">
             <Play className="h-3.5 w-3.5 fill-current ml-0.5" />
           </div>
         </div>

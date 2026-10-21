@@ -527,7 +527,7 @@ export default function App() {
 
         {/* 5. Media Type Tabs (Video vs MP3 Audio) - Disappears smoothly for TeraBox */}
         {selectedPlatform !== 'terabox' && (
-          <div className="w-full transition-all duration-300 ease-in-out animate-in fade-in slide-in-from-top-2">
+          <div className="w-full transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] animate-in fade-in slide-in-from-top-1">
             <MediaTypeTabs
               mediaType={mediaType}
               setMediaType={setMediaType}
@@ -538,7 +538,7 @@ export default function App() {
 
         {/* 6. "Pilih Kualitas" (Quality Selection Card) - Disappears smoothly for TeraBox */}
         {selectedPlatform !== 'terabox' && (
-          <div className="w-full transition-all duration-300 ease-in-out animate-in fade-in slide-in-from-top-2">
+          <div className="w-full transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] animate-in fade-in slide-in-from-top-1">
             <QualitySelectorCard
               mediaType={mediaType}
               setMediaType={setMediaType}

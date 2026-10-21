@@ -149,11 +149,11 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="group relative w-full sm:w-auto flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-[#0a1838] via-[#0e265c] to-[#0a1838] border border-cyan-500/50 hover:border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.18)] hover:shadow-[0_0_28px_rgba(6,182,212,0.4)] transition-all cursor-pointer text-left"
+        className="group relative w-full sm:w-auto flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-[#0a1838] via-[#0e265c] to-[#0a1838] border border-cyan-500/40 hover:border-cyan-400/80 shadow-[0_0_14px_rgba(6,182,212,0.18)] hover:shadow-[0_0_20px_rgba(6,182,212,0.32)] active:scale-[0.985] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer text-left touch-manipulation"
         title="Klik untuk memilih platform manual atau lihat daftar aplikasi yang didukung"
       >
         <div className="flex items-center gap-3">
-          <div className="scale-90 group-hover:scale-100 transition-transform">
+          <div className="scale-95 group-hover:scale-105 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]">
             {currentPlatformObj.icon}
           </div>
           <div>
@@ -180,11 +180,11 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
         </div>
 
         {/* Action Badge */}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-950/80 group-hover:bg-cyan-900/90 border border-cyan-500/40 text-cyan-300 text-xs font-bold transition-all shadow-inner shrink-0">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-950/80 group-hover:bg-cyan-900/90 border border-cyan-500/40 text-cyan-300 text-xs font-bold transition-colors duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] shadow-inner shrink-0">
           <Layers className="h-3.5 w-3.5 text-cyan-400" />
           <span className="hidden sm:inline">Pilih Aplikasi Tautan</span>
           <span className="sm:hidden">Pilih</span>
-          <ChevronDown className="h-3.5 w-3.5 group-hover:translate-y-0.5 transition-transform" />
+          <ChevronDown className="h-3.5 w-3.5 group-hover:translate-y-0.5 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]" />
         </div>
       </button>
 
@@ -254,7 +254,7 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
                       onSelectPlatform(p.id);
                       setIsOpen(false);
                     }}
-                    className={`flex items-start gap-3.5 p-3.5 rounded-2xl transition-all duration-200 ease-out cursor-pointer text-left border ${
+                    className={`flex items-start gap-3.5 p-3.5 rounded-2xl transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.97] hover:-translate-y-0.5 cursor-pointer text-left border touch-manipulation ${
                       isActive
                         ? p.activeRing + ' shadow-[0_0_16px_rgba(6,182,212,0.35)]'
                         : `bg-[#0a1b3d]/70 hover:bg-[#0f285a] ${p.accentColor}`
