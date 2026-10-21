@@ -20,11 +20,11 @@ export const MediaTypeTabs: React.FC<MediaTypeTabsProps> = ({
         type="button"
         disabled={isAudioOnly}
         onClick={() => !isAudioOnly && setMediaType('video')}
-        className={`h-12 sm:h-13 rounded-2xl flex items-center justify-center gap-2 text-sm sm:text-base font-bold transition-all ${
+        className={`h-12 sm:h-13 rounded-2xl flex items-center justify-center gap-2 text-sm sm:text-base font-bold transition-all duration-200 ease-out ${
           isAudioOnly
             ? 'opacity-40 cursor-not-allowed dz-card text-slate-500'
             : mediaType === 'video'
-            ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_20px_rgba(6,182,212,0.5)] border-t border-cyan-300/40 cursor-pointer'
+            ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_18px_rgba(6,182,212,0.55)] border-t border-cyan-300/50 cursor-pointer'
             : 'dz-card text-slate-300 hover:text-white hover:border-cyan-500/40 hover:bg-[#0c224a]/60 cursor-pointer'
         }`}
         title={isAudioOnly ? 'Platform ini hanya mendukung unduhan audio' : 'Format Video'}
@@ -42,11 +42,11 @@ export const MediaTypeTabs: React.FC<MediaTypeTabsProps> = ({
       <button
         type="button"
         onClick={() => setMediaType('audio')}
-        className={`h-12 sm:h-13 rounded-2xl flex items-center justify-center gap-2 text-sm sm:text-base font-bold transition-all cursor-pointer ${
+        className={`h-12 sm:h-13 rounded-2xl flex items-center justify-center gap-2 text-sm sm:text-base font-bold transition-all duration-200 ease-out cursor-pointer ${
           mediaType === 'audio'
             ? isAudioOnly
-              ? 'bg-gradient-to-r from-emerald-600 to-teal-500 text-white shadow-[0_0_22px_rgba(34,197,94,0.5)] border-t border-emerald-300/50'
-              : 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_20px_rgba(6,182,212,0.5)] border-t border-cyan-300/40'
+              ? 'bg-gradient-to-r from-emerald-600 to-teal-500 text-white shadow-[0_0_18px_rgba(34,197,94,0.5)] border-t border-emerald-300/50'
+              : 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_18px_rgba(6,182,212,0.55)] border-t border-cyan-300/50'
             : 'dz-card text-slate-300 hover:text-white hover:border-cyan-500/40 hover:bg-[#0c224a]/60'
         }`}
       >

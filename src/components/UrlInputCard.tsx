@@ -69,7 +69,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
   const showDetectedBadge = detectedNow !== 'unknown';
 
   return (
-    <div className="dz-card rounded-2xl p-3.5 sm:p-5 w-full shadow-lg transition-all border border-blue-900/60 hover:border-cyan-500/40">
+    <div className="dz-card rounded-2xl p-3.5 sm:p-5 w-full transition-all duration-200 border border-blue-900/60 hover:border-cyan-500/40">
       {/* Card Header: Link icon + Label + Auto-detect indicator */}
       <div className="flex items-center justify-between gap-2 mb-2.5">
         <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-cyan-300">
@@ -94,7 +94,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
             value={url}
             onChange={(e) => handleInputChange(e.target.value)}
             placeholder={getPlaceholder()}
-            className="w-full h-11 sm:h-12 pl-3.5 pr-8 bg-[#050e24] border border-blue-900/80 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 font-mono transition-all"
+            className="w-full h-11 sm:h-12 pl-3.5 pr-8 bg-[#050e24] border border-blue-900/80 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(6,182,212,0.25)] font-mono transition-all duration-200"
           />
           {url && (
             <button
@@ -112,7 +112,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
         <button
           type="button"
           onClick={handlePaste}
-          className="h-11 sm:h-12 px-3.5 sm:px-4 rounded-xl border border-cyan-500/60 bg-[#0c224a] hover:bg-[#12316b] text-white flex items-center gap-1.5 text-xs sm:text-sm font-bold shadow-md hover:shadow-[0_0_12px_rgba(6,182,212,0.4)] transition-all cursor-pointer shrink-0"
+          className="h-11 sm:h-12 px-3.5 sm:px-4 rounded-xl border border-cyan-500/40 bg-[#0c224a] hover:bg-[#12316b] hover:border-cyan-400 text-white flex items-center gap-1.5 text-xs sm:text-sm font-bold shadow-sm hover:shadow-[0_0_10px_rgba(6,182,212,0.3)] transition-all duration-200 ease-out cursor-pointer shrink-0"
           title="Tempel dari papan klip"
         >
           <Clipboard className="h-4 w-4 text-cyan-400" />

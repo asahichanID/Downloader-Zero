@@ -190,7 +190,7 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
 
       {/* Auto-Detection Status Helper */}
       <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-blue-900/40 text-[11px] text-slate-300">
-        <Zap className="h-3.5 w-3.5 text-amber-400 shrink-0 animate-pulse" />
+        <Zap className="h-3.5 w-3.5 text-amber-400 shrink-0" />
         <span>
           <strong className="text-cyan-300">Tempel URL</strong> otomatis mendeteksi YouTube, TikTok, FB, IG, Pinterest, & TeraBox
         </span>
@@ -205,7 +205,7 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
           aria-modal="true"
         >
           <div
-            className="relative w-full max-w-xl rounded-3xl p-5 sm:p-7 bg-[#07132e]/95 border-2 border-cyan-500/50 shadow-[0_0_50px_rgba(6,182,212,0.3)] transition-all scale-100 max-h-[90vh] overflow-y-auto"
+            className="relative w-full max-w-xl rounded-3xl p-5 sm:p-7 bg-[#07132e]/95 border border-cyan-500/40 shadow-[0_0_30px_rgba(6,182,212,0.22)] transition-all scale-100 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -254,9 +254,9 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
                       onSelectPlatform(p.id);
                       setIsOpen(false);
                     }}
-                    className={`flex items-start gap-3.5 p-3.5 rounded-2xl transition-all cursor-pointer text-left border ${
+                    className={`flex items-start gap-3.5 p-3.5 rounded-2xl transition-all duration-200 ease-out cursor-pointer text-left border ${
                       isActive
-                        ? p.activeRing + ' shadow-[0_0_20px_rgba(6,182,212,0.3)]'
+                        ? p.activeRing + ' shadow-[0_0_16px_rgba(6,182,212,0.35)]'
                         : `bg-[#0a1b3d]/70 hover:bg-[#0f285a] ${p.accentColor}`
                     }`}
                   >

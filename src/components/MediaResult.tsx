@@ -242,7 +242,7 @@ export const MediaResult: React.FC<MediaResultProps> = ({
       {/* Top Header Bar of Result */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-800/80 light:border-slate-200">
         <div className="flex items-center gap-2">
-          <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse" />
+          <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400" />
           <span className="text-xs font-mono font-semibold uppercase tracking-wider text-cyan-400">
             Media Siap Diunduh Otomatis · {media.platform.toUpperCase()}
           </span>

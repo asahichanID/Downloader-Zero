@@ -63,9 +63,9 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
             <button
               type="button"
               onClick={() => setMediaType('video')}
-              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all duration-200 ease-out cursor-pointer ${
                 mediaType === 'video'
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm'
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.4)]'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -75,9 +75,9 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
             <button
               type="button"
               onClick={() => setMediaType('audio')}
-              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all duration-200 ease-out cursor-pointer ${
                 mediaType === 'audio'
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm'
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.4)]'
                   : 'text-slate-400 hover:text-white'
               }`}
             >

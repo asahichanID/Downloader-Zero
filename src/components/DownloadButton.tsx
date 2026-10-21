@@ -31,7 +31,7 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
           type="button"
           onClick={onDownload}
           disabled={isLoading || isDownloading}
-          className={`flex-1 h-14 sm:h-15 rounded-2xl text-white flex items-center justify-center gap-2.5 text-base sm:text-lg font-extrabold tracking-wide active:scale-[0.99] transition-all cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed ${
+          className={`flex-1 h-14 sm:h-15 rounded-2xl text-white flex items-center justify-center gap-2.5 text-base sm:text-lg font-extrabold tracking-wide active:scale-[0.99] transition-all duration-200 ease-out cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed ${
             isSpotifyPlaylist
               ? 'bg-gradient-to-r from-[#1DB954] via-emerald-600 to-teal-700 hover:from-[#1ed760] hover:to-emerald-500 shadow-[0_0_25px_rgba(29,185,84,0.65)] hover:shadow-[0_0_35px_rgba(29,185,84,0.85)] border-t border-emerald-300/50'
               : 'bg-gradient-to-r from-[#00c6ff] via-[#0072ff] to-[#0052d4] hover:from-[#26d0ce] hover:to-[#1a2980] shadow-[0_0_25px_rgba(6,182,212,0.65)] hover:shadow-[0_0_35px_rgba(6,182,212,0.85)] border-t border-cyan-200/50'

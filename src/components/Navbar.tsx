@@ -41,12 +41,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={onOpenHistory}
             aria-label="Riwayat Unduhan"
             title="Riwayat Unduhan (Offline 24 Jam)"
-            className="relative flex items-center gap-1.5 px-3 h-10 sm:h-11 rounded-xl bg-[#09152e] border border-cyan-500/40 text-cyan-300 hover:border-cyan-400 hover:text-white hover:shadow-[0_0_14px_rgba(6,182,212,0.4)] transition-all cursor-pointer font-bold text-xs"
+            className="relative flex items-center gap-1.5 px-3 h-10 sm:h-11 rounded-xl bg-[#09152e] border border-cyan-500/40 text-cyan-300 hover:border-cyan-400 hover:text-white hover:shadow-[0_0_10px_rgba(6,182,212,0.3)] transition-all duration-200 ease-out cursor-pointer font-bold text-xs"
           >
             <Clock className="h-4.5 w-4.5 text-cyan-400" />
             <span className="hidden sm:inline">Riwayat</span>
             {historyCount > 0 && (
-              <span className="flex items-center justify-center min-w-4.5 h-4.5 px-1 rounded-full bg-cyan-500 text-slate-950 text-[10px] font-black shadow-[0_0_8px_rgba(6,182,212,0.8)]">
+              <span className="flex items-center justify-center min-w-4.5 h-4.5 px-1 rounded-full bg-cyan-500 text-slate-950 text-[10px] font-black shadow-[0_0_8px_rgba(6,182,212,0.6)]">
                 {historyCount > 99 ? '99+' : historyCount}
               </span>
             )}
@@ -57,7 +57,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={onOpenMenu}
             aria-label="Menu"
-            className="flex items-center justify-center h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-[#09152e] border border-blue-900/80 text-cyan-300 hover:border-cyan-400 hover:text-white hover:shadow-[0_0_12px_rgba(6,182,212,0.5)] transition-all cursor-pointer"
+            className="flex items-center justify-center h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-[#09152e] border border-blue-900/60 text-cyan-300 hover:border-cyan-400/80 hover:text-white hover:shadow-[0_0_10px_rgba(6,182,212,0.3)] transition-all duration-200 ease-out cursor-pointer"
           >
             <Menu className="h-5 w-5" />
           </button>
@@ -67,7 +67,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={onOpenSettings}
             aria-label="Pengaturan"
-            className="flex items-center justify-center h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-[#09152e] border border-blue-900/80 text-cyan-300 hover:border-cyan-400 hover:text-white hover:shadow-[0_0_12px_rgba(6,182,212,0.5)] transition-all cursor-pointer"
+            className="flex items-center justify-center h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-[#09152e] border border-blue-900/60 text-cyan-300 hover:border-cyan-400/80 hover:text-white hover:shadow-[0_0_10px_rgba(6,182,212,0.3)] transition-all duration-200 ease-out cursor-pointer"
           >
             <Settings className="h-5 w-5" />
           </button>

@@ -238,7 +238,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
         <div className="mt-3.5 p-3 sm:p-3.5 rounded-2xl bg-[#06122b]/90 border border-cyan-500/30 shrink-0 space-y-2">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
             <div className="flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+              <span className="inline-block w-2 h-2 rounded-full bg-cyan-400"></span>
               <span className="text-xs font-bold text-cyan-300 tracking-wide uppercase">
                 Siklus Pembersihan Otomatis (Full 24 Jam)
               </span>
