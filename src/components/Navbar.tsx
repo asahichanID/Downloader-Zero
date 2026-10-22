@@ -28,8 +28,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               DZ
             </div>
           </div>
-          <span className="text-xl sm:text-2xl font-bold tracking-tight text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">
-            Downloader<span className="text-cyan-400">Zero</span>
+          <span className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white transition-colors">
+            Downloader<span className="text-cyan-500 dark:text-cyan-400">Zero</span>
           </span>
         </div>
 
@@ -41,12 +41,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={onOpenHistory}
             aria-label="Riwayat Unduhan"
             title="Riwayat Unduhan (Offline 24 Jam)"
-            className="relative flex items-center gap-1.5 px-3 h-10 sm:h-11 rounded-xl bg-[#09152e] border border-cyan-500/40 text-cyan-300 hover:border-cyan-400 hover:text-white hover:shadow-[0_0_10px_rgba(6,182,212,0.3)] active:scale-[0.94] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer font-bold text-xs touch-manipulation"
+            className="relative flex items-center gap-1.5 px-3 h-10 sm:h-11 rounded-xl bg-white dark:bg-[#09152e] border border-slate-300 dark:border-cyan-500/40 text-slate-700 dark:text-cyan-300 hover:border-cyan-400 hover:text-slate-950 dark:hover:text-white active:scale-[0.94] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer font-bold text-xs touch-manipulation shadow-sm"
           >
-            <Clock className="h-4.5 w-4.5 text-cyan-400" />
+            <Clock className="h-4.5 w-4.5 text-cyan-500 dark:text-cyan-400" />
             <span className="hidden sm:inline">Riwayat</span>
             {historyCount > 0 && (
-              <span className="flex items-center justify-center min-w-4.5 h-4.5 px-1 rounded-full bg-cyan-500 text-slate-950 text-[10px] font-black shadow-[0_0_8px_rgba(6,182,212,0.6)]">
+              <span className="flex items-center justify-center min-w-4.5 h-4.5 px-1 rounded-full bg-cyan-500 text-slate-950 text-[10px] font-black">
                 {historyCount > 99 ? '99+' : historyCount}
               </span>
             )}
@@ -57,7 +57,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={onOpenMenu}
             aria-label="Menu"
-            className="flex items-center justify-center h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-[#09152e] border border-blue-900/60 text-cyan-300 hover:border-cyan-400/80 hover:text-white hover:shadow-[0_0_10px_rgba(6,182,212,0.3)] active:scale-[0.94] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer touch-manipulation"
+            className="flex items-center justify-center h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-white dark:bg-[#09152e] border border-slate-300 dark:border-blue-900/60 text-slate-700 dark:text-cyan-300 hover:border-cyan-400/80 hover:text-slate-950 dark:hover:text-white active:scale-[0.94] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer touch-manipulation shadow-sm"
           >
             <Menu className="h-5 w-5" />
           </button>
@@ -67,7 +67,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={onOpenSettings}
             aria-label="Pengaturan"
-            className="flex items-center justify-center h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-[#09152e] border border-blue-900/60 text-cyan-300 hover:border-cyan-400/80 hover:text-white hover:shadow-[0_0_10px_rgba(6,182,212,0.3)] active:scale-[0.94] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer touch-manipulation"
+            className="flex items-center justify-center h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-white dark:bg-[#09152e] border border-slate-300 dark:border-blue-900/60 text-slate-700 dark:text-cyan-300 hover:border-cyan-400/80 hover:text-slate-950 dark:hover:text-white active:scale-[0.94] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer touch-manipulation shadow-sm"
           >
             <Settings className="h-5 w-5" />
           </button>

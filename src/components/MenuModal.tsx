@@ -38,19 +38,19 @@ export const MenuModal: React.FC<MenuModalProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 10 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full max-w-sm rounded-3xl p-5 dz-card border border-cyan-500/50 shadow-2xl shadow-black/85"
+            className="relative w-full max-w-sm rounded-3xl p-5 dz-card border border-slate-300 dark:border-cyan-500/50 shadow-2xl shadow-slate-900/10 dark:shadow-black/85 text-slate-900 dark:text-white"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-blue-900/60">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-blue-900/60">
               <div className="flex items-center gap-2">
-                <span className="font-cyber font-black text-cyan-400 italic">DZ</span>
-                <span className="font-bold text-white text-base">Menu Navigasi</span>
+                <span className="font-cyber font-black text-cyan-600 dark:text-cyan-400 italic">DZ</span>
+                <span className="font-bold text-slate-900 dark:text-white text-base">Menu Navigasi</span>
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="w-8 h-8 rounded-lg bg-[#0c224a] border border-blue-900 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer active:scale-90 transition-all duration-150"
+                className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-[#0c224a] border border-slate-300 dark:border-blue-900 text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white flex items-center justify-center cursor-pointer active:scale-90 transition-all duration-150"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -58,7 +58,7 @@ export const MenuModal: React.FC<MenuModalProps> = ({
 
         {/* Platforms List */}
         <div className="py-4 space-y-2">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Pilih Platform
           </span>
           <div className="grid grid-cols-2 gap-2">
@@ -68,7 +68,7 @@ export const MenuModal: React.FC<MenuModalProps> = ({
                 onSelectPlatform('youtube');
                 onClose();
               }}
-              className="flex items-center gap-2 p-2.5 rounded-xl bg-[#07132e] border border-blue-900 hover:border-red-500/60 hover:bg-red-950/20 text-xs font-bold text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+              className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#07132e] border border-slate-200 dark:border-blue-900 hover:border-red-500/60 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs font-bold text-slate-900 dark:text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
             >
               <Youtube className="h-4 w-4 text-red-500 shrink-0" />
               <span>YouTube</span>
@@ -80,9 +80,9 @@ export const MenuModal: React.FC<MenuModalProps> = ({
                 onSelectPlatform('tiktok');
                 onClose();
               }}
-              className="flex items-center gap-2 p-2.5 rounded-xl bg-[#07132e] border border-blue-900 hover:border-cyan-400 hover:bg-cyan-950/20 text-xs font-bold text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+              className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#07132e] border border-slate-200 dark:border-blue-900 hover:border-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-950/20 text-xs font-bold text-slate-900 dark:text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
             >
-              <Film className="h-4 w-4 text-cyan-400 shrink-0" />
+              <Film className="h-4 w-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
               <span>TikTok</span>
             </button>
 
@@ -92,7 +92,7 @@ export const MenuModal: React.FC<MenuModalProps> = ({
                 onSelectPlatform('facebook');
                 onClose();
               }}
-              className="flex items-center gap-2 p-2.5 rounded-xl bg-[#07132e] border border-blue-900 hover:border-blue-500 hover:bg-blue-950/20 text-xs font-bold text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+              className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#07132e] border border-slate-200 dark:border-blue-900 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-xs font-bold text-slate-900 dark:text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
             >
               <Film className="h-4 w-4 text-blue-500 shrink-0" />
               <span>Facebook</span>
@@ -104,7 +104,7 @@ export const MenuModal: React.FC<MenuModalProps> = ({
                 onSelectPlatform('instagram');
                 onClose();
               }}
-              className="flex items-center gap-2 p-2.5 rounded-xl bg-[#07132e] border border-blue-900 hover:border-pink-500 hover:bg-pink-950/20 text-xs font-bold text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+              className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#07132e] border border-slate-200 dark:border-blue-900 hover:border-pink-500 hover:bg-pink-50 dark:hover:bg-pink-950/20 text-xs font-bold text-slate-900 dark:text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
             >
               <Music className="h-4 w-4 text-pink-500 shrink-0" />
               <span>Instagram</span>
@@ -116,7 +116,7 @@ export const MenuModal: React.FC<MenuModalProps> = ({
                 onSelectPlatform('pinterest');
                 onClose();
               }}
-              className="flex items-center gap-2 p-2.5 rounded-xl bg-[#07132e] border border-blue-900 hover:border-red-500 hover:bg-red-950/20 text-xs font-bold text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+              className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#07132e] border border-slate-200 dark:border-blue-900 hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 text-xs font-bold text-slate-900 dark:text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
             >
               <Film className="h-4 w-4 text-red-500 shrink-0" />
               <span>Pinterest</span>
@@ -128,46 +128,46 @@ export const MenuModal: React.FC<MenuModalProps> = ({
                 onSelectPlatform('spotify');
                 onClose();
               }}
-              className="flex items-center gap-2 p-2.5 rounded-xl bg-[#07132e] border border-blue-900 hover:border-emerald-500 hover:bg-emerald-950/20 text-xs font-bold text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+              className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#07132e] border border-slate-200 dark:border-blue-900 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 text-xs font-bold text-slate-900 dark:text-white cursor-pointer active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
             >
-              <Music className="h-4 w-4 text-emerald-400 shrink-0" />
+              <Music className="h-4 w-4 text-emerald-500 dark:text-emerald-400 shrink-0" />
               <span>Spotify</span>
             </button>
           </div>
         </div>
 
         {/* History Menu Button */}
-        <div className="pt-2 pb-1 border-t border-blue-900/60">
+        <div className="pt-2 pb-1 border-t border-slate-200 dark:border-blue-900/60">
           <button
             type="button"
             onClick={() => {
               onClose();
               onOpenHistory();
             }}
-            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-cyan-950/40 border border-cyan-500/40 hover:border-cyan-400 text-xs font-bold text-cyan-300 hover:text-white active:scale-[0.98] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer"
+            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-sky-50 dark:bg-cyan-950/40 border border-sky-300 dark:border-cyan-500/40 hover:border-cyan-500 text-xs font-bold text-sky-900 dark:text-cyan-300 active:scale-[0.98] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer"
           >
             <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-cyan-400" />
+              <Clock className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
               <span>Riwayat Unduhan (24 Jam)</span>
             </div>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-200/80 dark:bg-cyan-500/20 text-sky-900 dark:text-cyan-300 border border-sky-300 dark:border-cyan-400/30 font-bold">
               Offline
             </span>
           </button>
         </div>
 
         {/* Legal Links */}
-        <div className="pt-2 border-t border-blue-900/60 space-y-2">
+        <div className="pt-2 border-t border-slate-200 dark:border-blue-900/60 space-y-2">
           <button
             type="button"
             onClick={() => {
               onClose();
               onOpenTerms();
             }}
-            className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-blue-950/40 active:scale-[0.98] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer"
+            className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-blue-950/40 active:scale-[0.98] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer"
           >
             <span>Syarat &amp; Ketentuan (S&amp;K)</span>
-            <Shield className="h-3.5 w-3.5 text-cyan-400" />
+            <Shield className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400" />
           </button>
 
           <button
@@ -176,10 +176,10 @@ export const MenuModal: React.FC<MenuModalProps> = ({
               onClose();
               onOpenPrivacy();
             }}
-            className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-blue-950/40 active:scale-[0.98] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer"
+            className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-blue-950/40 active:scale-[0.98] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer"
           >
             <span>Kebijakan Privasi</span>
-            <Info className="h-3.5 w-3.5 text-cyan-400" />
+            <Info className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400" />
           </button>
         </div>
 

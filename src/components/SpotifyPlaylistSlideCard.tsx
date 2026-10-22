@@ -365,23 +365,23 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
       )}
 
       {/* Main Container Card */}
-      <div className="dz-card rounded-3xl p-4 sm:p-5 border border-emerald-500/40 shadow-2xl shadow-emerald-500/10">
+      <div className="dz-card rounded-3xl p-4 sm:p-5 border border-emerald-500/40 shadow-xl">
         {/* Header Bar */}
-        <div className="flex items-center justify-between pb-3 border-b border-emerald-900/40 gap-2">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-emerald-900/40 gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-[#1DB954] flex items-center justify-center text-black shrink-0 shadow-md shadow-emerald-500/40">
+            <div className="w-8 h-8 rounded-xl bg-[#1DB954] flex items-center justify-center text-black shrink-0 shadow-sm">
               <Music className="h-4 w-4" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 font-mono">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-mono">
                   Spotify Playlist / Album
                 </span>
-                <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-700/60">
+                <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/60">
                   {total} Lagu
                 </span>
               </div>
-              <h3 className="text-sm sm:text-base font-extrabold text-white truncate">
+              <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white truncate">
                 {media.title}
               </h3>
             </div>
@@ -391,7 +391,7 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
           <button
             type="button"
             onClick={() => setShowTracklistDrawer(!showTracklistDrawer)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0a1e3a] hover:bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-bold transition-all cursor-pointer shrink-0"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#0a1e3a] hover:bg-emerald-100 dark:hover:bg-emerald-950/60 border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition-all cursor-pointer shrink-0"
           >
             <ListMusic className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Daftar Lagu</span>
@@ -476,16 +476,16 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
         </div>
 
         {/* 2. TOMBOL PLAY & AUDIO PLAYER DILUAR KOTAK (AUDIO STREAMING PREVIEW) */}
-        <div className="mt-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-[#04132b] via-[#072045] to-[#04132b] border border-emerald-500/50 shadow-xl space-y-3">
+        <div className="mt-4 p-3.5 sm:p-4 rounded-2xl bg-slate-100 dark:bg-gradient-to-r dark:from-[#04132b] dark:via-[#072045] dark:to-[#04132b] border border-slate-300 dark:border-emerald-500/50 shadow-md space-y-3">
           <div className="flex items-center justify-between gap-3">
             {/* BIG PLAY / PAUSE BUTTON OUTSIDE THE BOX */}
             <button
               type="button"
               onClick={handleTogglePlay}
-              className={`w-13 h-13 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-all cursor-pointer shrink-0 active:scale-95 shadow-xl ${
+              className={`w-13 h-13 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-all cursor-pointer shrink-0 active:scale-95 shadow-md ${
                 isPlaying
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black shadow-[0_0_25px_rgba(34,197,94,0.6)]'
-                  : 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-[0_0_18px_rgba(34,197,94,0.4)]'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black'
+                  : 'bg-emerald-500 hover:bg-emerald-400 text-black'
               }`}
               title={isPlaying ? 'Jeda Pratinjau' : 'Putar Pratinjau Audio'}
             >
@@ -502,18 +502,18 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
             <div className="flex-1 min-w-0 space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="font-bold text-white truncate text-xs sm:text-sm">
+                  <span className="font-bold text-slate-900 dark:text-white truncate text-xs sm:text-sm">
                     {currentTrack.title}
                   </span>
                   {isPlaying && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono animate-pulse shrink-0">
+                    <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-mono animate-pulse shrink-0">
                       ● Streaming Audio
                     </span>
                   )}
                 </div>
 
                 {/* Time Display */}
-                <span className="text-[11px] font-mono font-bold text-emerald-400 shrink-0">
+                <span className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
                   {formatSeconds(currentTime)} / {formatSeconds(audioDuration || currentTrack.duration || 30)}
                 </span>
               </div>
@@ -527,7 +527,7 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
                   step={0.1}
                   value={currentTime}
                   onChange={handleSeek}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                  className="w-full h-1.5 bg-slate-300 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                 />
               </div>
             </div>
@@ -536,10 +536,10 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
             <button
               type="button"
               onClick={handleToggleMute}
-              className="p-2 rounded-xl bg-[#091d3c] border border-blue-900/60 text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0"
+              className="p-2 rounded-xl bg-white dark:bg-[#091d3c] border border-slate-300 dark:border-blue-900/60 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer shrink-0"
               title={isMuted ? 'Batal Bisukan' : 'Bisukan Suara'}
             >
-              {isMuted ? <VolumeX className="h-4 w-4 text-red-400" /> : <Volume2 className="h-4 w-4 text-cyan-400" />}
+              {isMuted ? <VolumeX className="h-4 w-4 text-red-500" /> : <Volume2 className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />}
             </button>
           </div>
         </div>
@@ -551,7 +551,7 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
             type="button"
             onClick={() => handleDownloadSingleTrack(currentTrack, currentIndex)}
             disabled={isDownloadingSingle}
-            className="h-12 sm:h-13 rounded-2xl bg-gradient-to-r from-blue-700 to-cyan-600 hover:from-blue-600 hover:to-cyan-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 border border-cyan-400/40 shadow-lg shadow-cyan-600/30 hover:shadow-cyan-500/50 transition-all cursor-pointer active:scale-98 disabled:opacity-50"
+            className="h-12 sm:h-13 rounded-2xl bg-gradient-to-r from-blue-700 to-cyan-600 hover:from-blue-600 hover:to-cyan-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 border border-cyan-400/40 shadow-md transition-all cursor-pointer active:scale-98 disabled:opacity-50"
           >
             {isDownloadingSingle ? (
               <>
@@ -570,22 +570,22 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
           <button
             type="button"
             onClick={handleDownloadAllZip}
-            className={`relative h-12 sm:h-13 rounded-2xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98 overflow-hidden ${
+            className={`relative h-12 sm:h-13 rounded-2xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98 overflow-hidden shadow-sm ${
               isZipReady
-                ? 'bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 text-black shadow-[0_0_24px_rgba(34,197,94,0.5)] border border-emerald-300'
-                : 'bg-emerald-950/80 border border-emerald-600/50 text-emerald-300 hover:bg-emerald-900/90'
+                ? 'bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 text-black border border-emerald-300'
+                : 'bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-400 dark:border-emerald-600/50 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900/90'
             }`}
           >
             {/* Background progress fill if still bundling */}
             {!isZipReady && (
               <div
-                className="absolute inset-0 bg-emerald-900/50 transition-all duration-300 pointer-events-none"
+                className="absolute inset-0 bg-emerald-200 dark:bg-emerald-900/50 transition-all duration-300 pointer-events-none"
                 style={{ width: `${zipProgressPercent}%` }}
               />
             )}
 
             <div className="relative z-10 flex items-center gap-2">
-              <Archive className={`h-4 w-4 ${isZipReady ? 'text-black' : 'text-emerald-400'}`} />
+              <Archive className={`h-4 w-4 ${isZipReady ? 'text-black' : 'text-emerald-700 dark:text-emerald-400'}`} />
               {isZipReady ? (
                 <>
                   <Sparkles className="h-4 w-4 text-black animate-spin" style={{ animationDuration: '3s' }} />
@@ -593,12 +593,12 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
                 </>
               ) : isZippingUserTriggered ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                  <Loader2 className="h-4 w-4 animate-spin text-emerald-700 dark:text-emerald-400" />
                   <span>Merapikan ZIP ({zipLoadedCount}/{total})...</span>
                 </>
               ) : (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                  <Loader2 className="h-4 w-4 animate-spin text-emerald-700 dark:text-emerald-400" />
                   <span>Bungkus ZIP di Background ({zipProgressPercent}%)</span>
                 </>
               )}
@@ -607,33 +607,33 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
         </div>
 
         {/* Status Pill for Background ZIP */}
-        <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-400 px-1 font-mono">
+        <div className="mt-2.5 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 px-1 font-mono">
           <div className="flex items-center gap-1.5">
             {isZipReady ? (
-              <span className="inline-flex items-center gap-1 text-emerald-400 font-bold">
+              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 ZIP Siap Tanpa Menunggu (Tersimpan di Memori Web)
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 text-cyan-300">
+              <span className="inline-flex items-center gap-1 text-cyan-600 dark:text-cyan-300">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 Menyiapkan {zipLoadedCount} dari {total} lagu di latar belakang...
               </span>
             )}
           </div>
-          <span className="text-slate-500">
+          <span className="text-slate-400 dark:text-slate-500">
             {isZipReady && zipBlob ? `${(zipBlob.size / (1024 * 1024)).toFixed(1)} MB` : `${zipProgressPercent}%`}
           </span>
         </div>
 
         {/* 4. EXPANDABLE TRACKLIST DRAWER (Daftar Tiap Lagu) */}
         {showTracklistDrawer && (
-          <div className="mt-4 pt-3 border-t border-emerald-900/40 space-y-2 animate-in fade-in duration-200">
+          <div className="mt-4 pt-3 border-t border-slate-200 dark:border-emerald-900/40 space-y-2 animate-in fade-in duration-200">
             <div className="flex items-center justify-between pb-1">
-              <span className="text-xs font-bold text-white uppercase tracking-wider">
+              <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                 Daftar Lengkap Lagu ({total})
               </span>
-              <span className="text-[10px] text-slate-400">
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">
                 Klik lagu untuk putar / unduh
               </span>
             </div>
@@ -645,28 +645,28 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
                   onClick={() => setCurrentIndex(i)}
                   className={`p-2 rounded-xl flex items-center justify-between gap-2 transition-all cursor-pointer ${
                     currentIndex === i
-                      ? 'bg-emerald-950/80 border border-emerald-500/60 text-white'
-                      : 'bg-[#06152d]/60 hover:bg-[#0c2652] border border-blue-900/40 text-slate-300'
+                      ? 'bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-400 dark:border-emerald-500/60 text-slate-900 dark:text-white'
+                      : 'bg-slate-50 dark:bg-[#06152d]/60 hover:bg-slate-100 dark:hover:bg-[#0c2652] border border-slate-200 dark:border-blue-900/40 text-slate-700 dark:text-slate-300'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-xs font-mono font-bold text-emerald-400 w-5 text-right">
+                    <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 w-5 text-right">
                       {(i + 1).toString().padStart(2, '0')}
                     </span>
                     <img
                       src={trk.thumbnail || media.thumbnail}
                       alt={trk.title}
-                      className="w-8 h-8 rounded-lg object-cover shrink-0 border border-slate-700"
+                      className="w-8 h-8 rounded-lg object-cover shrink-0 border border-slate-300 dark:border-slate-700"
                     />
                     <div className="min-w-0">
-                      <p className="text-xs font-bold truncate text-white">{trk.title}</p>
-                      <p className="text-[10px] text-slate-400 truncate">{trk.artist}</p>
+                      <p className="text-xs font-bold truncate text-slate-900 dark:text-white">{trk.title}</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{trk.artist}</p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
                     {trk.durationFormatted && (
-                      <span className="text-[10px] font-mono text-slate-400 hidden xs:inline">
+                      <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 hidden xs:inline">
                         {trk.durationFormatted}
                       </span>
                     )}
@@ -677,7 +677,7 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
                         e.stopPropagation();
                         handleDownloadSingleTrack(trk, i);
                       }}
-                      className="p-1.5 rounded-lg bg-blue-950/80 hover:bg-cyan-600 text-cyan-300 hover:text-white border border-cyan-500/40 transition-colors"
+                      className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-950/80 hover:bg-cyan-600 text-cyan-700 dark:text-cyan-300 hover:text-white border border-cyan-400 dark:border-cyan-500/40 transition-colors"
                       title="Unduh lagu ini"
                     >
                       <Download className="h-3.5 w-3.5" />

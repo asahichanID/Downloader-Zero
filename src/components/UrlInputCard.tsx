@@ -221,10 +221,10 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
 
   return (
     <>
-      <div className="dz-card rounded-2xl p-3.5 sm:p-5 w-full transition-all duration-200 border border-blue-900/60 hover:border-cyan-500/40 relative">
+      <div className="dz-card rounded-2xl p-3.5 sm:p-5 w-full transition-all duration-200 border border-slate-300 dark:border-blue-900/60 hover:border-cyan-500/50 relative">
         {/* Card Header: Gold guide circle + Link icon + Label + Auto-detect indicator */}
         <div className="flex items-center justify-between gap-2 mb-2.5">
-          <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-cyan-300">
+          <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-cyan-800 dark:text-cyan-300">
             {/* Gold circle with punctuation mark '?' - opens floating tutorial panel */}
             <button
               type="button"
@@ -235,7 +235,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
             >
               ?
             </button>
-            <Link2 className="h-4 w-4 text-cyan-400 rotate-45 shrink-0" />
+            <Link2 className="h-4 w-4 text-cyan-600 dark:text-cyan-400 rotate-45 shrink-0" />
             <span className="tracking-wide">Tempelkan Tautan Media</span>
           </div>
 
@@ -248,9 +248,9 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.88, y: -4 }}
                 transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/50 text-[11px] font-bold text-emerald-300 shadow-sm"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-500/50 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 shadow-sm"
               >
-                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                 <span className="capitalize">{detectedNow} Terdeteksi Otomatis</span>
               </motion.div>
             )}
@@ -265,7 +265,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
             value={url}
             onChange={(e) => handleInputChange(e.target.value)}
             placeholder={getPlaceholder()}
-            className="w-full h-11 sm:h-12 pl-3.5 pr-9 bg-[#050e24] border border-blue-900/80 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 font-mono transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]"
+            className="w-full h-11 sm:h-12 pl-3.5 pr-9 bg-white dark:bg-[#050e24] border border-slate-300 dark:border-blue-900/80 rounded-xl text-slate-900 dark:text-white text-xs sm:text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/50 font-mono transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]"
           />
           <AnimatePresence>
             {url && (
@@ -277,7 +277,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
                 transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
                 type="button"
                 onClick={handleClear}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 active:scale-[0.88] transition-colors duration-150 cursor-pointer"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800 dark:hover:text-white p-1 active:scale-[0.88] transition-colors duration-150 cursor-pointer"
                 title="Hapus teks tautan"
               >
                 <X className="h-4 w-4" />
@@ -290,25 +290,25 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
         <button
           type="button"
           onClick={handlePaste}
-          className="h-11 sm:h-12 px-3.5 sm:px-4 rounded-xl border border-cyan-500/40 bg-[#0c224a] hover:bg-[#12316b] hover:border-cyan-400 text-white flex items-center gap-1.5 text-xs sm:text-sm font-bold active:scale-[0.97] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer shrink-0 touch-manipulation shadow-sm"
+          className="h-11 sm:h-12 px-3.5 sm:px-4 rounded-xl border border-sky-300 dark:border-cyan-500/40 bg-sky-50 dark:bg-[#0c224a] hover:bg-sky-100 dark:hover:bg-[#12316b] hover:border-sky-400 dark:hover:border-cyan-400 text-sky-900 dark:text-white flex items-center gap-1.5 text-xs sm:text-sm font-bold active:scale-[0.97] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer shrink-0 touch-manipulation shadow-sm"
           title="Tempel dari papan klip"
         >
-          <Clipboard className="h-4 w-4 text-cyan-400" />
+          <Clipboard className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
           <span>Paste</span>
         </button>
       </div>
 
       {/* Helper text under input */}
-      <div className="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1">
+      <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-400 mt-2 px-1">
         <span className="flex items-center gap-1">
-          <Sparkles className="h-3 w-3 text-cyan-400" />
+          <Sparkles className="h-3 w-3 text-cyan-600 dark:text-cyan-400" />
           Platform langsung terpilih otomatis begitu tautan ditempelkan.
         </span>
         {onOpenPlatformModal && (
           <button
             type="button"
             onClick={onOpenPlatformModal}
-            className="text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer underline underline-offset-2 ml-2 shrink-0 hidden sm:inline transition-colors duration-150"
+            className="text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 font-semibold cursor-pointer underline underline-offset-2 ml-2 shrink-0 hidden sm:inline transition-colors duration-150"
           >
             Ganti Manual
           </button>

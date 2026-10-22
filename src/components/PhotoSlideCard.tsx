@@ -176,25 +176,25 @@ export const PhotoSlideCard: React.FC<PhotoSlideCardProps> = ({ media }) => {
   };
 
   return (
-    <div className="dz-card rounded-3xl p-4 sm:p-5 w-full shadow-2xl border border-cyan-500/60 select-none animate-in fade-in duration-300">
+    <div className="dz-card rounded-3xl p-4 sm:p-5 w-full shadow-xl border border-cyan-500/60 select-none animate-in fade-in duration-300">
       {/* Top Header Information */}
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-blue-900/60">
+      <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200 dark:border-blue-900/60">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shrink-0">
+          <div className="w-8 h-8 rounded-xl bg-cyan-100 dark:bg-cyan-950/80 border border-cyan-400 dark:border-cyan-500/50 flex items-center justify-center text-cyan-600 dark:text-cyan-400 shrink-0">
             <Camera className="h-4 w-4" />
           </div>
           <div>
-            <h4 className="text-xs sm:text-sm font-bold text-white truncate max-w-[200px] sm:max-w-md">
+            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate max-w-[200px] sm:max-w-md">
               {media.title || 'TikTok Slide Foto HD'}
             </h4>
-            <span className="text-[11px] text-cyan-300/90 font-medium">
+            <span className="text-[11px] text-cyan-700 dark:text-cyan-300/90 font-medium">
               {media.author} · {total} Foto Slide Beresolusi Penuh
             </span>
           </div>
         </div>
 
         {/* Counter Badge */}
-        <div className="px-2.5 py-1 rounded-full bg-cyan-950/80 border border-cyan-400/60 text-cyan-300 font-mono text-xs font-bold shrink-0">
+        <div className="px-2.5 py-1 rounded-full bg-cyan-100 dark:bg-cyan-950/80 border border-cyan-400/60 text-cyan-800 dark:text-cyan-300 font-mono text-xs font-bold shrink-0">
           {currentIndex + 1} / {total}
         </div>
       </div>
@@ -224,7 +224,7 @@ export const PhotoSlideCard: React.FC<PhotoSlideCardProps> = ({ media }) => {
             type="button"
             onClick={handlePrev}
             aria-label="Foto Sebelumnya"
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/65 backdrop-blur-md border border-cyan-500/50 text-white flex items-center justify-center hover:bg-cyan-500 hover:text-black hover:scale-110 shadow-lg transition-all cursor-pointer"
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/65 backdrop-blur-md border border-cyan-500/50 text-white flex items-center justify-center hover:bg-cyan-500 hover:text-black hover:scale-105 shadow-md transition-all cursor-pointer"
           >
             <ChevronLeft className="h-6 w-6" />
           </button>
@@ -236,7 +236,7 @@ export const PhotoSlideCard: React.FC<PhotoSlideCardProps> = ({ media }) => {
             type="button"
             onClick={handleNext}
             aria-label="Foto Selanjutnya"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/65 backdrop-blur-md border border-cyan-500/50 text-white flex items-center justify-center hover:bg-cyan-500 hover:text-black hover:scale-110 shadow-lg transition-all cursor-pointer"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/65 backdrop-blur-md border border-cyan-500/50 text-white flex items-center justify-center hover:bg-cyan-500 hover:text-black hover:scale-105 shadow-md transition-all cursor-pointer"
           >
             <ChevronRight className="h-6 w-6" />
           </button>
@@ -255,7 +255,7 @@ export const PhotoSlideCard: React.FC<PhotoSlideCardProps> = ({ media }) => {
                 }}
                 className={`w-2 h-2 rounded-full transition-all shrink-0 cursor-pointer ${
                   idx === currentIndex
-                    ? 'w-4 bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)]'
+                    ? 'w-4 bg-cyan-400'
                     : 'bg-white/40 hover:bg-white/80'
                 }`}
               />
@@ -273,22 +273,22 @@ export const PhotoSlideCard: React.FC<PhotoSlideCardProps> = ({ media }) => {
       )}
 
       {/* Action Buttons Row: Unduh Foto Ini vs Unduh Semua (ZIP) */}
-      <div className="mt-4 pt-3 border-t border-blue-900/60 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+      <div className="mt-4 pt-3 border-t border-slate-200 dark:border-blue-900/60 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         {/* Button 1: Unduh Foto Ini */}
         <button
           type="button"
           onClick={handleDownloadSingle}
           disabled={isDownloadingSingle || isZipping}
-          className="h-12 rounded-xl bg-[#0c224a] hover:bg-[#12316b] border border-cyan-500/50 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-[0_0_15px_rgba(6,182,212,0.4)] transition-all cursor-pointer disabled:opacity-60"
+          className="h-12 rounded-xl bg-slate-100 dark:bg-[#0c224a] hover:bg-slate-200 dark:hover:bg-[#12316b] border border-cyan-500/50 text-slate-800 dark:text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-60"
         >
           {isDownloadingSingle ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+              <Loader2 className="h-4 w-4 animate-spin text-cyan-600 dark:text-cyan-400" />
               <span>Mengunduh...</span>
             </>
           ) : (
             <>
-              <Download className="h-4 w-4 text-cyan-400" />
+              <Download className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
               <span>Unduh Foto Ini (#{currentIndex + 1})</span>
             </>
           )}
@@ -299,7 +299,7 @@ export const PhotoSlideCard: React.FC<PhotoSlideCardProps> = ({ media }) => {
           type="button"
           onClick={handleDownloadAllZip}
           disabled={isZipping || isDownloadingSingle}
-          className="h-12 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(6,182,212,0.5)] hover:shadow-[0_0_30px_rgba(6,182,212,0.7)] transition-all cursor-pointer disabled:opacity-60"
+          className="h-12 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-60"
         >
           {isZipping ? (
             <>

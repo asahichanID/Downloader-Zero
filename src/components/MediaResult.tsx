@@ -47,7 +47,8 @@ export const MediaResult: React.FC<MediaResultProps> = ({
 
     const ext = fmt.extension;
     const sanitizedTitle = (media.title || 'media').slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filename = `DownloaderZero_${sanitizedTitle}_${fmt.resolution || fmt.quality.split(' ')[0]}.${ext}`;
+    const resTag = fmt.resolution || (fmt.quality.includes('2K') ? '2K' : fmt.quality.includes('4K') ? '4K' : fmt.quality.split(' ')[0]);
+    const filename = `DownloaderZero_${sanitizedTitle}_${resTag}.${ext}`;
 
     try {
       let targetDownloadUrl = fmt.url;
@@ -56,13 +57,33 @@ export const MediaResult: React.FC<MediaResultProps> = ({
       // If format requires async conversion job (e.g. YouTube loader)
       if (!fmt.isDirect || fmt.url.includes('loader.to') || fmt.id.startsWith('yt-')) {
         if (!jobId) {
-          setDownloadStatusText('Memulai antrean konversi media...');
+          const rawRes = (fmt.resolution || '').toLowerCase();
+          const rawQual = (fmt.quality || '').toLowerCase();
+          const rawId = (fmt.id || '').toLowerCase();
+          let loaderFormat = '1080';
+          if (fmt.type === 'audio') {
+            loaderFormat = 'mp3';
+          } else if (rawRes.includes('2160') || rawRes === '4k' || rawQual.includes('4k') || rawId.includes('2160')) {
+            loaderFormat = '2160';
+          } else if (rawRes.includes('1440') || rawRes === '2k' || rawQual.includes('2k') || rawQual.includes('1440') || rawId.includes('1440')) {
+            loaderFormat = '1440';
+          } else if (rawRes.includes('1080') || rawQual.includes('1080')) {
+            loaderFormat = '1080';
+          } else if (rawRes.includes('720') || rawQual.includes('720')) {
+            loaderFormat = '720';
+          } else if (rawRes.includes('480') || rawQual.includes('480')) {
+            loaderFormat = '480';
+          } else if (rawRes.includes('360') || rawQual.includes('360')) {
+            loaderFormat = '360';
+          }
+
+          setDownloadStatusText(`Memulai antrean konversi ${fmt.quality}...`);
           try {
             const startRes = await fetch('/api/start-job', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                format: fmt.resolution?.replace(/p$/i, '') || (fmt.type === 'audio' ? 'mp3' : '1080'),
+                format: loaderFormat,
                 url: media.url
               })
             });
@@ -238,12 +259,12 @@ export const MediaResult: React.FC<MediaResultProps> = ({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto my-8 rounded-3xl p-6 sm:p-8 glass-panel border border-slate-800/90 light:border-slate-200 shadow-2xl transition-all animate-in fade-in duration-300">
+    <div className="w-full max-w-4xl mx-auto my-8 rounded-3xl p-6 sm:p-8 dz-card border border-slate-300 dark:border-slate-800/90 shadow-2xl transition-all animate-in fade-in duration-300">
       {/* Top Header Bar of Result */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-800/80 light:border-slate-200">
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800/80">
         <div className="flex items-center gap-2">
-          <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400" />
-          <span className="text-xs font-mono font-semibold uppercase tracking-wider text-cyan-400">
+          <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-500 dark:bg-cyan-400" />
+          <span className="text-xs font-mono font-semibold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
             Media Siap Diunduh Otomatis · {media.platform.toUpperCase()}
           </span>
         </div>
@@ -251,7 +272,7 @@ export const MediaResult: React.FC<MediaResultProps> = ({
         <button
           type="button"
           onClick={onReset}
-          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white light:text-slate-600 light:hover:text-slate-900 py-1.5 px-3 rounded-lg bg-slate-900/60 light:bg-slate-100 hover:bg-slate-800 transition-colors"
+          className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white py-1.5 px-3 rounded-lg bg-slate-100 dark:bg-slate-900/60 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           <span>Ganti Link</span>
@@ -261,7 +282,7 @@ export const MediaResult: React.FC<MediaResultProps> = ({
       {/* Main Media Info & Thumbnail */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 my-6 items-start">
         {/* Thumbnail Preview */}
-        <div className="md:col-span-5 relative group overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-900 shadow-lg aspect-video md:aspect-[4/3]">
+        <div className="md:col-span-5 relative group overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800/80 bg-slate-100 dark:bg-slate-900 shadow-lg aspect-video md:aspect-[4/3]">
           {media.thumbnail && media.thumbnail.trim() ? (
             <img
               src={media.thumbnail.trim()}
@@ -273,7 +294,7 @@ export const MediaResult: React.FC<MediaResultProps> = ({
               }}
             />
           ) : (
-            <div className="h-full w-full flex flex-col items-center justify-center bg-slate-900 text-slate-600">
+            <div className="h-full w-full flex flex-col items-center justify-center bg-slate-100 dark:bg-slate-900 text-slate-400 dark:text-slate-600">
               {activeFilter === 'video' ? <Film className="h-12 w-12" /> : <Music className="h-12 w-12" />}
               <span className="text-xs mt-2 font-mono">Media Preview</span>
             </div>
@@ -291,27 +312,27 @@ export const MediaResult: React.FC<MediaResultProps> = ({
         {/* Media Details */}
         <div className="md:col-span-7 flex flex-col justify-between space-y-4">
           <div>
-            <h3 className="text-lg sm:text-xl font-bold text-white light:text-slate-900 leading-snug line-clamp-2">
+            <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-snug line-clamp-2">
               {media.title}
             </h3>
 
-            <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-400 light:text-slate-600">
+            <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-600 dark:text-slate-400">
               <span className="flex items-center gap-1">
-                <User className="h-3.5 w-3.5 text-cyan-400" />
+                <User className="h-3.5 w-3.5 text-cyan-500 dark:text-cyan-400" />
                 <span>{media.author}</span>
               </span>
 
-              <span aria-hidden="true" className="text-slate-700">·</span>
+              <span aria-hidden="true" className="text-slate-400 dark:text-slate-700">·</span>
 
-              <span className="font-mono text-cyan-300">
+              <span className="font-mono text-cyan-600 dark:text-cyan-300 font-medium">
                 {media.source}
               </span>
             </div>
           </div>
 
           {/* Format selection cards */}
-          <div className="rounded-2xl bg-slate-900/60 light:bg-slate-100/80 p-4 border border-slate-800/80 light:border-slate-200">
-            <span className="text-xs font-semibold text-slate-300 light:text-slate-700 block mb-2.5">
+          <div className="rounded-2xl bg-slate-50 dark:bg-slate-900/60 p-4 border border-slate-200 dark:border-slate-800/80">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-2.5">
               Pilih Kualitas Unduhan ({activeFilter === 'video' ? 'Video MP4' : 'Audio MP3'}):
             </span>
 
@@ -325,12 +346,12 @@ export const MediaResult: React.FC<MediaResultProps> = ({
                     onClick={() => setSelectedFormatId(fmt.id)}
                     className={`flex flex-col items-start p-2.5 rounded-xl border text-left transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
                       isSelected
-                        ? 'border-cyan-400 bg-cyan-950/60 text-cyan-200 ring-2 ring-cyan-500/30'
-                        : 'border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700 light:bg-white light:border-slate-200 light:text-slate-700'
+                        ? 'border-cyan-500 dark:border-cyan-400 bg-cyan-50 dark:bg-cyan-950/60 text-cyan-900 dark:text-cyan-200 ring-2 ring-cyan-500/30'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-700'
                     }`}
                   >
                     <span className="text-xs font-bold truncate w-full">{fmt.quality}</span>
-                    <div className="flex items-center justify-between w-full mt-1 text-[10px] text-slate-400 light:text-slate-500">
+                    <div className="flex items-center justify-between w-full mt-1 text-[10px] text-slate-500 dark:text-slate-400">
                       <span className="font-mono">{fmt.extension.toUpperCase()}</span>
                       {fmt.filesize && <span>{fmt.filesize}</span>}
                     </div>
@@ -342,21 +363,21 @@ export const MediaResult: React.FC<MediaResultProps> = ({
 
           {/* Download Progress Bar if active */}
           {isDownloading && (
-            <div className="space-y-2 p-4 rounded-2xl bg-cyan-950/50 border border-cyan-800/70 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between text-xs text-cyan-300">
+            <div className="space-y-2 p-4 rounded-2xl bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-200 dark:border-cyan-800/70 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between text-xs text-cyan-800 dark:text-cyan-300">
                 <span className="flex items-center gap-2 font-medium">
-                  <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+                  <Loader2 className="h-4 w-4 animate-spin text-cyan-500 dark:text-cyan-400" />
                   <span>{downloadStatusText}</span>
                 </span>
                 <span className="font-mono font-bold">{downloadProgress}%</span>
               </div>
-              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-900">
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-900">
                 <div
                   className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 transition-all duration-200 rounded-full"
                   style={{ width: `${downloadProgress}%` }}
                 />
               </div>
-              <span className="text-[11px] text-slate-400 block text-right">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block text-right">
                 Mengunduh langsung ke penyimpanan tanpa membuka tab baru
               </span>
             </div>
@@ -364,8 +385,8 @@ export const MediaResult: React.FC<MediaResultProps> = ({
 
           {/* Success Banner */}
           {downloadSuccess && !isDownloading && (
-            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-emerald-950/50 border border-emerald-800/70 text-emerald-200 text-xs animate-in fade-in duration-200">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/70 text-emerald-800 dark:text-emerald-200 text-xs animate-in fade-in duration-200">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500 dark:text-emerald-400 shrink-0 mt-0.5" />
               <div className="space-y-0.5">
                 <span className="font-bold block">Unduhan Berhasil!</span>
                 <p>{downloadSuccess}</p>
@@ -393,7 +414,7 @@ export const MediaResult: React.FC<MediaResultProps> = ({
                 </>
               )}
             </button>
-            <span className="text-[11px] text-slate-400 light:text-slate-500 text-center block mt-2">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 text-center block mt-2">
               Berkas langsung disimpan otomatis ke folder Downloads tanpa diarahkan ke link eksternal.
             </span>
           </div>

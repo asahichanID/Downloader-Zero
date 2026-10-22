@@ -150,7 +150,7 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="group relative w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-[#0a1838] via-[#0e265c] to-[#0a1838] border border-cyan-500/40 hover:border-cyan-400 active:scale-[0.985] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer text-left touch-manipulation shadow-md shadow-black/40"
+        className="group relative w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-white via-sky-50/80 to-white dark:from-[#0a1838] dark:via-[#0e265c] dark:to-[#0a1838] border border-slate-300 dark:border-cyan-500/40 hover:border-cyan-500 active:scale-[0.985] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer text-left touch-manipulation shadow-md shadow-slate-900/5 dark:shadow-black/40"
         title="Klik untuk memilih platform manual atau lihat daftar aplikasi yang didukung"
       >
         <div className="flex items-center gap-3">
@@ -159,21 +159,21 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 font-mono">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 font-mono">
                 Aplikasi Aktif
               </span>
               {isAutoDetected && (
-                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-700/60">
+                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-300 dark:border-emerald-700/60">
                   <Sparkles className="h-2.5 w-2.5" />
                   Auto
                 </span>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm sm:text-base font-extrabold text-white tracking-tight">
+              <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white tracking-tight">
                 {currentPlatformObj.name}
               </span>
-              <span className="text-[11px] text-slate-400 hidden xs:inline">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden xs:inline">
                 ({currentPlatformObj.badge})
               </span>
             </div>
@@ -181,8 +181,8 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
         </div>
 
         {/* Action Badge */}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-950/80 group-hover:bg-cyan-900/90 border border-cyan-500/40 text-cyan-300 text-xs font-bold transition-colors duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0">
-          <Layers className="h-3.5 w-3.5 text-cyan-400" />
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-100 dark:bg-cyan-950/80 group-hover:bg-sky-200 dark:group-hover:bg-cyan-900/90 border border-sky-300 dark:border-cyan-500/40 text-sky-800 dark:text-cyan-300 text-xs font-bold transition-colors duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0">
+          <Layers className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400" />
           <span className="hidden sm:inline">Pilih Aplikasi Tautan</span>
           <span className="sm:hidden">Pilih</span>
           <ChevronDown className="h-3.5 w-3.5 group-hover:translate-y-0.5 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]" />
@@ -207,21 +207,21 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 10 }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="relative w-full max-w-xl rounded-3xl p-5 sm:p-7 bg-[#07132e]/95 border border-cyan-500/40 shadow-2xl shadow-black/85 max-h-[90vh] overflow-y-auto"
+              className="relative w-full max-w-xl rounded-3xl p-5 sm:p-7 bg-white/95 dark:bg-[#07132e]/95 border border-slate-300 dark:border-cyan-500/40 shadow-2xl shadow-slate-900/10 dark:shadow-black/85 max-h-[90vh] overflow-y-auto text-slate-900 dark:text-white"
               onClick={(e) => e.stopPropagation()}
             >
             {/* Modal Header */}
-            <div className="flex items-start justify-between pb-4 border-b border-cyan-900/50">
+            <div className="flex items-start justify-between pb-4 border-b border-slate-200 dark:border-cyan-900/50">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <div className="h-7 w-7 rounded-xl bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400">
+                  <div className="h-7 w-7 rounded-xl bg-sky-100 dark:bg-cyan-950/80 border border-sky-300 dark:border-cyan-500/50 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
                     <Layers className="h-4 w-4" />
                   </div>
-                  <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
+                  <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
                     Pilih Aplikasi Tautan
                   </h2>
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                   Sentuh salah satu platform untuk memilihnya secara instan.
                 </p>
               </div>
@@ -229,7 +229,7 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="h-8 w-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 transition-colors shrink-0"
+                className="h-8 w-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-900/80 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors shrink-0"
                 aria-label="Tutup pemilih aplikasi"
               >
                 <X className="h-4 w-4" />
@@ -237,10 +237,10 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
             </div>
 
             {/* Smart Auto-Detect Info Banner */}
-            <div className="my-4 p-3 rounded-2xl bg-cyan-950/40 border border-cyan-800/60 flex items-start gap-2.5">
-              <Sparkles className="h-4 w-4 text-cyan-400 shrink-0 mt-0.5" />
-              <div className="text-[11px] text-slate-300 leading-relaxed">
-                <strong className="text-cyan-300">Tanpa memilih pun bisa!</strong> Cukup tempelkan tautan video atau audio apa saja di halaman utama, DownloaderZero akan mengenali dan memilih aplikasinya secara otomatis.
+            <div className="my-4 p-3 rounded-2xl bg-sky-50 dark:bg-cyan-950/40 border border-sky-200 dark:border-cyan-800/60 flex items-start gap-2.5">
+              <Sparkles className="h-4 w-4 text-cyan-600 dark:text-cyan-400 shrink-0 mt-0.5" />
+              <div className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                <strong className="text-cyan-700 dark:text-cyan-300">Tanpa memilih pun bisa!</strong> Cukup tempelkan tautan video atau audio apa saja di halaman utama, DownloaderZero akan mengenali dan memilih aplikasinya secara otomatis.
               </div>
             </div>
 
@@ -259,27 +259,27 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
                     className={`flex items-start gap-3.5 p-3.5 rounded-2xl transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] cursor-pointer text-left border touch-manipulation ${
                       isActive
                         ? p.activeRing
-                        : `bg-[#0a1b3d]/70 hover:bg-[#0f285a] ${p.accentColor}`
+                        : `bg-slate-50 dark:bg-[#0a1b3d]/70 hover:bg-sky-50 dark:hover:bg-[#0f285a] border-slate-200 dark:border-slate-800 ${p.accentColor}`
                     }`}
                   >
                     {p.icon}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-1 mb-0.5">
-                        <span className="text-sm font-bold text-white tracking-tight">
+                        <span className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
                           {p.name}
                         </span>
                         {isActive ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-cyan-300 bg-cyan-950/90 px-2 py-0.5 rounded-full border border-cyan-500/60">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-cyan-700 dark:text-cyan-300 bg-sky-100 dark:bg-cyan-950/90 px-2 py-0.5 rounded-full border border-sky-300 dark:border-cyan-500/60">
                             <Check className="h-3 w-3 stroke-[3]" />
                             Terpilih
                           </span>
                         ) : (
-                          <span className="text-[10px] font-semibold text-slate-400 bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-800">
+                          <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-200/70 dark:bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-800">
                             {p.badge}
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-300 line-clamp-2 leading-relaxed">
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
                         {p.subtitle}
                       </p>
                     </div>

@@ -73,8 +73,36 @@ export default function App() {
     return () => window.removeEventListener('dz_history_updated', updateCount);
   }, []);
 
-  // Theme setting
-  const [isDark, setIsDark] = useState<boolean>(true);
+  // Theme setting with persistent localStorage
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('dz_theme');
+      return saved !== null ? saved === 'dark' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  // Apply theme to documentElement and body
+  React.useEffect(() => {
+    const root = document.documentElement;
+    try {
+      localStorage.setItem('dz_theme', isDark ? 'dark' : 'light');
+    } catch (e) {
+      console.warn('Theme storage error:', e);
+    }
+
+    if (isDark) {
+      root.classList.add('dark');
+      root.classList.remove('light');
+      document.body.className = 'bg-slate-950 text-slate-100 antialiased min-h-screen selection:bg-cyan-500/30 selection:text-cyan-200 transition-colors duration-200';
+    } else {
+      root.classList.remove('dark');
+      root.classList.add('light');
+      document.body.className = 'bg-[#f0f4fa] text-slate-900 antialiased min-h-screen selection:bg-cyan-500/30 selection:text-cyan-800 transition-colors duration-200';
+    }
+  }, [isDark]);
+
   const [isAutoDetected, setIsAutoDetected] = useState<boolean>(false);
 
   // Handle URL change with immediate platform auto-detection
@@ -106,15 +134,128 @@ export default function App() {
     }
   };
 
+// Helper to map MediaFormat to loader.to format
+function mapFormatForLoader(fmt: MediaFormat): string {
+  if (fmt.type === 'audio') return 'mp3';
+  const id = (fmt.id || '').toLowerCase();
+  const res = (fmt.resolution || '').toLowerCase();
+  const qual = (fmt.quality || '').toLowerCase();
+
+  if (id.includes('2160') || res.includes('2160') || res === '4k' || qual.includes('2160') || qual.includes('4k')) {
+    return '2160';
+  }
+  if (id.includes('1440') || res.includes('1440') || res === '2k' || qual.includes('1440') || qual.includes('2k') || qual.includes('qhd')) {
+    return '1440';
+  }
+  if (id.includes('1080') || res.includes('1080') || qual.includes('1080')) {
+    return '1080';
+  }
+  if (id.includes('720') || res.includes('720') || qual.includes('720')) {
+    return '720';
+  }
+  if (id.includes('480') || res.includes('480') || qual.includes('480')) {
+    return '480';
+  }
+  if (id.includes('360') || res.includes('360') || qual.includes('360')) {
+    return '360';
+  }
+  return res.replace(/p$/i, '') || '1080';
+}
+
+// Robust resolution format finder matching user selected resolution
+function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): MediaFormat {
+  if (!formats || formats.length === 0) {
+    throw new Error('Tidak ada format video yang tersedia.');
+  }
+
+  const target = (targetRes || '').toLowerCase().trim();
+
+  // 1. If user chose 2K / 1440p
+  if (target === '2k' || target === '1440' || target === '1440p' || target.includes('2k') || target.includes('1440')) {
+    const match2k = formats.find((f) => {
+      const r = (f.resolution || '').toLowerCase();
+      const q = (f.quality || '').toLowerCase();
+      const id = (f.id || '').toLowerCase();
+      return r === '2k' || r.includes('1440') || q.includes('2k') || q.includes('1440') || id.includes('1440');
+    });
+    if (match2k) return match2k;
+  }
+
+  // 2. If user chose 4K / 2160p
+  if (target === '4k' || target === '2160' || target === '2160p' || target.includes('4k') || target.includes('2160')) {
+    const match4k = formats.find((f) => {
+      const r = (f.resolution || '').toLowerCase();
+      const q = (f.quality || '').toLowerCase();
+      const id = (f.id || '').toLowerCase();
+      return r === '4k' || r.includes('2160') || q.includes('4k') || q.includes('2160') || id.includes('2160');
+    });
+    if (match4k) return match4k;
+  }
+
+  // 3. If user chose 1080p
+  if (target === '1080p' || target === '1080' || target.includes('1080')) {
+    const match1080 = formats.find((f) => {
+      const r = (f.resolution || '').toLowerCase();
+      const q = (f.quality || '').toLowerCase();
+      const id = (f.id || '').toLowerCase();
+      return (r.includes('1080') || q.includes('1080') || id.includes('1080')) && !r.includes('1440') && !r.includes('2160');
+    });
+    if (match1080) return match1080;
+  }
+
+  // 4. If user chose 720p
+  if (target === '720p' || target === '720' || target.includes('720')) {
+    const match720 = formats.find((f) => {
+      const r = (f.resolution || '').toLowerCase();
+      const q = (f.quality || '').toLowerCase();
+      const id = (f.id || '').toLowerCase();
+      return (r.includes('720') || q.includes('720') || id.includes('720')) && !r.includes('1080');
+    });
+    if (match720) return match720;
+  }
+
+  // 5. If user chose 480p
+  if (target === '480p' || target === '480' || target.includes('480')) {
+    const match480 = formats.find((f) => {
+      const r = (f.resolution || '').toLowerCase();
+      const q = (f.quality || '').toLowerCase();
+      return r.includes('480') || q.includes('480');
+    });
+    if (match480) return match480;
+  }
+
+  // 6. If user chose 360p
+  if (target === '360p' || target === '360' || target.includes('360')) {
+    const match360 = formats.find((f) => {
+      const r = (f.resolution || '').toLowerCase();
+      const q = (f.quality || '').toLowerCase();
+      return r.includes('360') || q.includes('360');
+    });
+    if (match360) return match360;
+  }
+
+  // Fallback: match by substring
+  const cleanTarget = target.replace(/p$/i, '');
+  const generalMatch = formats.find((f) => {
+    const r = (f.resolution || '').toLowerCase();
+    const q = (f.quality || '').toLowerCase();
+    return r.includes(cleanTarget) || q.includes(cleanTarget);
+  });
+  if (generalMatch) return generalMatch;
+
+  return formats[0];
+}
+
   // Perform download execution
   const executeDownload = async (targetFormat: MediaFormat, currentMedia: MediaMetadata) => {
     setIsDownloading(true);
     setDownloadProgress(15);
-    setDownloadStatusText('Menghubungkan ke server media...');
+    setDownloadStatusText(`Menghubungkan ke server ${targetFormat.quality}...`);
 
     const ext = targetFormat.extension;
     const sanitizedTitle = (currentMedia.title || 'media').slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filename = `DownloaderZero_${sanitizedTitle}_${targetFormat.resolution || targetFormat.quality.split(' ')[0]}.${ext}`;
+    const resTag = targetFormat.resolution || (targetFormat.quality.includes('2K') ? '2K' : targetFormat.quality.includes('4K') ? '4K' : targetFormat.quality.split(' ')[0]);
+    const filename = `DownloaderZero_${sanitizedTitle}_${resTag}.${ext}`;
 
     try {
       let finalUrl = targetFormat.url;
@@ -123,13 +264,14 @@ export default function App() {
       // If format requires async conversion job (e.g. YouTube loader)
       if (!targetFormat.isDirect || targetFormat.url.includes('loader.to') || targetFormat.id.startsWith('yt-')) {
         if (!jobId) {
-          setDownloadStatusText('Memulai antrean konversi media...');
+          const loaderFormat = mapFormatForLoader(targetFormat);
+          setDownloadStatusText(`Memulai antrean konversi ${targetFormat.quality}...`);
           try {
             const startRes = await fetch('/api/start-job', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                format: targetFormat.resolution?.replace(/p$/i, '') || (targetFormat.type === 'audio' ? 'mp3' : '1080'),
+                format: loaderFormat,
                 url: currentMedia.url
               })
             });
@@ -147,14 +289,14 @@ export default function App() {
         }
 
         if (jobId && (!finalUrl.startsWith('http') || finalUrl.includes('loader.to'))) {
-          setDownloadStatusText(`Sedang memproses ${targetFormat.quality}...`);
+          setDownloadStatusText(`Sedang memproses konversi ${targetFormat.quality}...`);
           let finished = false;
           let attempts = 0;
 
-          while (!finished && attempts < 35) {
+          while (!finished && attempts < 40) {
             attempts++;
             await new Promise((r) => setTimeout(r, 1200));
-            setDownloadProgress((prev) => Math.min(85, prev + 2));
+            setDownloadProgress((prev) => Math.min(88, prev + 2));
 
             try {
               const progRes = await fetch(`/api/progress/${encodeURIComponent(jobId)}`);
@@ -472,9 +614,7 @@ export default function App() {
 
       let chosenFormat: MediaFormat | undefined;
       if (mediaType === 'video') {
-        chosenFormat =
-          searchPool.find((f) => f.resolution?.includes(selectedVideoRes) || f.quality.includes(selectedVideoRes)) ||
-          searchPool[0];
+        chosenFormat = findMatchingVideoFormat(searchPool, selectedVideoRes);
       } else {
         chosenFormat =
           searchPool.find((f) => f.quality.includes(selectedAudioQuality) || f.type === 'audio') ||
@@ -495,7 +635,11 @@ export default function App() {
     /(?:spotify\.com\/(?:intl-[a-z]+\/)?(playlist|album)\/|spotify\.link\/)/i.test(url.trim());
 
   return (
-    <div className="min-h-screen w-full bg-[#030718] text-slate-100 flex flex-col items-center justify-start antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className={`min-h-screen w-full flex flex-col items-center justify-start antialiased transition-colors duration-200 ${
+      isDark
+        ? 'bg-[#030718] text-slate-100 selection:bg-cyan-500/30 selection:text-cyan-200'
+        : 'bg-[#f0f4fa] text-slate-900 selection:bg-cyan-500/30 selection:text-cyan-800'
+    }`}>
       {/* Full-Screen Expansive Container */}
       <main className="w-full max-w-5xl lg:max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-6 flex flex-col items-center gap-4 sm:gap-6">
         {/* 1. Header & Brand Navigation */}

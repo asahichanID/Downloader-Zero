@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
     --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -80,7 +82,7 @@ button, a, input, select {
   color: #ffffff;
   font-weight: 700;
   transform: translateZ(0);
-  transition: border-color 200ms var(--ease-fluid), color 200ms var(--ease-fluid), background-color 200ms var(--ease-fluid), transform 200ms var(--ease-fluid);
+  transition: border-color 200ms var(--ease-fluid), color 200ms var(--ease-fluid), background-color 200ms var(--ease-fluid);
 }
 
 .dz-pill-active:active {
@@ -88,12 +90,55 @@ button, a, input, select {
   transition-duration: 120ms;
 }
 
-.light .glass-panel {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  transition: all 200ms var(--ease-fluid);
+/* LIGHT THEME STYLING OVERRIDES */
+html.light .dz-card,
+html:not(.dark) .dz-card {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-color: rgba(203, 213, 225, 0.95) !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06) !important;
+  color: #0f172a !important;
+}
+
+html.light .dz-card:hover,
+html:not(.dark) .dz-card:hover {
+  border-color: rgba(2, 132, 199, 0.6) !important;
+}
+
+html.light .dz-card-active,
+html:not(.dark) .dz-card-active {
+  background: #ffffff !important;
+  border-color: #0284c7 !important;
+  box-shadow: 0 4px 16px rgba(2, 132, 199, 0.15) !important;
+  color: #0f172a !important;
+}
+
+html.light .dz-pill,
+html:not(.dark) .dz-pill {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+html.light .dz-pill:hover,
+html:not(.dark) .dz-pill:hover {
+  background: #e0f2fe !important;
+  border-color: #0284c7 !important;
+  color: #0369a1 !important;
+}
+
+html.light .dz-pill-active,
+html:not(.dark) .dz-pill-active {
+  background: #0284c7 !important;
+  border-color: #0369a1 !important;
+  color: #ffffff !important;
+}
+
+html.light .glass-panel,
+html:not(.dark) .glass-panel {
+  background: rgba(255, 255, 255, 0.97) !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1) !important;
 }
 
 .glow-cyan {

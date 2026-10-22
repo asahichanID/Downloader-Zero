@@ -333,8 +333,8 @@ async function scrapeYouTube(url: string): Promise<MediaMetadata> {
   // Register real format options via loader.to API
   // Video formats
   const videoQualities: Array<{ label: string; format: string; res: string; note: string }> = [
-    { label: '4K (2160p Ultra HD)', format: '2160', res: '2160p', note: 'Kualitas visual bioskop tertinggi' },
-    { label: '2K (1440p Quad HD)', format: '1440', res: '1440p', note: 'Super tajam untuk layar 2K' },
+    { label: '4K (2160p Ultra HD)', format: '2160', res: '4K', note: 'Kualitas visual bioskop tertinggi 4K UHD' },
+    { label: '2K (1440p Quad HD)', format: '1440', res: '2K', note: 'Super tajam resolusi 2K Quad HD (1440p)' },
     { label: '1080p Full HD', format: '1080', res: '1080p', note: 'Standar kualitas Full HD tajam' },
     { label: '720p HD', format: '720', res: '720p', note: 'Keseimbangan kualitas dan ukuran file' },
     { label: '480p Standard', format: '480', res: '480p', note: 'Hemat kuota dan cepat diunduh' },
@@ -1865,6 +1865,11 @@ export async function extractMedia(rawUrl: string, apiKey?: string): Promise<Med
     throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Facebook, Instagram, Pinterest, Spotify, dan TeraBox.');
   }
 
+  // YouTube has dedicated multi-resolution stream generator (4K, 2K, 1080p, 720p, 480p, 360p, MP3)
+  if (platform === 'youtube') {
+    return await scrapeYouTube(url);
+  }
+
   // 2. PRIMARY ENGINE: Try Neoxr API (api.neoxr.eu/api)
   try {
     console.log(`[Engine] 🚀 Trying primary API: api.neoxr.eu for platform: ${platform}`);
@@ -1884,8 +1889,6 @@ export async function extractMedia(rawUrl: string, apiKey?: string): Promise<Med
       return await scrapeTikTok(url);
     case 'facebook':
       return await scrapeFacebook(url);
-    case 'youtube':
-      return await scrapeYouTube(url);
     case 'instagram':
       return await scrapeInstagram(url);
     case 'pinterest':

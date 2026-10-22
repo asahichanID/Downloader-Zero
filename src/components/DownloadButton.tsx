@@ -24,7 +24,7 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
       <div className="w-full flex items-center justify-between gap-3">
         {/* Left Cyber Accents */}
         <div className="hidden xs:flex items-center gap-1 opacity-90 select-none">
-          <span className={`font-cyber font-black text-xl italic tracking-tighter ${isSpotifyPlaylist ? 'text-[#1DB954]' : 'text-cyan-400'}`}>///</span>
+          <span className={`font-cyber font-black text-xl italic tracking-tighter ${isSpotifyPlaylist ? 'text-[#1DB954]' : 'text-cyan-600 dark:text-cyan-400'}`}>///</span>
         </div>
 
         {/* CTA Button */}
@@ -58,7 +58,7 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
 
         {/* Right Cyber Accents */}
         <div className="hidden xs:flex items-center gap-1 opacity-90 select-none">
-          <span className={`font-cyber font-black text-xl italic tracking-tighter ${isSpotifyPlaylist ? 'text-[#1DB954]' : 'text-cyan-400'}`}>///</span>
+          <span className={`font-cyber font-black text-xl italic tracking-tighter ${isSpotifyPlaylist ? 'text-[#1DB954]' : 'text-cyan-600 dark:text-cyan-400'}`}>///</span>
         </div>
       </div>
 
@@ -72,12 +72,12 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="w-full overflow-hidden"
           >
-            <div className="w-full dz-card rounded-xl p-3 border border-cyan-500/40 shadow-md shadow-black/30 mt-2">
-              <div className="flex items-center justify-between text-xs text-cyan-300 font-semibold mb-1.5">
+            <div className="w-full dz-card rounded-xl p-3 border border-cyan-500/40 shadow-sm mt-2">
+              <div className="flex items-center justify-between text-xs text-cyan-700 dark:text-cyan-300 font-semibold mb-1.5">
                 <span>{downloadStatusText || 'Sedang memproses...'}</span>
-                <span className="font-mono text-white">{downloadProgress}%</span>
+                <span className="font-mono text-slate-900 dark:text-white">{downloadProgress}%</span>
               </div>
-              <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden border border-blue-900">
+              <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-900 overflow-hidden border border-slate-300 dark:border-blue-900">
                 <div
                   className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-300 rounded-full"
                   style={{ width: `${Math.max(5, downloadProgress)}%` }}

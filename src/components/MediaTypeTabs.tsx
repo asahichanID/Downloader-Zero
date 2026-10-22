@@ -25,14 +25,14 @@ export const MediaTypeTabs: React.FC<MediaTypeTabsProps> = ({
             ? 'opacity-40 cursor-not-allowed dz-card text-slate-500 border-slate-800'
             : mediaType === 'video'
             ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-cyan-300/50 cursor-pointer shadow-md shadow-black/30'
-            : 'dz-card text-slate-300 hover:text-white hover:border-cyan-500/40 hover:bg-[#0c224a]/60 cursor-pointer'
+            : 'dz-card text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:border-sky-400 dark:hover:border-cyan-500/40 hover:bg-sky-50 dark:hover:bg-[#0c224a]/60 cursor-pointer'
         }`}
         title={isAudioOnly ? 'Platform ini hanya mendukung unduhan audio' : 'Format Video'}
       >
         <Play className="h-4 w-4 sm:h-5 sm:w-5 fill-current transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105" />
         <span>Video</span>
         {isAudioOnly && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
             N/A
           </span>
         )}
@@ -47,7 +47,7 @@ export const MediaTypeTabs: React.FC<MediaTypeTabsProps> = ({
             ? isAudioOnly
               ? 'bg-gradient-to-r from-emerald-600 to-teal-500 text-white border-emerald-300/50 shadow-md shadow-black/30'
               : 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white border-cyan-300/50 shadow-md shadow-black/30'
-            : 'dz-card text-slate-300 hover:text-white hover:border-cyan-500/40 hover:bg-[#0c224a]/60'
+            : 'dz-card text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:border-sky-400 dark:hover:border-cyan-500/40 hover:bg-sky-50 dark:hover:bg-[#0c224a]/60'
         }`}
       >
         <Music className="h-4 w-4 sm:h-5 sm:w-5 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105" />

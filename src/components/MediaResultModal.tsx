@@ -49,35 +49,35 @@ export const MediaResultModal: React.FC<MediaResultModalProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-blue-900/60">
+            <div className="flex items-center justify-between pb-3 border-b border-blue-900/60 dark:border-blue-900/60 border-slate-200">
               <div className="flex items-center gap-2">
-                <span className="font-cyber font-black text-cyan-400 italic">DZ</span>
-                <span className="font-bold text-white text-base">Format Tersedia</span>
+                <span className="font-cyber font-black text-cyan-500 dark:text-cyan-400 italic">DZ</span>
+                <span className="font-bold text-slate-900 dark:text-white text-base">Format Tersedia</span>
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="w-8 h-8 rounded-lg bg-[#0c224a] border border-blue-900 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer active:scale-90 transition-transform"
+                className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-[#0c224a] border border-slate-300 dark:border-blue-900 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center cursor-pointer active:scale-90 transition-transform"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             {/* Media Info Header */}
-            <div className="py-4 flex gap-3 border-b border-blue-900/40">
+            <div className="py-4 flex gap-3 border-b border-slate-200 dark:border-blue-900/40">
               <img
                 src={thumbnail}
                 alt={media.title || 'Media thumbnail'}
-                className="w-24 h-16 rounded-xl object-cover shrink-0 border border-cyan-500/30 bg-slate-900"
+                className="w-24 h-16 rounded-xl object-cover shrink-0 border border-slate-300 dark:border-cyan-500/30 bg-slate-100 dark:bg-slate-900"
                 onError={(e) => {
                   (e.target as HTMLElement).setAttribute('src', animeMascot);
                 }}
               />
               <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-bold text-white line-clamp-2 leading-snug">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white line-clamp-2 leading-snug">
                   {media.title}
                 </h4>
-                <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
+                <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400 mt-1">
                   <span>{media.author}</span>
                   <span>·</span>
                   <span>{media.durationFormatted}</span>
@@ -87,24 +87,24 @@ export const MediaResultModal: React.FC<MediaResultModalProps> = ({
 
             {/* Formats List */}
             <div className="py-4 space-y-2.5">
-              <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider">
+              <span className="text-xs font-bold text-cyan-700 dark:text-cyan-300 uppercase tracking-wider">
                 Pilih Resolusi / Bitrate:
               </span>
               <div className="space-y-2">
                 {displayFormats.map((fmt) => (
                   <div
                     key={fmt.id}
-                    className="flex items-center justify-between p-3 rounded-xl bg-[#07132e] border border-blue-900/80 hover:border-cyan-400/60 transition-all duration-200"
+                    className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-[#07132e] border border-slate-200 dark:border-blue-900/80 hover:border-cyan-500 transition-all duration-200"
                   >
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-cyan-950/80 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-950/80 border border-cyan-400 dark:border-cyan-500/40 flex items-center justify-center text-cyan-600 dark:text-cyan-400 shrink-0">
                         {fmt.type === 'video' ? <Film className="h-4 w-4" /> : <Music className="h-4 w-4" />}
                       </div>
                       <div>
-                        <span className="text-xs sm:text-sm font-bold text-white block">
+                        <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white block">
                           {fmt.quality}
                         </span>
-                        <span className="text-[10px] text-slate-400">
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400">
                           {fmt.extension.toUpperCase()} {fmt.filesize ? `· ${fmt.filesize}` : ''} {fmt.note ? `· ${fmt.note}` : ''}
                         </span>
                       </div>

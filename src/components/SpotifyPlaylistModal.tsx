@@ -372,11 +372,11 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
     >
       {/* Large Square Floating Modal Container */}
       <div
-        className="relative w-full max-w-3xl max-h-[90vh] sm:max-h-[85vh] rounded-3xl bg-[#0c1322] border-2 border-[#1DB954]/50 shadow-2xl shadow-black/90 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+        className="relative w-full max-w-3xl max-h-[90vh] sm:max-h-[85vh] rounded-3xl bg-white dark:bg-[#0c1322] border-2 border-[#1DB954]/50 shadow-2xl shadow-black/90 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header Card */}
-        <div className="p-4 sm:p-6 bg-gradient-to-b from-[#13281a] via-[#0f1d18] to-[#0c1322] border-b border-[#1DB954]/30 shrink-0">
+        <div className="p-4 sm:p-6 bg-gradient-to-b from-emerald-50 via-slate-50 to-white dark:from-[#13281a] dark:via-[#0f1d18] dark:to-[#0c1322] border-b border-[#1DB954]/30 shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
               {/* Cover Art */}
@@ -401,16 +401,16 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
                   <span className="text-[10px] font-black uppercase tracking-wider text-[#1DB954] font-mono px-2 py-0.5 rounded-full bg-[#1DB954]/15 border border-[#1DB954]/40">
                     Spotify Playlist / Album
                   </span>
-                  <span className="text-[11px] font-bold text-slate-400">
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
                     {tracks.length} Lagu
                   </span>
                 </div>
 
-                <h2 id="spotify-modal-title" className="text-base sm:text-xl font-extrabold text-white truncate drop-shadow-md">
+                <h2 id="spotify-modal-title" className="text-base sm:text-xl font-extrabold text-slate-900 dark:text-white truncate drop-shadow-sm">
                   {media.title}
                 </h2>
 
-                <p className="text-xs sm:text-sm text-slate-300 truncate font-medium">
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 truncate font-medium">
                   {media.author}
                 </p>
               </div>
@@ -420,7 +420,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 transition-colors shrink-0 cursor-pointer"
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-900/80 hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700/80 transition-colors shrink-0 cursor-pointer"
               aria-label="Tutup pilihan lagu"
             >
               <X className="h-5 w-5" />
@@ -461,7 +461,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Cari lagu atau artis dalam playlist..."
-                className="w-full h-10 pl-10 pr-3 rounded-xl bg-slate-900/90 border border-slate-700/70 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#1DB954] focus:ring-1 focus:ring-[#1DB954]/50 transition-all font-medium"
+                className="w-full h-10 pl-10 pr-3 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-700/70 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-[#1DB954] focus:ring-1 focus:ring-[#1DB954]/50 transition-all font-medium"
               />
             </div>
 
@@ -472,7 +472,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
               disabled={isZippingAll}
               className={`h-10 px-4 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98 shrink-0 ${
                 isZippingAll
-                  ? 'bg-slate-800 border border-slate-700 text-slate-400 cursor-not-allowed'
+                  ? 'bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-400 cursor-not-allowed'
                   : 'bg-gradient-to-r from-[#1DB954] to-emerald-400 hover:from-[#1ed760] hover:to-teal-300 text-black shadow-md shadow-black/40 border border-[#1DB954]'
               }`}
             >
@@ -525,21 +525,21 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
                   key={trk.id || idx}
                   className={`group p-2.5 sm:p-3 rounded-2xl flex items-center justify-between gap-3 transition-all border ${
                     isThisDownloading
-                      ? 'bg-emerald-950/40 border-[#1DB954]/60'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-[#1DB954]/60'
                       : isThisPlaying
-                      ? 'bg-[#12261b] border-[#1DB954]/40'
-                      : 'bg-slate-900/50 hover:bg-slate-800/70 border-slate-800/80 hover:border-slate-700'
+                      ? 'bg-emerald-50/80 dark:bg-[#12261b] border-[#1DB954]/40'
+                      : 'bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800/70 border-slate-200 dark:border-slate-800/80 hover:border-emerald-500/50'
                   }`}
                 >
                   {/* Left: Index + Cover Art + Play Preview Button */}
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     {/* Index Number */}
-                    <span className="text-xs font-mono font-bold text-slate-500 group-hover:text-emerald-400 w-5 text-center shrink-0">
+                    <span className="text-xs font-mono font-bold text-slate-400 dark:text-slate-500 group-hover:text-emerald-500 dark:group-hover:text-emerald-400 w-5 text-center shrink-0">
                       {String(idx + 1).padStart(2, '0')}
                     </span>
 
                     {/* Thumbnail with hover Play Preview */}
-                    <div className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden shrink-0 border border-slate-700/60 bg-black group/thumb">
+                    <div className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden shrink-0 border border-slate-300 dark:border-slate-700/60 bg-black group/thumb">
                       <img
                         src={trk.thumbnail || media.thumbnail}
                         alt={trk.title}
@@ -568,7 +568,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
                     {/* Title & Artist */}
                     <div className="min-w-0 space-y-0.5">
                       <div className="flex items-center gap-1.5">
-                        <h4 className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-[#1DB954] transition-colors">
+                        <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-[#1DB954] transition-colors">
                           {trk.title}
                         </h4>
                         {isThisPlaying && (
@@ -577,7 +577,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-400 truncate font-medium">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-medium">
                         {trk.artist}
                       </p>
                     </div>
@@ -586,8 +586,8 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
                   {/* Right: Duration + Individual Unduh Button */}
                   <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
                     {trk.durationFormatted && (
-                      <div className="hidden xs:flex items-center gap-1 text-[11px] font-mono text-slate-400">
-                        <Clock className="h-3 w-3 text-slate-500" />
+                      <div className="hidden xs:flex items-center gap-1 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                        <Clock className="h-3 w-3 text-slate-400 dark:text-slate-500" />
                         <span>{trk.durationFormatted}</span>
                       </div>
                     )}
@@ -599,21 +599,21 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
                       disabled={isThisDownloading}
                       className={`h-9 px-3 sm:px-3.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
                         isThisDownloaded
-                          ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/60'
+                          ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-400 dark:border-emerald-600/60'
                           : isThisDownloading
-                          ? 'bg-slate-800 text-emerald-400 border border-[#1DB954]/50 cursor-not-allowed'
-                          : 'bg-[#1DB954]/20 hover:bg-[#1DB954] text-[#1DB954] hover:text-black border border-[#1DB954]/40 hover:border-[#1DB954] shadow-sm'
+                          ? 'bg-slate-200 dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 border border-[#1DB954]/50 cursor-not-allowed'
+                          : 'bg-[#1DB954]/20 hover:bg-[#1DB954] text-[#0f7a35] dark:text-[#1DB954] hover:text-black border border-[#1DB954]/40 hover:border-[#1DB954] shadow-sm'
                       }`}
                       title={`Unduh lagu ${trk.title}`}
                     >
                       {isThisDownloading ? (
                         <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-500 dark:text-emerald-400" />
                           <span className="text-[11px]">{pct}%</span>
                         </>
                       ) : isThisDownloaded ? (
                         <>
-                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                           <span className="hidden sm:inline text-[11px]">Tersimpan</span>
                         </>
                       ) : (
@@ -631,7 +631,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
         </div>
 
         {/* Modal Bottom Footer */}
-        <div className="p-3.5 sm:p-4 bg-slate-950 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400 shrink-0">
+        <div className="p-3.5 sm:p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 shrink-0">
           <div className="flex items-center gap-1.5 font-mono text-[11px]">
             <Sparkles className="h-3.5 w-3.5 text-[#1DB954]" />
             <span>Audio MP3 Jernih 320 kbps</span>
@@ -640,7 +640,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-colors cursor-pointer text-xs"
+            className="px-4 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold transition-colors cursor-pointer text-xs"
           >
             Selesai
           </button>

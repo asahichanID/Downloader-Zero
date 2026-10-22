@@ -230,17 +230,17 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
             </AnimatePresence>
 
         {/* Header */}
-        <div className="flex items-center justify-between pb-3.5 border-b border-blue-900/60 shrink-0">
+        <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-blue-900/60 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-cyan-950/90 border border-cyan-500/50 flex items-center justify-center text-cyan-400">
+            <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-cyan-950/90 border border-sky-300 dark:border-cyan-500/50 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
               <Clock className="h-4.5 w-4.5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-cyber font-black text-cyan-400 italic text-sm">DZ</span>
-                <span className="font-bold text-white text-base sm:text-lg">Riwayat Unduhan</span>
+                <span className="font-cyber font-black text-cyan-600 dark:text-cyan-400 italic text-sm">DZ</span>
+                <span className="font-bold text-slate-900 dark:text-white text-base sm:text-lg">Riwayat Unduhan</span>
               </div>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-600 dark:text-slate-400">
                 Tersimpan offline di memori lokal peramban · Siap simpan ke galeri
               </p>
             </div>
@@ -248,37 +248,37 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-[#0c224a] border border-blue-900 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-[#0c224a] border border-slate-300 dark:border-blue-900 text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* 24-Hour Full-Purge Cycle Status Bar */}
-        <div className="mt-3.5 p-3 sm:p-3.5 rounded-2xl bg-[#06122b]/90 border border-cyan-500/30 shrink-0 space-y-2">
+        <div className="mt-3.5 p-3 sm:p-3.5 rounded-2xl bg-sky-50 dark:bg-[#06122b]/90 border border-sky-200 dark:border-cyan-500/30 shrink-0 space-y-2">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
             <div className="flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-cyan-400"></span>
-              <span className="text-xs font-bold text-cyan-300 tracking-wide uppercase">
+              <span className="inline-block w-2 h-2 rounded-full bg-cyan-500 dark:bg-cyan-400"></span>
+              <span className="text-xs font-bold text-cyan-800 dark:text-cyan-300 tracking-wide uppercase">
                 Siklus Pembersihan Otomatis (Full 24 Jam)
               </span>
             </div>
-            <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-cyan-400 bg-cyan-950/80 px-2.5 py-1 rounded-lg border border-cyan-500/40 w-fit">
+            <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-cyan-800 dark:text-cyan-400 bg-sky-100 dark:bg-cyan-950/80 px-2.5 py-1 rounded-lg border border-sky-300 dark:border-cyan-500/40 w-fit">
               <Clock className="h-3.5 w-3.5" />
               <span>Bersih serentak dalam: {cycleInfo.formattedRemaining}</span>
             </div>
           </div>
 
           {/* Progress bar of the 24-hour cycle */}
-          <div className="w-full bg-slate-900/80 rounded-full h-1.5 overflow-hidden border border-blue-900/40">
+          <div className="w-full bg-slate-200 dark:bg-slate-900/80 rounded-full h-1.5 overflow-hidden border border-slate-300 dark:border-blue-900/40">
             <div
               className="bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 h-full rounded-full transition-all duration-1000"
               style={{ width: `${cycleInfo.progressPercent}%` }}
             />
           </div>
 
-          <p className="text-[11px] text-slate-400 leading-tight flex items-start gap-1">
-            <Info className="h-3 w-3 text-cyan-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight flex items-start gap-1">
+            <Info className="h-3 w-3 text-cyan-600 dark:text-cyan-400 shrink-0 mt-0.5" />
             <span>
               Tempat riwayat ini berfungsi sebagai tempat penampungan berjalan. Seluruh riwayat akan
               dibersihkan total serentak saat waktu 24 jam habis agar memori perangkat Anda tetap
@@ -289,10 +289,10 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
 
         {/* Secondary Bar: Count, Size, & Action */}
         <div className="py-3 flex items-center justify-between shrink-0">
-          <div className="text-xs text-slate-300 font-medium">
-            <span className="font-bold text-white">{items.length}</span> Berkas Tersimpan{' '}
+          <div className="text-xs text-slate-700 dark:text-slate-300 font-medium">
+            <span className="font-bold text-slate-900 dark:text-white">{items.length}</span> Berkas Tersimpan{' '}
             {items.length > 0 && (
-              <span className="text-cyan-400 font-mono">({totalSizeFormatted})</span>
+              <span className="text-cyan-700 dark:text-cyan-400 font-mono">({totalSizeFormatted})</span>
             )}
           </div>
 
@@ -360,11 +360,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
             </div>
           ) : items.length === 0 ? (
             <div className="py-12 px-4 flex flex-col items-center justify-center text-center">
-              <div className="w-16 h-16 rounded-3xl bg-[#09152e] border border-blue-900 flex items-center justify-center text-cyan-400 mb-3 shadow-md shadow-black/40">
+              <div className="w-16 h-16 rounded-3xl bg-sky-100 dark:bg-[#09152e] border border-sky-300 dark:border-blue-900 flex items-center justify-center text-cyan-600 dark:text-cyan-400 mb-3 shadow-md shadow-slate-900/5 dark:shadow-black/40">
                 <HardDrive className="h-7 w-7 opacity-70" />
               </div>
-              <h4 className="text-sm font-bold text-white mb-1">Riwayat Masih Kosong</h4>
-              <p className="text-xs text-slate-400 max-w-sm leading-relaxed">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-1">Riwayat Masih Kosong</h4>
+              <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm leading-relaxed">
                 Setiap kali Anda mengunduh video atau musik, berkasnya otomatis tersimpan di sini
                 secara offline selama 24 jam. Anda dapat langsung menyimpannya ke galeri perangkat
                 kapan saja tanpa unduh ulang!
@@ -380,12 +380,12 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.16 } }}
                   transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                  className="p-3 sm:p-3.5 rounded-2xl bg-[#081735]/90 border border-blue-900/70 hover:border-cyan-500/50 transition-colors duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group shadow-md shadow-black/40"
+                  className="p-3 sm:p-3.5 rounded-2xl bg-slate-50 dark:bg-[#081735]/90 border border-slate-200 dark:border-blue-900/70 hover:border-cyan-500/50 transition-colors duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group shadow-md shadow-slate-900/5 dark:shadow-black/40"
                 >
                   {/* Media details */}
                   <div className="flex items-start gap-3 min-w-0 flex-1">
                     {/* Thumbnail / Icon */}
-                    <div className="relative w-20 h-16 sm:w-24 sm:h-18 rounded-xl overflow-hidden bg-slate-900 border border-cyan-500/30 shrink-0 group-hover:border-cyan-400/70 transition-colors duration-200">
+                    <div className="relative w-20 h-16 sm:w-24 sm:h-18 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-900 border border-sky-300 dark:border-cyan-500/30 shrink-0 group-hover:border-cyan-400/70 transition-colors duration-200">
                       {item.thumbnail ? (
                         <img
                           src={item.thumbnail}
@@ -430,24 +430,24 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                         >
                           {item.platform}
                         </span>
-                        <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-cyan-950/80 border border-cyan-500/30 text-cyan-300">
+                        <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-sky-100 dark:bg-cyan-950/80 border border-sky-300 dark:border-cyan-500/30 text-sky-800 dark:text-cyan-300">
                           {item.resolution || item.quality}
                         </span>
                         {item.filesize && (
-                          <span className="text-[10px] text-slate-400 font-mono">
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                             {item.filesize}
                           </span>
                         )}
                       </div>
 
                       <h4
-                        className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-cyan-300 transition-colors duration-200"
+                        className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors duration-200"
                         title={item.title}
                       >
                         {item.title}
                       </h4>
 
-                      <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
                         <span>{item.author}</span>
                         <span>·</span>
                         <span>{new Date(item.downloadedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>

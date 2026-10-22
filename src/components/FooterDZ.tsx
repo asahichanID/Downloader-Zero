@@ -12,7 +12,7 @@ export const FooterDZ: React.FC<FooterDZProps> = ({ onOpenTerms, onOpenPrivacy }
       <div className="flex items-center justify-between gap-2 px-1">
         {/* Left Handwritten Doodle Text */}
         <div className="w-28 sm:w-36 leading-tight">
-          <p className="font-doodle text-sm sm:text-base font-bold text-slate-300 leading-snug drop-shadow-sm -rotate-3">
+          <p className="font-doodle text-sm sm:text-base font-bold text-slate-700 dark:text-slate-300 leading-snug drop-shadow-sm -rotate-3">
             Download Tanpa Batas Bersama DZ! ♡
           </p>
         </div>
@@ -20,14 +20,14 @@ export const FooterDZ: React.FC<FooterDZProps> = ({ onOpenTerms, onOpenPrivacy }
         {/* Center Main Copyright & Legal */}
         <div className="flex-1 flex flex-col items-center justify-center text-center space-y-1">
           {/* Brand with Crowns */}
-          <div className="flex items-center gap-1.5 text-xs sm:text-sm font-extrabold text-white">
-            <Crown className="h-3 w-3 text-cyan-400 fill-cyan-400" />
+          <div className="flex items-center gap-1.5 text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white">
+            <Crown className="h-3 w-3 text-cyan-500 dark:text-cyan-400 fill-cyan-400" />
             <span className="tracking-wide">DownloaderZero (DZ)</span>
-            <Crown className="h-3 w-3 text-cyan-400 fill-cyan-400" />
+            <Crown className="h-3 w-3 text-cyan-500 dark:text-cyan-400 fill-cyan-400" />
           </div>
 
           {/* Author */}
-          <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium">
+          <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 font-medium">
             Created &amp; Protected by Shiro Anna © 2026
           </p>
 
