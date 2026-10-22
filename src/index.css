@@ -41,7 +41,7 @@ button, a, input, select {
   border: 1px solid rgba(59, 130, 246, 0.22);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   transform: translateZ(0);
-  transition: border-color 220ms var(--ease-fluid), background-color 220ms var(--ease-fluid), transform 220ms var(--ease-fluid);
+  transition: border-color 220ms var(--ease-fluid), background-color 220ms var(--ease-fluid);
 }
 
 .dz-card:hover {
@@ -53,7 +53,7 @@ button, a, input, select {
   border: 1.5px solid #22d3ee;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   transform: translateZ(0);
-  transition: border-color 220ms var(--ease-fluid), background-color 220ms var(--ease-fluid), transform 220ms var(--ease-fluid);
+  transition: border-color 220ms var(--ease-fluid), background-color 220ms var(--ease-fluid);
 }
 
 .dz-pill {
@@ -61,7 +61,7 @@ button, a, input, select {
   border: 1px solid rgba(59, 130, 246, 0.25);
   color: #94a3b8;
   transform: translateZ(0);
-  transition: border-color 200ms var(--ease-fluid), color 200ms var(--ease-fluid), background-color 200ms var(--ease-fluid), transform 200ms var(--ease-fluid);
+  transition: border-color 200ms var(--ease-fluid), color 200ms var(--ease-fluid), background-color 200ms var(--ease-fluid);
 }
 
 .dz-pill:hover {

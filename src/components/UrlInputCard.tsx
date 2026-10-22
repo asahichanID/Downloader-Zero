@@ -1,5 +1,6 @@
-import React from 'react';
-import { Link2, Clipboard, X, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { Link2, Clipboard, X, AlertCircle, Sparkles, CheckCircle2, Bookmark } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { PlatformType } from '../types/index.ts';
 import { detectPlatform } from '../services/scraper.ts';
@@ -23,6 +24,26 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
   isAutoDetected = false,
   onOpenPlatformModal
 }) => {
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isTutorialOpen) {
+        setIsTutorialOpen(false);
+      }
+    };
+    if (isTutorialOpen) {
+      document.body.style.overflow = 'hidden';
+      window.addEventListener('keydown', handleKeyDown);
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isTutorialOpen]);
+
   const getPlaceholder = () => {
     switch (selectedPlatform) {
       case 'youtube':
@@ -69,32 +90,172 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
   const detectedNow = url ? detectPlatform(url) : 'unknown';
   const showDetectedBadge = detectedNow !== 'unknown';
 
-  return (
-    <div className="dz-card rounded-2xl p-3.5 sm:p-5 w-full transition-all duration-200 border border-blue-900/60 hover:border-cyan-500/40">
-      {/* Card Header: Link icon + Label + Auto-detect indicator */}
-      <div className="flex items-center justify-between gap-2 mb-2.5">
-        <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-cyan-300">
-          <Link2 className="h-4 w-4 text-cyan-400 rotate-45 shrink-0" />
-          <span className="tracking-wide">Tempelkan Tautan Media</span>
-        </div>
+  const tutorialModalContent = (
+    <AnimatePresence>
+      {isTutorialOpen && (
+        <motion.div
+          key="tutorial-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          className="fixed inset-0 z-[1000] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5"
+          onClick={() => setIsTutorialOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <motion.div
+            key="tutorial-modal-card"
+            initial={{ opacity: 0, scale: 0.95, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 16 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg bg-[#07132e] border-2 border-amber-400/80 rounded-3xl p-5 sm:p-7 shadow-2xl shadow-black/95 max-h-[85vh] flex flex-col relative text-slate-100"
+          >
+            {/* Top Bar: Book accent tab and close button ONLY (strictly NO title/heading as requested) */}
+            <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-amber-400/25">
+              <div className="flex items-center gap-2.5">
+                <div className="w-6 h-6 rounded-full bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center border border-amber-300 shadow-sm">
+                  ?
+                </div>
+                <Bookmark className="h-4.5 w-4.5 text-amber-400" />
+                <div className="h-1.5 w-10 rounded-full bg-amber-400/60" />
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTutorialOpen(false)}
+                className="h-8 w-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 active:scale-90 transition-all cursor-pointer border border-slate-800"
+                aria-label="Tutup petunjuk"
+              >
+                <X className="h-4.5 w-4.5" />
+              </button>
+            </div>
 
-        {/* Dynamic Auto-Detect Badge with Fluid Entrance & Exit */}
-        <AnimatePresence>
-          {showDetectedBadge && (
-            <motion.div
-              key={`detected-${detectedNow}`}
-              initial={{ opacity: 0, scale: 0.88, y: -4 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.88, y: -4 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/50 text-[11px] font-bold text-emerald-300 shadow-sm"
+            {/* Tutorial Content: Detailed step-by-step instructions */}
+            <div className="overflow-y-auto pr-1 space-y-3 text-xs sm:text-sm text-slate-200 leading-relaxed font-sans">
+              {/* Step 1 */}
+              <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#0b1b3d] border border-blue-900/60">
+                <div className="w-6 h-6 rounded-lg bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                  1
+                </div>
+                <div className="space-y-1">
+                  <p className="font-bold text-white text-xs sm:text-sm">Salin Tautan Media</p>
+                  <p className="text-slate-300 text-[11px] sm:text-xs">
+                    Buka aplikasi atau website media sosial pilihan Anda (YouTube, TikTok, Facebook, Instagram, Pinterest, Spotify, atau TeraBox). Pilih konten yang ingin disimpan, klik menu <strong>Bagikan (Share)</strong>, lalu pilih <strong>Salin Tautan (Copy Link)</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#0b1b3d] border border-blue-900/60">
+                <div className="w-6 h-6 rounded-lg bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                  2
+                </div>
+                <div className="space-y-1">
+                  <p className="font-bold text-white text-xs sm:text-sm">Tempelkan Tautan ke Kolom Input</p>
+                  <p className="text-slate-300 text-[11px] sm:text-xs">
+                    Kembali ke DownloaderZero, lalu klik tombol <strong>Paste</strong> atau tempel langsung tautan ke dalam kolom teks. Platform sumber akan otomatis terdeteksi tanpa perlu dipilih manual.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 3 */}
+              <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#0b1b3d] border border-blue-900/60">
+                <div className="w-6 h-6 rounded-lg bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                  3
+                </div>
+                <div className="space-y-1">
+                  <p className="font-bold text-white text-xs sm:text-sm">Pilih Format & Kualitas Unduhan</p>
+                  <p className="text-slate-300 text-[11px] sm:text-xs">
+                    Pilih tab <strong>Video</strong> untuk resolusi mulai dari 360p, 720p HD, 1080p FHD, hingga 4K. Atau pilih tab <strong>Audio</strong> jika Anda ingin mengunduh berkas MP3 dengan opsi bitrate 128 kbps, 192 kbps, hingga 320 kbps jernih.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 4 */}
+              <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#0b1b3d] border border-blue-900/60">
+                <div className="w-6 h-6 rounded-lg bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                  4
+                </div>
+                <div className="space-y-1">
+                  <p className="font-bold text-white text-xs sm:text-sm">Fitur Khusus Platform</p>
+                  <div className="text-slate-300 text-[11px] sm:text-xs space-y-1 mt-1">
+                    <p>• <strong>TikTok</strong>: Otomatis bersih tanpa watermark. Untuk konten slide foto, Anda dapat mengunduh foto satu per satu atau sekaligus dalam 1 paket ZIP.</p>
+                    <p>• <strong>Spotify</strong>: Mengunduh trek satuan atau seluruh lagu album & playlist langsung dipaketkan rapi ke berkas ZIP.</p>
+                    <p>• <strong>TeraBox</strong>: Mendukung konversi link cloud video/file langsung menjadi link unduhan langsung berkecepatan tinggi.</p>
+                    <p>• <strong>Instagram & Pinterest</strong>: Mendukung video reel, slide foto carousel, dan gambar resolusi penuh.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 5 */}
+              <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#0b1b3d] border border-blue-900/60">
+                <div className="w-6 h-6 rounded-lg bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                  5
+                </div>
+                <div className="space-y-1">
+                  <p className="font-bold text-white text-xs sm:text-sm">Mulai Unduh & Simpan ke Perangkat</p>
+                  <p className="text-slate-300 text-[11px] sm:text-xs">
+                    Klik tombol <strong>Unduh Sekarang</strong>. Media akan diproses secara instan dan berkas langsung tersimpan ke folder Unduhan (Downloads) perangkat Anda. Riwayat unduhan juga tersimpan aman di browser selama 24 jam sehingga Anda dapat mengunduh ulang kapan pun tanpa menghabiskan kuota ganda.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Action */}
+            <div className="mt-4 pt-3.5 border-t border-amber-400/25 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsTutorialOpen(false)}
+                className="px-5 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs sm:text-sm active:scale-95 transition-all duration-150 cursor-pointer shadow-sm"
+              >
+                Tutup
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
+  return (
+    <>
+      <div className="dz-card rounded-2xl p-3.5 sm:p-5 w-full transition-all duration-200 border border-blue-900/60 hover:border-cyan-500/40 relative">
+        {/* Card Header: Gold guide circle + Link icon + Label + Auto-detect indicator */}
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-cyan-300">
+            {/* Gold circle with punctuation mark '?' - opens floating tutorial panel */}
+            <button
+              type="button"
+              onClick={() => setIsTutorialOpen(true)}
+              className="w-5 h-5 rounded-full bg-amber-400 hover:bg-amber-300 active:scale-90 text-slate-950 font-black text-xs flex items-center justify-center border border-amber-300 shrink-0 cursor-pointer transition-transform duration-150 touch-manipulation select-none shadow-sm"
+              title="Buka petunjuk cara penggunaan"
+              aria-label="Buka petunjuk cara penggunaan"
             >
-              <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-              <span className="capitalize">{detectedNow} Terdeteksi Otomatis</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+              ?
+            </button>
+            <Link2 className="h-4 w-4 text-cyan-400 rotate-45 shrink-0" />
+            <span className="tracking-wide">Tempelkan Tautan Media</span>
+          </div>
+
+          {/* Dynamic Auto-Detect Badge with Fluid Entrance & Exit */}
+          <AnimatePresence>
+            {showDetectedBadge && (
+              <motion.div
+                key={`detected-${detectedNow}`}
+                initial={{ opacity: 0, scale: 0.88, y: -4 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.88, y: -4 }}
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/50 text-[11px] font-bold text-emerald-300 shadow-sm"
+              >
+                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                <span className="capitalize">{detectedNow} Terdeteksi Otomatis</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
       {/* Input Row */}
       <div className="flex items-center gap-2">
@@ -181,5 +342,9 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
         )}
       </AnimatePresence>
     </div>
+
+    {/* Floating Notice Book Modal Portaled to Body (Truly floating, cannot penetrate or get clipped by other panels) */}
+    {typeof document !== 'undefined' && createPortal(tutorialModalContent, document.body)}
+  </>
   );
 };

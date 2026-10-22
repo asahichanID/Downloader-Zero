@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, Check, Sparkles, X, Layers, Zap } from 'lucide-react';
+import { ChevronDown, Check, Sparkles, X, Layers } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { PlatformType } from '../types/index.ts';
 
@@ -145,12 +145,12 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
   const currentPlatformObj = platforms.find((p) => p.id === selectedPlatform) || platforms[0];
 
   return (
-    <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-2.5">
+    <div className="w-full">
       {/* The ONE Action Button: 'Pilih Aplikasi Tautan' */}
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="group relative w-full sm:w-auto flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-[#0a1838] via-[#0e265c] to-[#0a1838] border border-cyan-500/40 hover:border-cyan-400 active:scale-[0.985] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer text-left touch-manipulation shadow-md shadow-black/40"
+        className="group relative w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-[#0a1838] via-[#0e265c] to-[#0a1838] border border-cyan-500/40 hover:border-cyan-400 active:scale-[0.985] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer text-left touch-manipulation shadow-md shadow-black/40"
         title="Klik untuk memilih platform manual atau lihat daftar aplikasi yang didukung"
       >
         <div className="flex items-center gap-3">
@@ -188,14 +188,6 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
           <ChevronDown className="h-3.5 w-3.5 group-hover:translate-y-0.5 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]" />
         </div>
       </button>
-
-      {/* Auto-Detection Status Helper */}
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-blue-900/40 text-[11px] text-slate-300">
-        <Zap className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-        <span>
-          <strong className="text-cyan-300">Tempel URL</strong> otomatis mendeteksi YouTube, TikTok, FB, IG, Pinterest, & TeraBox
-        </span>
-      </div>
 
       {/* FLOATING SELECTOR MODAL */}
       <AnimatePresence>

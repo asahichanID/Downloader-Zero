@@ -526,16 +526,46 @@ export default function App() {
           isAutoDetected={isAutoDetected}
         />
 
-        {/* 5 & 6. Media Type Tabs and Quality Selection Card (Fluidly collapses and expands for TeraBox) */}
-        <AnimatePresence initial={false}>
-          {selectedPlatform !== 'terabox' && (
+        {/* 5 & 6. Media Type Tabs and Quality Selection Card (Smoothly transitions for TeraBox Direct Mode) */}
+        <AnimatePresence mode="wait" initial={false}>
+          {selectedPlatform === 'terabox' ? (
+            <motion.div
+              key="terabox-cloud-panel"
+              initial={{ opacity: 0, scale: 0.98, y: 6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: -6 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full"
+            >
+              <div className="w-full dz-card rounded-2xl p-4 sm:p-5 border border-sky-500/40 flex items-center gap-3.5 shadow-sm">
+                <div className="w-11 h-11 rounded-2xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400 shrink-0">
+                  <svg className="w-6 h-6 text-sky-400 fill-current" viewBox="0 0 24 24">
+                    <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-xs sm:text-sm font-bold text-white tracking-tight">
+                      Mode Berkas TeraBox Cloud
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-950/90 text-sky-300 border border-sky-500/50 font-bold">
+                      Direct Cloud File
+                    </span>
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-300 leading-relaxed">
+                    Video atau berkas cloud diunduh langsung dalam kualitas dan ukuran aslinya tanpa perlu memilih resolusi manual.
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
             <motion.div
               key="platform-selectors-panel"
-              initial={{ opacity: 0, height: 0, y: -8 }}
-              animate={{ opacity: 1, height: 'auto', y: 0 }}
-              exit={{ opacity: 0, height: 0, y: -8 }}
+              initial={{ opacity: 0, scale: 0.98, y: 6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: -6 }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full overflow-hidden flex flex-col gap-4 sm:gap-5"
+              className="w-full flex flex-col gap-4 sm:gap-5"
             >
               <MediaTypeTabs
                 mediaType={mediaType}
