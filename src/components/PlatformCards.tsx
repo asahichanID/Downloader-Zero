@@ -33,10 +33,10 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       name: 'YouTube',
       subtitle: 'Video hingga 4K UHD & Audio MP3 320 kbps jernih',
       badge: '4K & Audio 320k',
-      accentColor: 'border-red-500/60 shadow-red-500/20 hover:border-red-400',
-      activeRing: 'ring-2 ring-red-500 bg-red-950/30 border-red-500',
+      accentColor: 'border-red-500/50 hover:border-red-400',
+      activeRing: 'ring-2 ring-red-500 bg-red-950/40 border-red-500',
       icon: (
-        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/40 shrink-0">
+        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-red-600 flex items-center justify-center shadow-md shadow-black/40 shrink-0">
           <svg className="w-6 h-6 text-white fill-current" viewBox="0 0 24 24">
             <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
           </svg>
@@ -48,10 +48,10 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       name: 'TikTok',
       subtitle: 'Video HD Tanpa Watermark & Koleksi Foto Slide ZIP',
       badge: 'No Watermark & ZIP',
-      accentColor: 'border-cyan-500/60 shadow-cyan-500/20 hover:border-cyan-400',
-      activeRing: 'ring-2 ring-cyan-400 bg-cyan-950/30 border-cyan-400',
+      accentColor: 'border-cyan-500/50 hover:border-cyan-400',
+      activeRing: 'ring-2 ring-cyan-400 bg-cyan-950/40 border-cyan-400',
       icon: (
-        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-black flex items-center justify-center border border-slate-700 shadow-lg shadow-cyan-500/20 shrink-0">
+        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-black flex items-center justify-center border border-slate-700 shadow-md shadow-black/40 shrink-0">
           <svg className="w-6 h-6" viewBox="0 0 24 24">
             <path
               fill="#25F4EE"
@@ -70,10 +70,10 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       name: 'Facebook',
       subtitle: 'Video Publik HD 1080p, Reels & Ekstrak Audio MP3',
       badge: 'Full HD & Reels',
-      accentColor: 'border-blue-500/60 shadow-blue-500/20 hover:border-blue-400',
-      activeRing: 'ring-2 ring-blue-500 bg-blue-950/30 border-blue-500',
+      accentColor: 'border-blue-500/50 hover:border-blue-400',
+      activeRing: 'ring-2 ring-blue-500 bg-blue-950/40 border-blue-500',
       icon: (
-        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#1877F2] flex items-center justify-center shadow-lg shadow-blue-500/40 shrink-0">
+        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#1877F2] flex items-center justify-center shadow-md shadow-black/40 shrink-0">
           <svg className="w-6 h-6 text-white fill-current" viewBox="0 0 24 24">
             <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
           </svg>
@@ -85,10 +85,10 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       name: 'Instagram',
       subtitle: 'Reels Resolusi Penuh, Postingan Carousel & Audio',
       badge: 'Reels & Carousel',
-      accentColor: 'border-pink-500/60 shadow-pink-500/20 hover:border-pink-400',
-      activeRing: 'ring-2 ring-pink-500 bg-pink-950/30 border-pink-500',
+      accentColor: 'border-pink-500/50 hover:border-pink-400',
+      activeRing: 'ring-2 ring-pink-500 bg-pink-950/40 border-pink-500',
       icon: (
-        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] flex items-center justify-center shadow-lg shadow-pink-500/40 shrink-0">
+        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] flex items-center justify-center shadow-md shadow-black/40 shrink-0">
           <svg className="w-6 h-6 text-white fill-current" viewBox="0 0 24 24">
             <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
           </svg>
@@ -100,10 +100,10 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       name: 'Pinterest',
       subtitle: 'Video MP4 1080p & Foto Ultra HD Original 4K',
       badge: 'Video & Foto 4K',
-      accentColor: 'border-rose-600/60 shadow-rose-600/20 hover:border-rose-500',
-      activeRing: 'ring-2 ring-rose-500 bg-rose-950/30 border-rose-500',
+      accentColor: 'border-rose-600/50 hover:border-rose-500',
+      activeRing: 'ring-2 ring-rose-500 bg-rose-950/40 border-rose-500',
       icon: (
-        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#E60023] flex items-center justify-center shadow-lg shadow-rose-600/40 shrink-0">
+        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#E60023] flex items-center justify-center shadow-md shadow-black/40 shrink-0">
           <svg className="w-6 h-6 text-white fill-current" viewBox="0 0 24 24">
             <path d="M12 0C5.373 0 0 5.372 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12 0-6.628-5.373-12-12-12z"/>
           </svg>
@@ -115,10 +115,10 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       name: 'Spotify',
       subtitle: 'Audio MP3 Jernih, Single Track & Koleksi Playlist ZIP',
       badge: 'Khusus Audio & Playlist',
-      accentColor: 'border-emerald-500/60 shadow-emerald-500/20 hover:border-emerald-400',
-      activeRing: 'ring-2 ring-emerald-500 bg-emerald-950/30 border-emerald-500',
+      accentColor: 'border-emerald-500/50 hover:border-emerald-400',
+      activeRing: 'ring-2 ring-emerald-500 bg-emerald-950/40 border-emerald-500',
       icon: (
-        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#1DB954] flex items-center justify-center shadow-lg shadow-emerald-500/40 shrink-0">
+        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#1DB954] flex items-center justify-center shadow-md shadow-black/40 shrink-0">
           <svg className="w-6 h-6 text-black fill-current" viewBox="0 0 24 24">
             <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.494 17.303c-.217.356-.677.469-1.033.252-2.83-1.73-6.393-2.12-10.59-1.162-.407.094-.814-.16-.907-.568-.094-.407.16-.814.568-.907 4.593-1.049 8.528-.607 11.71 1.352.356.217.469.677.252 1.033zm1.464-3.257c-.273.444-.855.586-1.299.313-3.24-1.992-8.18-2.568-12.012-1.405-.498.152-1.032-.132-1.184-.63-.152-.498.132-1.032.63-1.184 4.382-1.33 9.821-.689 13.552 1.607.444.273.586.855.313 1.299zm.126-3.398c-3.886-2.308-10.297-2.52-14.018-1.391-.595.181-1.233-.16-1.414-.755-.181-.595.16-1.233.755-1.414 4.277-1.299 11.352-1.05 15.828 1.607.534.317.708 1.01.391 1.544-.317.534-1.01.708-1.544.391z"/>
           </svg>
@@ -130,10 +130,10 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       name: 'TeraBox',
       subtitle: 'Unduh Berkas Cloud, Video & File Langsung Cepat',
       badge: 'Direct Cloud File',
-      accentColor: 'border-sky-500/60 shadow-sky-500/20 hover:border-sky-400',
-      activeRing: 'ring-2 ring-sky-500 bg-sky-950/30 border-sky-500',
+      accentColor: 'border-sky-500/50 hover:border-sky-400',
+      activeRing: 'ring-2 ring-sky-500 bg-sky-950/40 border-sky-500',
       icon: (
-        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#0086FF] flex items-center justify-center shadow-lg shadow-sky-500/40 shrink-0">
+        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#0086FF] flex items-center justify-center shadow-md shadow-black/40 shrink-0">
           <svg className="w-6 h-6 text-white fill-current" viewBox="0 0 24 24">
             <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
           </svg>
@@ -146,15 +146,15 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
 
   return (
     <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-2.5">
-      {/* The ONE futuristic Action Button: 'Pilih Aplikasi Tautan' */}
+      {/* The ONE Action Button: 'Pilih Aplikasi Tautan' */}
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="group relative w-full sm:w-auto flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-[#0a1838] via-[#0e265c] to-[#0a1838] border border-cyan-500/40 hover:border-cyan-400/80 shadow-[0_0_14px_rgba(6,182,212,0.18)] hover:shadow-[0_0_20px_rgba(6,182,212,0.32)] active:scale-[0.985] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer text-left touch-manipulation"
+        className="group relative w-full sm:w-auto flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-r from-[#0a1838] via-[#0e265c] to-[#0a1838] border border-cyan-500/40 hover:border-cyan-400 active:scale-[0.985] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer text-left touch-manipulation shadow-md shadow-black/40"
         title="Klik untuk memilih platform manual atau lihat daftar aplikasi yang didukung"
       >
         <div className="flex items-center gap-3">
-          <div className="scale-95 group-hover:scale-105 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]">
+          <div className="scale-95 group-hover:scale-100 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]">
             {currentPlatformObj.icon}
           </div>
           <div>
@@ -181,11 +181,11 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
         </div>
 
         {/* Action Badge */}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-950/80 group-hover:bg-cyan-900/90 border border-cyan-500/40 text-cyan-300 text-xs font-bold transition-colors duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] shadow-inner shrink-0">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-950/80 group-hover:bg-cyan-900/90 border border-cyan-500/40 text-cyan-300 text-xs font-bold transition-colors duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0">
           <Layers className="h-3.5 w-3.5 text-cyan-400" />
           <span className="hidden sm:inline">Pilih Aplikasi Tautan</span>
           <span className="sm:hidden">Pilih</span>
-          <ChevronDown className="h-3.5 w-3.5 group-hover:translate-y-0.5 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]" />
+          <ChevronDown className="h-3.5 w-3.5 group-hover:translate-y-0.5 transition-transform duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]" />
         </div>
       </button>
 
@@ -197,25 +197,25 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
         </span>
       </div>
 
-      {/* FLOATING SELECTOR MODAL (Bener-bener mengambang tanpa kepotong UI) */}
+      {/* FLOATING SELECTOR MODAL */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
             className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
             onClick={() => setIsOpen(false)}
             role="dialog"
             aria-modal="true"
           >
             <motion.div
-              initial={{ opacity: 0, scale: 0.94, y: 16 }}
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.94, y: 16 }}
-              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              className="relative w-full max-w-xl rounded-3xl p-5 sm:p-7 bg-[#07132e]/95 border border-cyan-500/40 shadow-[0_0_30px_rgba(6,182,212,0.22)] max-h-[90vh] overflow-y-auto"
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="relative w-full max-w-xl rounded-3xl p-5 sm:p-7 bg-[#07132e]/95 border border-cyan-500/40 shadow-2xl shadow-black/85 max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
             {/* Modal Header */}
@@ -252,7 +252,7 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
               </div>
             </div>
 
-            {/* Platform Grid (One-Tap Selection: langsung kepilih & modal tertutup otomatis) */}
+            {/* Platform Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               {platforms.map((p) => {
                 const isActive = selectedPlatform === p.id;
@@ -264,9 +264,9 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
                       onSelectPlatform(p.id);
                       setIsOpen(false);
                     }}
-                    className={`flex items-start gap-3.5 p-3.5 rounded-2xl transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.97] hover:-translate-y-0.5 cursor-pointer text-left border touch-manipulation ${
+                    className={`flex items-start gap-3.5 p-3.5 rounded-2xl transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] cursor-pointer text-left border touch-manipulation ${
                       isActive
-                        ? p.activeRing + ' shadow-[0_0_16px_rgba(6,182,212,0.35)]'
+                        ? p.activeRing
                         : `bg-[#0a1b3d]/70 hover:bg-[#0f285a] ${p.accentColor}`
                     }`}
                   >

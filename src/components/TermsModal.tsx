@@ -37,7 +37,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
           onClick={onClose}
           role="dialog"
@@ -45,11 +45,11 @@ export const TermsModal: React.FC<TermsModalProps> = ({
         >
           <motion.div
             key="terms-modal-card"
-            initial={{ opacity: 0, scale: 0.94, y: 12 }}
+            initial={{ opacity: 0, scale: 0.96, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-3xl p-6 sm:p-8 glass-panel border border-slate-700/80 light:border-slate-300 shadow-2xl"
+            exit={{ opacity: 0, scale: 0.96, y: 10 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-3xl p-6 sm:p-8 glass-panel border border-slate-700/80 light:border-slate-300 shadow-2xl shadow-black/85"
             onClick={(e) => e.stopPropagation()}
           >
         {/* Header */}
@@ -83,9 +83,9 @@ export const TermsModal: React.FC<TermsModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('terms')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
               activeTab === 'terms'
-                ? 'bg-cyan-500 text-white shadow-md shadow-cyan-500/25'
+                ? 'bg-cyan-500 text-white shadow-sm shadow-black/30'
                 : 'text-slate-400 hover:text-white light:text-slate-600 light:hover:text-slate-900 bg-slate-900/40 light:bg-slate-100'
             }`}
           >
@@ -96,9 +96,9 @@ export const TermsModal: React.FC<TermsModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('privacy')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
               activeTab === 'privacy'
-                ? 'bg-cyan-500 text-white shadow-md shadow-cyan-500/25'
+                ? 'bg-cyan-500 text-white shadow-sm shadow-black/30'
                 : 'text-slate-400 hover:text-white light:text-slate-600 light:hover:text-slate-900 bg-slate-900/40 light:bg-slate-100'
             }`}
           >

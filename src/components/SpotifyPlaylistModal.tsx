@@ -372,7 +372,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
     >
       {/* Large Square Floating Modal Container */}
       <div
-        className="relative w-full max-w-3xl max-h-[90vh] sm:max-h-[85vh] rounded-3xl bg-[#0c1322] border-2 border-[#1DB954]/50 shadow-[0_0_50px_rgba(29,185,84,0.25)] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+        className="relative w-full max-w-3xl max-h-[90vh] sm:max-h-[85vh] rounded-3xl bg-[#0c1322] border-2 border-[#1DB954]/50 shadow-2xl shadow-black/90 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header Card */}
@@ -380,7 +380,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
               {/* Cover Art */}
-              <div className="relative w-18 h-18 sm:w-22 sm:h-22 rounded-2xl overflow-hidden shrink-0 border-2 border-[#1DB954]/60 bg-black shadow-xl shadow-emerald-950/80">
+              <div className="relative w-18 h-18 sm:w-22 sm:h-22 rounded-2xl overflow-hidden shrink-0 border-2 border-[#1DB954]/60 bg-black shadow-lg shadow-black/60">
                 <img
                   src={media.thumbnail}
                   alt={media.title}
@@ -473,7 +473,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
               className={`h-10 px-4 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-98 shrink-0 ${
                 isZippingAll
                   ? 'bg-slate-800 border border-slate-700 text-slate-400 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-[#1DB954] to-emerald-400 hover:from-[#1ed760] hover:to-teal-300 text-black shadow-lg shadow-[#1DB954]/30 border border-[#1DB954]'
+                  : 'bg-gradient-to-r from-[#1DB954] to-emerald-400 hover:from-[#1ed760] hover:to-teal-300 text-black shadow-md shadow-black/40 border border-[#1DB954]'
               }`}
             >
               {isZippingAll ? (

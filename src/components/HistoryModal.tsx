@@ -199,17 +199,17 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md"
+          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md"
           onClick={onClose}
         >
           <motion.div
             key="history-modal-card"
-            initial={{ opacity: 0, scale: 0.94, y: 12 }}
+            initial={{ opacity: 0, scale: 0.96, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="relative w-full max-w-2xl rounded-3xl p-4 sm:p-6 dz-card border border-cyan-500/60 shadow-2xl shadow-cyan-500/25 max-h-[92vh] flex flex-col"
+            exit={{ opacity: 0, scale: 0.96, y: 10 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="relative w-full max-w-2xl rounded-3xl p-4 sm:p-6 dz-card border border-cyan-500/50 shadow-2xl shadow-black/85 max-h-[92vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Toast Alert */}
@@ -217,11 +217,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
               {toastMessage && (
                 <motion.div
                   key="history-toast"
-                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  initial={{ opacity: 0, y: -8, scale: 0.96 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                  transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                  className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-cyan-950/95 border border-cyan-400 text-cyan-200 text-xs font-semibold shadow-xl flex items-center gap-2"
+                  exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                  transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-cyan-950/95 border border-cyan-400 text-cyan-200 text-xs font-semibold shadow-lg flex items-center gap-2"
                 >
                   <CheckCircle2 className="h-4 w-4 text-cyan-400 shrink-0" />
                   <span>{toastMessage}</span>
@@ -232,7 +232,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
         {/* Header */}
         <div className="flex items-center justify-between pb-3.5 border-b border-blue-900/60 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-cyan-950/90 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.4)]">
+            <div className="w-9 h-9 rounded-xl bg-cyan-950/90 border border-cyan-500/50 flex items-center justify-center text-cyan-400">
               <Clock className="h-4.5 w-4.5" />
             </div>
             <div>
@@ -300,7 +300,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
             <button
               type="button"
               onClick={() => setConfirmClearOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-500/40 hover:border-red-400 text-red-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:shadow-[0_0_10px_rgba(239,68,68,0.3)]"
+              className="px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/50 border border-red-500/40 hover:border-red-400 text-red-300 text-xs font-bold flex items-center gap-1.5 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer shadow-sm active:scale-95"
             >
               <Trash2 className="h-3.5 w-3.5" />
               <span>Bersihkan Riwayat</span>
@@ -316,7 +316,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
               initial={{ opacity: 0, height: 0, y: -6 }}
               animate={{ opacity: 1, height: 'auto', y: 0 }}
               exit={{ opacity: 0, height: 0, y: -6 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
               className="overflow-hidden mb-3 shrink-0"
             >
               <div className="p-3.5 rounded-2xl bg-red-950/80 border border-red-500/60">
@@ -332,14 +332,14 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                       <button
                         type="button"
                         onClick={handleConfirmClearAll}
-                        className="px-3 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer active:scale-95 transition-all"
+                        className="px-3 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold cursor-pointer active:scale-95 transition-all duration-150"
                       >
                         Ya, Bersihkan Sekarang
                       </button>
                       <button
                         type="button"
                         onClick={() => setConfirmClearOpen(false)}
-                        className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer active:scale-95 transition-all"
+                        className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer active:scale-95 transition-all duration-150"
                       >
                         Batal
                       </button>
@@ -360,7 +360,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
             </div>
           ) : items.length === 0 ? (
             <div className="py-12 px-4 flex flex-col items-center justify-center text-center">
-              <div className="w-16 h-16 rounded-3xl bg-[#09152e] border border-blue-900 flex items-center justify-center text-cyan-400 mb-3 shadow-[0_0_20px_rgba(6,182,212,0.15)]">
+              <div className="w-16 h-16 rounded-3xl bg-[#09152e] border border-blue-900 flex items-center justify-center text-cyan-400 mb-3 shadow-md shadow-black/40">
                 <HardDrive className="h-7 w-7 opacity-70" />
               </div>
               <h4 className="text-sm font-bold text-white mb-1">Riwayat Masih Kosong</h4>
@@ -371,127 +371,134 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
               </p>
             </div>
           ) : (
-            items.map((item) => (
-              <div
-                key={item.id}
-                className="p-3 sm:p-3.5 rounded-2xl bg-[#081735]/90 border border-blue-900/70 hover:border-cyan-500/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 group shadow-md shadow-black/40"
-              >
-                {/* Media details */}
-                <div className="flex items-start gap-3 min-w-0 flex-1">
-                  {/* Thumbnail / Icon */}
-                  <div className="relative w-20 h-16 sm:w-24 sm:h-18 rounded-xl overflow-hidden bg-slate-900 border border-cyan-500/30 shrink-0 group-hover:border-cyan-400/70 transition-colors">
-                    {item.thumbnail ? (
-                      <img
-                        src={item.thumbnail}
-                        alt={item.title}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-600">
+            <AnimatePresence mode="popLayout" initial={false}>
+              {items.map((item) => (
+                <motion.div
+                  key={item.id}
+                  layout
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.16 } }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  className="p-3 sm:p-3.5 rounded-2xl bg-[#081735]/90 border border-blue-900/70 hover:border-cyan-500/50 transition-colors duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group shadow-md shadow-black/40"
+                >
+                  {/* Media details */}
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    {/* Thumbnail / Icon */}
+                    <div className="relative w-20 h-16 sm:w-24 sm:h-18 rounded-xl overflow-hidden bg-slate-900 border border-cyan-500/30 shrink-0 group-hover:border-cyan-400/70 transition-colors duration-200">
+                      {item.thumbnail ? (
+                        <img
+                          src={item.thumbnail}
+                          alt={item.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-600">
+                          {item.mediaType === 'audio' ? (
+                            <Music className="h-6 w-6" />
+                          ) : item.mediaType === 'photos' ? (
+                            <Images className="h-6 w-6" />
+                          ) : (
+                            <Film className="h-6 w-6" />
+                          )}
+                        </div>
+                      )}
+
+                      {/* Media Type Overlay */}
+                      <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 backdrop-blur-xs text-[10px] font-bold text-white flex items-center gap-1">
                         {item.mediaType === 'audio' ? (
-                          <Music className="h-6 w-6" />
+                          <Music className="h-2.5 w-2.5 text-cyan-400" />
                         ) : item.mediaType === 'photos' ? (
-                          <Images className="h-6 w-6" />
+                          <Images className="h-2.5 w-2.5 text-pink-400" />
                         ) : (
-                          <Film className="h-6 w-6" />
+                          <Film className="h-2.5 w-2.5 text-blue-400" />
+                        )}
+                        <span>{item.extension.toUpperCase()}</span>
+                      </div>
+                    </div>
+
+                    {/* Text details */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getPlatformBadge(
+                            item.platform
+                          )}`}
+                        >
+                          {item.platform}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-cyan-950/80 border border-cyan-500/30 text-cyan-300">
+                          {item.resolution || item.quality}
+                        </span>
+                        {item.filesize && (
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {item.filesize}
+                          </span>
                         )}
                       </div>
+
+                      <h4
+                        className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-cyan-300 transition-colors duration-200"
+                        title={item.title}
+                      >
+                        {item.title}
+                      </h4>
+
+                      <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                        <span>{item.author}</span>
+                        <span>·</span>
+                        <span>{new Date(item.downloadedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 mt-1 text-[10px] text-emerald-400 font-semibold">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+                        <span>Tersimpan di Penyimpanan Lokal (0 KB Kuota)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    {/* Preview / Play button */}
+                    {item.blob && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenPreview(item)}
+                        title="Lihat / Putar Berkas Offline"
+                        className="h-9 px-2.5 rounded-xl bg-[#0c224a] hover:bg-[#12316b] border border-blue-800 hover:border-cyan-400 text-cyan-300 hover:text-white flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-all duration-150 active:scale-95"
+                      >
+                        <Play className="h-3.5 w-3.5 fill-current" />
+                        <span className="hidden sm:inline">Putar</span>
+                      </button>
                     )}
 
-                    {/* Media Type Overlay */}
-                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 backdrop-blur-xs text-[10px] font-bold text-white flex items-center gap-1">
-                      {item.mediaType === 'audio' ? (
-                        <Music className="h-2.5 w-2.5 text-cyan-400" />
-                      ) : item.mediaType === 'photos' ? (
-                        <Images className="h-2.5 w-2.5 text-pink-400" />
-                      ) : (
-                        <Film className="h-2.5 w-2.5 text-blue-400" />
-                      )}
-                      <span>{item.extension.toUpperCase()}</span>
-                    </div>
-                  </div>
-
-                  {/* Text details */}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                      <span
-                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getPlatformBadge(
-                          item.platform
-                        )}`}
-                      >
-                        {item.platform}
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-cyan-950/80 border border-cyan-500/30 text-cyan-300">
-                        {item.resolution || item.quality}
-                      </span>
-                      {item.filesize && (
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          {item.filesize}
-                        </span>
-                      )}
-                    </div>
-
-                    <h4
-                      className="text-xs sm:text-sm font-bold text-white truncate group-hover:text-cyan-300 transition-colors"
-                      title={item.title}
-                    >
-                      {item.title}
-                    </h4>
-
-                    <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                      <span>{item.author}</span>
-                      <span>·</span>
-                      <span>{new Date(item.downloadedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 mt-1 text-[10px] text-emerald-400 font-semibold">
-                      <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
-                      <span>Tersimpan di Penyimpanan Lokal (0 KB Kuota)</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                  {/* Preview / Play button */}
-                  {item.blob && (
+                    {/* Primary Save to Gallery Button */}
                     <button
                       type="button"
-                      onClick={() => handleOpenPreview(item)}
-                      title="Lihat / Putar Berkas Offline"
-                      className="h-9 px-2.5 rounded-xl bg-[#0c224a] hover:bg-[#12316b] border border-blue-800 hover:border-cyan-400 text-cyan-300 hover:text-white flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-all"
+                      onClick={() => handleSaveToDevice(item)}
+                      title="Simpan langsung ke Galeri HP tanpa unduh ulang"
+                      className="h-9 px-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-black/30 cursor-pointer transition-all duration-150 active:scale-95"
                     >
-                      <Play className="h-3.5 w-3.5 fill-current" />
-                      <span className="hidden sm:inline">Putar</span>
+                      <HardDrive className="h-3.5 w-3.5" />
+                      <span>Simpan ke Galeri</span>
                     </button>
-                  )}
 
-                  {/* Primary Save to Gallery Button */}
-                  <button
-                    type="button"
-                    onClick={() => handleSaveToDevice(item)}
-                    title="Simpan langsung ke Galeri HP tanpa unduh ulang"
-                    className="h-9 px-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/30 hover:shadow-cyan-500/50 cursor-pointer transition-all active:scale-95"
-                  >
-                    <HardDrive className="h-3.5 w-3.5" />
-                    <span>Simpan ke Galeri</span>
-                  </button>
-
-                  {/* Delete individual item */}
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteItem(item.id)}
-                    title="Hapus dari Riwayat"
-                    className="w-9 h-9 rounded-xl bg-slate-900/80 hover:bg-red-950/50 border border-slate-700/60 hover:border-red-500/50 text-slate-400 hover:text-red-400 flex items-center justify-center cursor-pointer transition-all"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))
+                    {/* Delete individual item */}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteItem(item.id)}
+                      title="Hapus dari Riwayat"
+                      className="w-9 h-9 rounded-xl bg-slate-900/80 hover:bg-red-950/50 border border-slate-700/60 hover:border-red-500/50 text-slate-400 hover:text-red-400 flex items-center justify-center cursor-pointer transition-all duration-150 active:scale-95"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
           )}
         </div>
 
@@ -500,11 +507,11 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
           {previewItem && (
             <motion.div
               key="offline-preview-panel"
-              initial={{ opacity: 0, scale: 0.95 }}
+              initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute inset-0 z-50 rounded-3xl bg-slate-950/95 p-4 flex flex-col justify-between border border-cyan-400"
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="absolute inset-0 z-50 rounded-3xl bg-slate-950/95 p-4 flex flex-col justify-between border border-cyan-400 shadow-2xl shadow-black/90"
             >
               <div className="flex items-center justify-between pb-2 border-b border-blue-900/60">
                 <div className="min-w-0 flex-1 pr-2">
@@ -526,7 +533,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
 
               <div className="flex-1 flex items-center justify-center p-2 min-h-0">
                 {previewItem.item.mediaType === 'audio' ? (
-                  <div className="w-full max-w-md p-6 rounded-2xl bg-[#09152e] border border-cyan-500/40 text-center space-y-4">
+                  <div className="w-full max-w-md p-6 rounded-2xl bg-[#09152e] border border-cyan-500/40 text-center space-y-4 shadow-lg shadow-black/50">
                     <div className="w-16 h-16 mx-auto rounded-full bg-cyan-950 border border-cyan-400 flex items-center justify-center text-cyan-400">
                       <Music className="h-8 w-8" />
                     </div>
@@ -542,7 +549,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                     />
                   </div>
                 ) : previewItem.item.extension === 'zip' ? (
-                  <div className="w-full max-w-md p-6 rounded-2xl bg-[#09152e] border border-cyan-500/40 text-center space-y-3">
+                  <div className="w-full max-w-md p-6 rounded-2xl bg-[#09152e] border border-cyan-500/40 text-center space-y-3 shadow-lg shadow-black/50">
                     <div className="w-16 h-16 mx-auto rounded-full bg-pink-950 border border-pink-400 flex items-center justify-center text-pink-400">
                       <Images className="h-8 w-8" />
                     </div>
@@ -558,7 +565,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                   <img
                     src={previewItem.url}
                     alt={previewItem.item.title}
-                    className="max-h-[50vh] max-w-full rounded-2xl border border-cyan-500/40 shadow-xl object-contain bg-black"
+                    className="max-h-[50vh] max-w-full rounded-2xl border border-cyan-500/40 shadow-lg shadow-black/60 object-contain bg-black"
                   />
                 ) : (
                   <video
@@ -566,7 +573,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                     controls
                     playsInline
                     autoPlay
-                    className="max-h-[50vh] max-w-full rounded-2xl border border-cyan-500/40 shadow-xl bg-black"
+                    className="max-h-[50vh] max-w-full rounded-2xl border border-cyan-500/40 shadow-lg shadow-black/60 bg-black"
                   />
                 )}
               </div>
@@ -578,7 +585,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose }) =
                 <button
                   type="button"
                   onClick={() => handleSaveToDevice(previewItem.item)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/40 active:scale-95 transition-all cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-black/30 active:scale-95 transition-all duration-150 cursor-pointer"
                 >
                   <Download className="h-3.5 w-3.5" />
                   <span>Simpan ke Galeri Sekarang</span>

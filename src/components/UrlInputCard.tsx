@@ -104,7 +104,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
             value={url}
             onChange={(e) => handleInputChange(e.target.value)}
             placeholder={getPlaceholder()}
-            className="w-full h-11 sm:h-12 pl-3.5 pr-9 bg-[#050e24] border border-blue-900/80 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(6,182,212,0.25)] font-mono transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            className="w-full h-11 sm:h-12 pl-3.5 pr-9 bg-[#050e24] border border-blue-900/80 rounded-xl text-white text-xs sm:text-sm placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 font-mono transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)]"
           />
           <AnimatePresence>
             {url && (
@@ -113,7 +113,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
                 initial={{ opacity: 0, scale: 0.7 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.7 }}
-                transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
                 type="button"
                 onClick={handleClear}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1 active:scale-[0.88] transition-colors duration-150 cursor-pointer"
@@ -129,7 +129,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
         <button
           type="button"
           onClick={handlePaste}
-          className="h-11 sm:h-12 px-3.5 sm:px-4 rounded-xl border border-cyan-500/40 bg-[#0c224a] hover:bg-[#12316b] hover:border-cyan-400 text-white flex items-center gap-1.5 text-xs sm:text-sm font-bold shadow-sm hover:shadow-[0_0_10px_rgba(6,182,212,0.3)] active:scale-[0.96] hover:-translate-y-0.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer shrink-0 touch-manipulation"
+          className="h-11 sm:h-12 px-3.5 sm:px-4 rounded-xl border border-cyan-500/40 bg-[#0c224a] hover:bg-[#12316b] hover:border-cyan-400 text-white flex items-center gap-1.5 text-xs sm:text-sm font-bold active:scale-[0.97] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer shrink-0 touch-manipulation shadow-sm"
           title="Tempel dari papan klip"
         >
           <Clipboard className="h-4 w-4 text-cyan-400" />

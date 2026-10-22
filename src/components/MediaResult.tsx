@@ -323,9 +323,9 @@ export const MediaResult: React.FC<MediaResultProps> = ({
                     key={fmt.id}
                     type="button"
                     onClick={() => setSelectedFormatId(fmt.id)}
-                    className={`flex flex-col items-start p-2.5 rounded-xl border text-left transition-all ${
+                    className={`flex flex-col items-start p-2.5 rounded-xl border text-left transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
                       isSelected
-                        ? 'border-cyan-400 bg-cyan-950/50 text-cyan-200 ring-2 ring-cyan-500/25 shadow-sm'
+                        ? 'border-cyan-400 bg-cyan-950/60 text-cyan-200 ring-2 ring-cyan-500/30'
                         : 'border-slate-800 bg-slate-900/80 text-slate-300 hover:border-slate-700 light:bg-white light:border-slate-200 light:text-slate-700'
                     }`}
                   >
@@ -379,7 +379,7 @@ export const MediaResult: React.FC<MediaResultProps> = ({
               type="button"
               disabled={isDownloading || !currentFormat}
               onClick={() => currentFormat && handleDownloadTrigger(currentFormat)}
-              className="w-full h-14 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:via-blue-500 hover:to-indigo-500 disabled:opacity-50 shadow-lg shadow-cyan-500/25 transition-all flex items-center justify-center gap-2.5 active:scale-[0.99] cursor-pointer"
+              className="w-full h-14 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:via-blue-500 hover:to-indigo-500 disabled:opacity-50 shadow-md shadow-black/40 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] flex items-center justify-center gap-2.5 active:scale-[0.99] cursor-pointer"
             >
               {isDownloading ? (
                 <>

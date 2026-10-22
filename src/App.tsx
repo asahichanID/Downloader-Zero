@@ -531,10 +531,10 @@ export default function App() {
           {selectedPlatform !== 'terabox' && (
             <motion.div
               key="platform-selectors-panel"
-              initial={{ opacity: 0, height: 0, y: -10 }}
+              initial={{ opacity: 0, height: 0, y: -8 }}
               animate={{ opacity: 1, height: 'auto', y: 0 }}
-              exit={{ opacity: 0, height: 0, y: -10 }}
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              exit={{ opacity: 0, height: 0, y: -8 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
               className="w-full overflow-hidden flex flex-col gap-4 sm:gap-5"
             >
               <MediaTypeTabs

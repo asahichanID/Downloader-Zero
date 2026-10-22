@@ -45,7 +45,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
           onClick={onClose}
           role="dialog"
@@ -55,11 +55,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Modal Card - Exactly Center */}
           <motion.div
             key="settings-modal-card"
-            initial={{ opacity: 0, scale: 0.94, y: 12 }}
+            initial={{ opacity: 0, scale: 0.96, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 8 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            className="relative w-full max-w-lg rounded-3xl p-6 sm:p-8 glass-panel border border-slate-700/80 light:border-slate-300 shadow-2xl"
+            exit={{ opacity: 0, scale: 0.96, y: 10 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="relative w-full max-w-lg rounded-3xl p-6 sm:p-8 glass-panel border border-slate-700/80 light:border-slate-300 shadow-2xl shadow-black/85"
             onClick={(e) => e.stopPropagation()} // Prevent outside click close when clicking inside
           >
         {/* Header */}

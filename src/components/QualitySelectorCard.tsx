@@ -43,11 +43,11 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
   const currentMediaType = isAudioOnly ? 'audio' : mediaType;
 
   return (
-    <div className="dz-card rounded-2xl p-4 sm:p-5 w-full shadow-lg space-y-4 select-none transition-all">
+    <div className="dz-card rounded-2xl p-4 sm:p-5 w-full space-y-4 select-none transition-all duration-200">
       {/* Header: Crown + Title + Sub-mode badge */}
       <div className="flex items-center justify-between pb-1 border-b border-blue-900/40">
         <div className="flex items-center gap-2 text-white font-bold text-sm sm:text-base tracking-wide">
-          <Crown className="h-4 w-4 text-cyan-400 fill-cyan-400 drop-shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
+          <Crown className="h-4 w-4 text-cyan-400 fill-cyan-400" />
           <span>
             {currentMediaType === 'video' ? 'Pilih Resolusi Video' : 'Pilih Kualitas Audio MP3'}
           </span>
@@ -64,9 +64,9 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
             <button
               type="button"
               onClick={() => setMediaType('video')}
-              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] cursor-pointer ${
+              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.96] cursor-pointer ${
                 mediaType === 'video'
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -76,9 +76,9 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
             <button
               type="button"
               onClick={() => setMediaType('audio')}
-              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.96] cursor-pointer ${
+              className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.96] cursor-pointer ${
                 mediaType === 'audio'
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -99,10 +99,10 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
         {!isAudioOnly && mediaType === 'video' ? (
           <motion.div
             key="video-view"
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
             className="space-y-3"
           >
             <div className="flex items-center justify-between">
@@ -133,9 +133,9 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
                     key={opt.id}
                     type="button"
                     onClick={() => setSelectedVideoRes(opt.id)}
-                    className={`py-2.5 px-2 rounded-xl text-center text-xs font-bold cursor-pointer flex flex-col items-center justify-center min-h-[46px] touch-manipulation ${
+                    className={`py-2.5 px-2 rounded-xl text-center text-xs font-bold cursor-pointer flex flex-col items-center justify-center min-h-[46px] touch-manipulation transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
                       isActive
-                        ? 'dz-pill-active scale-[1.02]'
+                        ? 'dz-pill-active'
                         : 'dz-pill'
                     }`}
                   >
@@ -157,10 +157,10 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
         ) : (
           <motion.div
             key="audio-view"
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
             className="space-y-3"
           >
             <div className="flex items-center justify-between">
@@ -191,9 +191,9 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
                     key={opt.id}
                     type="button"
                     onClick={() => setSelectedAudioQuality(opt.id)}
-                    className={`py-2.5 px-2 rounded-xl text-center text-xs font-bold cursor-pointer flex flex-col items-center justify-center min-h-[46px] touch-manipulation ${
+                    className={`py-2.5 px-2 rounded-xl text-center text-xs font-bold cursor-pointer flex flex-col items-center justify-center min-h-[46px] touch-manipulation transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
                       isActive
-                        ? 'dz-pill-active scale-[1.02]'
+                        ? 'dz-pill-active'
                         : 'dz-pill'
                     }`}
                   >
