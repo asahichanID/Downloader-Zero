@@ -8,6 +8,8 @@ interface DownloadButtonProps {
   downloadProgress: number;
   downloadStatusText: string;
   isSpotifyPlaylist?: boolean;
+  isSpotifySingle?: boolean;
+  hasPreview?: boolean;
 }
 
 export const DownloadButton: React.FC<DownloadButtonProps> = ({
@@ -16,15 +18,19 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
   isDownloading,
   downloadProgress,
   downloadStatusText,
-  isSpotifyPlaylist = false
+  isSpotifyPlaylist = false,
+  isSpotifySingle = false,
+  hasPreview = false
 }) => {
+  const isSpotify = isSpotifyPlaylist || isSpotifySingle;
+
   return (
     <div className="w-full flex flex-col items-center gap-2 select-none">
       {/* Button Row with Cyber Slashes */}
       <div className="w-full flex items-center justify-between gap-3">
         {/* Left Cyber Accents */}
         <div className="hidden xs:flex items-center gap-1 opacity-90 select-none">
-          <span className={`font-cyber font-black text-xl italic tracking-tighter ${isSpotifyPlaylist ? 'text-[#1DB954]' : 'text-cyan-600 dark:text-cyan-400'}`}>///</span>
+          <span className={`font-cyber font-black text-xl italic tracking-tighter ${isSpotify ? 'text-[#1DB954]' : 'text-cyan-600 dark:text-cyan-400'}`}>///</span>
         </div>
 
         {/* CTA Button */}
@@ -33,7 +39,7 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
           onClick={onDownload}
           disabled={isLoading || isDownloading}
           className={`flex-1 h-14 sm:h-15 rounded-2xl text-white flex items-center justify-center gap-2.5 text-base sm:text-lg font-extrabold tracking-wide active:scale-[0.98] transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed shadow-md shadow-black/40 border-t ${
-            isSpotifyPlaylist
+            isSpotify
               ? 'bg-gradient-to-r from-[#1DB954] via-emerald-600 to-teal-700 hover:from-[#1ed760] hover:to-emerald-500 border-emerald-300/40'
               : 'bg-gradient-to-r from-[#00c6ff] via-[#0072ff] to-[#0052d4] hover:from-[#26d0ce] hover:to-[#1a2980] border-cyan-200/40'
           }`}
@@ -41,12 +47,22 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
           {isLoading || isDownloading ? (
             <>
               <Loader2 className="h-6 w-6 animate-spin text-white" />
-              <span>{isDownloading ? 'Mengunduh...' : isSpotifyPlaylist ? 'Memproses Playlist...' : 'Memproses...'}</span>
+              <span>{isDownloading ? 'Mengunduh...' : isSpotifyPlaylist ? 'Memproses Playlist...' : isSpotifySingle ? 'Memuat Pratinjau...' : 'Memproses...'}</span>
             </>
           ) : isSpotifyPlaylist ? (
             <>
               <ListMusic className="h-6 w-6 text-white stroke-[2.5]" />
               <span>Proses Playlist Spotify</span>
+            </>
+          ) : isSpotifySingle && !hasPreview ? (
+            <>
+              <Download className="h-6 w-6 text-white stroke-[2.5]" />
+              <span>Periksa & Putar Preview Spotify</span>
+            </>
+          ) : isSpotifySingle && hasPreview ? (
+            <>
+              <Download className="h-6 w-6 text-white stroke-[2.5]" />
+              <span>Unduh MP3 (Neo + Metadata Tertanam)</span>
             </>
           ) : (
             <>
@@ -58,7 +74,7 @@ export const DownloadButton: React.FC<DownloadButtonProps> = ({
 
         {/* Right Cyber Accents */}
         <div className="hidden xs:flex items-center gap-1 opacity-90 select-none">
-          <span className={`font-cyber font-black text-xl italic tracking-tighter ${isSpotifyPlaylist ? 'text-[#1DB954]' : 'text-cyan-600 dark:text-cyan-400'}`}>///</span>
+          <span className={`font-cyber font-black text-xl italic tracking-tighter ${isSpotify ? 'text-[#1DB954]' : 'text-cyan-600 dark:text-cyan-400'}`}>///</span>
         </div>
       </div>
 

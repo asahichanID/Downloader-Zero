@@ -1,3 +1,8 @@
+import NodeID3 from 'node-id3';
+
+// In-memory process cache for Spotify MP3 files (automatically purged 15 seconds after completion)
+const spotifyProcessCache = new Map<string, { buffer: Buffer; timestamp: number }>();
+
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -37,35 +42,136 @@ export default async function handler(req: any, res: any) {
     }
 
     const rawFilename = query.filename || req.query?.filename || 'DownloaderZero_Media.mp4';
+    const sanitizedFilename = rawFilename.replace(/[^a-zA-Z0-9_.-]/g, '_');
 
     if (!targetUrl || typeof targetUrl !== 'string' || !/^https?:\/\//i.test(targetUrl)) {
       res.status(400).send('Target URL tidak valid.');
       return;
     }
 
-    // Auto-resolve Spotify track page to real full MP3 song via Neoxr
-    if (targetUrl.includes('spotify.com/track/') || targetUrl.includes('spotify.com/intl-') || targetUrl.includes('spotify.link')) {
-      try {
-        const neoxrKey = ((query.apiKey as string) || (req.query?.apiKey as string) || process.env.NEOXR_API_KEY || 'j3i3mg').trim();
-        const neoRes = await fetch(`https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(targetUrl)}&apikey=${encodeURIComponent(neoxrKey)}`, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          },
-          signal: AbortSignal.timeout(12000)
-        });
-        if (neoRes.ok) {
-          const neoJson = await neoRes.json();
-          const fullSongUrl = neoJson.data?.url || neoJson.data?.download || neoJson.data?.link;
-          if (fullSongUrl && typeof fullSongUrl === 'string' && fullSongUrl.startsWith('http') && !fullSongUrl.includes('mp3-preview')) {
-            targetUrl = fullSongUrl;
-          }
-        }
-      } catch (spErr) {
-        console.warn('Neoxr spotify track resolve notice:', spErr);
-      }
-    }
+    const isSpotify =
+      query.platform === 'spotify' ||
+      req.query?.platform === 'spotify' ||
+      targetUrl.includes('spotify.com') ||
+      targetUrl.includes('spotify.link') ||
+      (sanitizedFilename.endsWith('.mp3') && (Boolean(query.title || req.query?.title) || Boolean(query.artist || req.query?.artist)));
 
-    const sanitizedFilename = rawFilename.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    // Handle Spotify with Neo audio download + embedded ID3 metadata & cover art
+    if (isSpotify) {
+      let directAudioUrl = targetUrl;
+      const neoxrKey = ((query.apiKey as string) || (req.query?.apiKey as string) || process.env.NEOXR_API_KEY || 'j3i3mg').trim();
+
+      // If targetUrl is still a Spotify web URL, resolve to Neo full MP3 URL
+      if (directAudioUrl.includes('spotify.com') || directAudioUrl.includes('spotify.link')) {
+        try {
+          const neoRes = await fetch(
+            `https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(directAudioUrl)}&apikey=${encodeURIComponent(neoxrKey)}`,
+            {
+              headers: { 'User-Agent': 'Mozilla/5.0' },
+              signal: AbortSignal.timeout(14000)
+            }
+          );
+          if (neoRes.ok) {
+            const neoJson = await neoRes.json();
+            const fullSongUrl = neoJson.data?.url || neoJson.data?.download || neoJson.data?.link;
+            if (fullSongUrl && typeof fullSongUrl === 'string' && fullSongUrl.startsWith('http') && !fullSongUrl.includes('mp3-preview')) {
+              directAudioUrl = fullSongUrl;
+            }
+          }
+        } catch (e) {
+          console.warn('[Spotify Download] Neo direct resolve notice:', e);
+        }
+      }
+
+      // Fetch raw audio stream from Neo
+      const audioRes = await fetch(directAudioUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': '*/*'
+        }
+      });
+
+      if (!audioRes.ok) {
+        res.status(audioRes.status || 500).send('Gagal mengunduh audio Spotify dari server sumber.');
+        return;
+      }
+
+      const audioArrayBuffer = await audioRes.arrayBuffer();
+      const rawAudioBuffer = Buffer.from(audioArrayBuffer);
+
+      // Fetch Cover Art buffer if cover URL is provided
+      const coverUrl = (query.cover || req.query?.cover) as string;
+      let coverBuffer: Buffer | null = null;
+      let coverMime = 'image/jpeg';
+      if (coverUrl && typeof coverUrl === 'string' && coverUrl.startsWith('http')) {
+        try {
+          const cRes = await fetch(coverUrl, { signal: AbortSignal.timeout(7000) });
+          if (cRes.ok) {
+            coverBuffer = Buffer.from(await cRes.arrayBuffer());
+            coverMime = cRes.headers.get('content-type') || 'image/jpeg';
+          }
+        } catch (covErr) {
+          console.warn('[Spotify Download] Cover image download notice:', covErr);
+        }
+      }
+
+      // Embed ID3 tags (Title, Artist, Album, Genre, Year, Cover Art)
+      const tags: any = {
+        title: (query.title || req.query?.title || 'Spotify Track') as string,
+        artist: (query.artist || req.query?.artist || 'Spotify Artist') as string,
+        album: (query.album || req.query?.album || 'Spotify Music') as string,
+        genre: (query.genre || req.query?.genre || 'Pop') as string,
+        year: (((query.year || req.query?.year || new Date().getFullYear().toString()) as string)).slice(0, 4),
+        comment: {
+          language: 'eng',
+          text: 'Downloaded with DownloaderZero via Neo'
+        }
+      };
+
+      if (coverBuffer) {
+        tags.image = {
+          mime: coverMime,
+          type: { id: 3, name: 'front cover' },
+          description: 'Album Cover Art',
+          imageBuffer: coverBuffer
+        };
+      }
+
+      let finalMp3Buffer: Buffer = rawAudioBuffer;
+      try {
+        const tagged = NodeID3.write(tags, rawAudioBuffer);
+        if (tagged && tagged.length > 0) {
+          finalMp3Buffer = tagged;
+        }
+      } catch (id3Err) {
+        console.error('[Spotify Download] ID3 tagging failed, streaming raw audio:', id3Err);
+      }
+
+      // Store in process cache and schedule 15-second purge
+      const processKey = `sp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      spotifyProcessCache.set(processKey, { buffer: finalMp3Buffer, timestamp: Date.now() });
+
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Length', finalMp3Buffer.length);
+      res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, X-Process-Id, X-Cache-Lifetime');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('X-Process-Id', processKey);
+      res.setHeader('X-Cache-Lifetime', '15s');
+
+      res.send(finalMp3Buffer);
+
+      // Hapus cache proses 15 detik setelah selesai
+      setTimeout(() => {
+        if (spotifyProcessCache.has(processKey)) {
+          spotifyProcessCache.delete(processKey);
+          console.log(`[Spotify Process Cache] 🗑️ 15 seconds elapsed: Process cache ${processKey} removed successfully.`);
+        }
+      }, 15000);
+
+      return;
+    }
 
     // Determine correct Referer per platform CDN
     let referer = 'https://www.google.com/';

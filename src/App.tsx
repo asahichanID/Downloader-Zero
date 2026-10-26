@@ -20,6 +20,7 @@ import { TermsModal } from './components/TermsModal.tsx';
 import { MediaResultModal } from './components/MediaResultModal.tsx';
 import { PhotoSlideCard } from './components/PhotoSlideCard.tsx';
 import { SpotifyPlaylistModal } from './components/SpotifyPlaylistModal.tsx';
+import { SpotifyTrackPreviewCard } from './components/SpotifyTrackPreviewCard.tsx';
 import { HistoryModal } from './components/HistoryModal.tsx';
 import JSZip from 'jszip';
 import { motion, AnimatePresence } from 'motion/react';
@@ -325,7 +326,11 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
         throw new Error('Tautan unduhan tidak valid atau berkas belum siap dari server sumber.');
       }
 
-      const downloadHref = `/api/proxy-download?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(filename)}`;
+      let downloadHref = `/api/proxy-download?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(filename)}`;
+      if (currentMedia.platform === 'spotify') {
+        const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
+        downloadHref += `&platform=spotify&title=${encodeURIComponent(currentMedia.title || '')}&artist=${encodeURIComponent(currentMedia.author || '')}&album=${encodeURIComponent(currentMedia.album || '')}&genre=${encodeURIComponent(currentMedia.genre || 'Pop')}&year=${encodeURIComponent(currentMedia.releaseDate || '')}&cover=${encodeURIComponent(currentMedia.thumbnail || '')}&apiKey=${encodeURIComponent(customKey)}`;
+      }
 
       // TeraBox Direct Background Download: Browser downloads directly without buffering huge files into RAM
       if (currentMedia.platform === 'terabox') {
@@ -474,6 +479,15 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
       return;
     }
 
+    // If Spotify track is already extracted and preview is actively displayed, execute download
+    if (mediaData && mediaData.platform === 'spotify' && !mediaData.isAudioPlaylist && mediaData.url === url.trim()) {
+      const chosenFormat = mediaData.formats.find((f) => f.quality?.includes('320')) || mediaData.formats[0];
+      if (chosenFormat) {
+        await executeDownload(chosenFormat, mediaData);
+        return;
+      }
+    }
+
     // Auto-detect platform from URL if entered
     const detected = detectPlatform(url);
     if (detected !== 'unknown') {
@@ -512,15 +526,9 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
         return;
       }
 
-      // 2. If Spotify Single Track: Directly download without showing preview card!
+      // 2. If Spotify Single Track: Tampilkan preview asli yang bisa diputar beserta cover, judul, artis, dan genre. Jangan langsung download!
       if (media.platform === 'spotify') {
-        setMediaData(null); // No preview shown per requirement
-        const chosenFormat = media.formats.find((f) => f.type === 'audio') || media.formats[0];
-        if (chosenFormat) {
-          await executeDownload(chosenFormat, media);
-        } else {
-          throw new Error('Format audio Spotify tidak ditemukan.');
-        }
+        setMediaData(media);
         return;
       }
 
@@ -738,9 +746,11 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
           downloadProgress={downloadProgress}
           downloadStatusText={downloadStatusText}
           isSpotifyPlaylist={isSpotifyPlaylist}
+          isSpotifySingle={selectedPlatform === 'spotify' && !isSpotifyPlaylist}
+          hasPreview={Boolean(mediaData && mediaData.platform === 'spotify')}
         />
 
-        {/* 8. Media Preview Card: only real video or photo slide; animated fluid entrance */}
+        {/* 8. Media Preview Card: real playable Spotify audio preview, video, or photo slide */}
         <AnimatePresence>
           {mediaData?.isPhotoSlide && mediaData.images && mediaData.images.length > 0 ? (
             <motion.div
@@ -752,6 +762,23 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
               className="w-full"
             >
               <PhotoSlideCard media={mediaData} />
+            </motion.div>
+          ) : mediaData && mediaData.platform === 'spotify' && !mediaData.isAudioPlaylist ? (
+            <motion.div
+              key="spotify-track-preview"
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.98 }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              className="w-full"
+            >
+              <SpotifyTrackPreviewCard
+                media={mediaData}
+                onDownload={(fmt) => executeDownload(fmt, mediaData)}
+                isDownloading={isDownloading}
+                downloadProgress={downloadProgress}
+                downloadStatusText={downloadStatusText}
+              />
             </motion.div>
           ) : mediaData && mediaData.platform !== 'spotify' ? (
             <motion.div

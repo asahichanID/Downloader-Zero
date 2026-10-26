@@ -7,6 +7,8 @@ export interface AudioTrack {
   title: string;
   artist: string;
   album?: string;
+  genre?: string;
+  releaseDate?: string;
   thumbnail: string;
   duration?: number;
   durationFormatted?: string;
@@ -37,6 +39,10 @@ export interface MediaMetadata {
   author: string;
   authorUrl?: string;
   thumbnail: string;
+  genre?: string;
+  album?: string;
+  releaseDate?: string;
+  previewUrl?: string;
   duration?: number; // in seconds
   durationFormatted?: string; // '03:45'
   formats: MediaFormat[];
