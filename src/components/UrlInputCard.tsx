@@ -116,7 +116,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
             {/* Top Bar: Book accent tab and close button ONLY (strictly NO title/heading as requested) */}
             <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-amber-400/25">
               <div className="flex items-center gap-2.5">
-                <div className="w-6 h-6 rounded-full bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center border border-amber-300 shadow-sm">
+                <div className="w-6 h-6 rounded-full border-2 border-yellow-400 bg-transparent text-yellow-400 font-black text-xs flex items-center justify-center">
                   ?
                 </div>
                 <Bookmark className="h-4.5 w-4.5 text-amber-400" />
@@ -225,11 +225,11 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
         {/* Card Header: Gold guide circle + Link icon + Label + Auto-detect indicator */}
         <div className="flex items-center justify-between gap-2 mb-2.5">
           <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-cyan-800 dark:text-cyan-300">
-            {/* Gold circle with punctuation mark '?' - opens floating tutorial panel */}
+            {/* Outlined yellow circle with yellow '?' - transparent center, opens floating tutorial panel */}
             <button
               type="button"
               onClick={() => setIsTutorialOpen(true)}
-              className="w-5 h-5 rounded-full bg-amber-400 hover:bg-amber-300 active:scale-90 text-slate-950 font-black text-xs flex items-center justify-center border border-amber-300 shrink-0 cursor-pointer transition-transform duration-150 touch-manipulation select-none shadow-sm"
+              className="w-5 h-5 rounded-full border-2 border-yellow-500 dark:border-yellow-400 hover:border-yellow-400 dark:hover:border-yellow-300 bg-transparent text-yellow-600 dark:text-yellow-400 hover:text-yellow-500 dark:hover:text-yellow-300 active:scale-90 font-bold text-xs flex items-center justify-center shrink-0 cursor-pointer transition-all duration-150 touch-manipulation select-none"
               title="Buka petunjuk cara penggunaan"
               aria-label="Buka petunjuk cara penggunaan"
             >
