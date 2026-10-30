@@ -192,9 +192,10 @@ async function startServer() {
   });
 
   // 4. Proxy stream for instant automatic download attachment
+  // 4. Proxy stream for instant automatic download attachment with multi-platform resilience
   app.get('/api/proxy-download', async (req: Request, res: Response) => {
     try {
-      // 1. Extract targetUrl reliably from query or raw URL
+      // 1. Extract targetUrl reliably from query or raw URL, preserving all nested parameters
       let targetUrl = '';
       if (req.query?.url && typeof req.query.url === 'string') {
         targetUrl = req.query.url;
@@ -202,15 +203,23 @@ async function startServer() {
         targetUrl = req.query.url[0];
       }
 
-      // Check raw request URL if query param was truncated by unencoded ampersands
-      if (!targetUrl || !targetUrl.startsWith('http')) {
-        const rawReqUrl = req.url || '';
-        const urlMatch = rawReqUrl.match(/[?&]url=([^&]+)/);
-        if (urlMatch && urlMatch[1]) {
-          try {
-            targetUrl = decodeURIComponent(urlMatch[1]);
-          } catch {
-            targetUrl = urlMatch[1];
+      // Check raw request URL to avoid truncation by unencoded ampersands
+      const rawReqUrl = req.url || '';
+      const urlParamIdx = rawReqUrl.indexOf('url=');
+      if (urlParamIdx !== -1) {
+        let extracted = rawReqUrl.slice(urlParamIdx + 4);
+        const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey)=/);
+        if (nextParamMatch && nextParamMatch.index !== undefined) {
+          extracted = extracted.slice(0, nextParamMatch.index);
+        }
+        try {
+          const decoded = decodeURIComponent(extracted);
+          if (decoded.startsWith('http')) {
+            targetUrl = decoded;
+          }
+        } catch {
+          if (extracted.startsWith('http')) {
+            targetUrl = extracted;
           }
         }
       }
@@ -227,8 +236,28 @@ async function startServer() {
         }
       }
 
+      // If targetUrl points to a loader.to ajax endpoint, resolve to real download URL
+      if (targetUrl.includes('loader.to/ajax/download.php') || targetUrl.includes('loader.to')) {
+        try {
+          const lRes = await fetch(targetUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            signal: AbortSignal.timeout(8000)
+          });
+          if (lRes.ok) {
+            const lData = await lRes.json();
+            if (lData.download_url && typeof lData.download_url === 'string' && lData.download_url.startsWith('http')) {
+              targetUrl = lData.download_url;
+            }
+          }
+        } catch (lErr) {
+          console.warn('[proxy-download] loader.to direct resolution notice:', lErr);
+        }
+      }
+
       const rawFilename = (req.query.filename as string) || 'DownloaderZero_Media.mp4';
       const sanitizedFilename = rawFilename.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      const platform = ((req.query.platform as string) || '').toLowerCase();
+      const sourceUrl = (req.query.sourceUrl as string) || '';
 
       if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
         res.status(400).send('Target URL tidak valid.');
@@ -236,6 +265,7 @@ async function startServer() {
       }
 
       const isSpotify =
+        platform === 'spotify' ||
         req.query.platform === 'spotify' ||
         targetUrl.includes('spotify.com') ||
         targetUrl.includes('spotify.link') ||
@@ -359,48 +389,107 @@ async function startServer() {
         return;
       }
 
-      // Determine correct Referer per platform CDN
-      let referer = 'https://www.google.com/';
-      if (targetUrl.includes('tiktok') || targetUrl.includes('byteoversea') || targetUrl.includes('ibyteimg')) {
-        referer = 'https://www.tiktok.com/';
+      // Multi-Platform CDN Fetch Cascade
+      // Define appropriate Referer candidate for target CDN
+      let platformReferer = '';
+      if (targetUrl.includes('tikwm.com')) {
+        platformReferer = 'https://www.tikwm.com/';
+      } else if (targetUrl.includes('tiktok') || targetUrl.includes('byteoversea') || targetUrl.includes('ibyteimg')) {
+        platformReferer = 'https://www.tiktok.com/';
       } else if (targetUrl.includes('facebook') || targetUrl.includes('fbcdn')) {
-        referer = 'https://www.facebook.com/';
+        platformReferer = 'https://www.facebook.com/';
       } else if (targetUrl.includes('instagram') || targetUrl.includes('cdninstagram')) {
-        referer = 'https://www.instagram.com/';
+        platformReferer = 'https://www.instagram.com/';
       } else if (targetUrl.includes('youtube') || targetUrl.includes('googlevideo')) {
-        referer = 'https://www.youtube.com/';
+        platformReferer = 'https://www.youtube.com/';
       } else if (targetUrl.includes('pinterest') || targetUrl.includes('pinimg')) {
-        referer = 'https://www.pinterest.com/';
-      } else if (targetUrl.includes('open.spotify.com')) {
-        referer = 'https://open.spotify.com/';
-      } else if (targetUrl.includes('terabox') || targetUrl.includes('1024tera')) {
-        referer = 'https://www.terabox.com/';
-      } else if (targetUrl.includes('scdn.co') || targetUrl.includes('neoxr.eu') || targetUrl.includes('pages.dev')) {
-        referer = '';
+        platformReferer = 'https://www.pinterest.com/';
+      } else if (targetUrl.includes('terabox') || targetUrl.includes('1024tera') || targetUrl.includes('4funbox')) {
+        platformReferer = 'https://www.terabox.app/';
+      } else if (targetUrl.includes('snapcdn.app')) {
+        platformReferer = 'https://dl.snapcdn.app/';
       }
 
-      const headers: Record<string, string> = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-        'Accept': '*/*'
-      };
-      if (referer) {
-        headers['Referer'] = referer;
-      }
-
-      let response = await fetch(targetUrl, { headers });
-
-      // If forbidden, retry without Referer
-      if (response.status === 403 || response.status === 401) {
-        response = await fetch(targetUrl, {
+      const fetchCandidateConfigs: Array<{ headers: Record<string, string> }> = [
+        // Strategy 1: Clean browser request without Referer (standard for most signed media CDNs)
+        {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-            'Accept': '*/*'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Sec-Fetch-Mode': 'no-cors'
           }
-        });
+        },
+        // Strategy 2: With specific platform referer
+        ...(platformReferer ? [{
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Referer': platformReferer
+          }
+        }] : []),
+        // Strategy 3: Mobile Safari User-Agent
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+            'Accept': '*/*',
+            ...(platformReferer ? { 'Referer': platformReferer } : {})
+          }
+        }
+      ];
+
+      let response: globalThis.Response | null = null;
+      let lastStatus = 0;
+
+      for (const cfg of fetchCandidateConfigs) {
+        try {
+          const resCandidate = await fetch(targetUrl, {
+            headers: cfg.headers,
+            redirect: 'follow',
+            signal: AbortSignal.timeout(15000)
+          });
+          if (resCandidate.ok && resCandidate.body) {
+            response = resCandidate;
+            break;
+          } else {
+            lastStatus = resCandidate.status;
+          }
+        } catch (e: any) {
+          console.warn('[proxy-download] Candidate fetch notice:', e?.message || e);
+        }
       }
 
-      if (!response.ok || !response.body) {
-        res.status(response.status || 500).send('Gagal mengunduh media dari tautan sumber.');
+      // If CDN link expired or returned 403/404/410, attempt on-the-fly re-resolution via extractMedia
+      if ((!response || !response.ok) && sourceUrl && /^https?:\/\//i.test(sourceUrl)) {
+        try {
+          console.log(`[proxy-download] Attempting on-the-fly re-resolution for ${platform || 'media'} (${sourceUrl})...`);
+          const freshMedia = await extractMedia(sourceUrl);
+          if (freshMedia && freshMedia.formats && freshMedia.formats.length > 0) {
+            const bestFormat = freshMedia.formats.find((f) => f.isDirect && f.url && f.url.startsWith('http')) || freshMedia.formats[0];
+            if (bestFormat && bestFormat.url && bestFormat.url !== targetUrl && bestFormat.url.startsWith('http')) {
+              targetUrl = bestFormat.url;
+              for (const cfg of fetchCandidateConfigs) {
+                try {
+                  const resCandidate = await fetch(targetUrl, {
+                    headers: cfg.headers,
+                    redirect: 'follow',
+                    signal: AbortSignal.timeout(15000)
+                  });
+                  if (resCandidate.ok && resCandidate.body) {
+                    response = resCandidate;
+                    break;
+                  }
+                } catch {}
+              }
+            }
+          }
+        } catch (reErr) {
+          console.warn('[proxy-download] On-the-fly re-resolution notice:', reErr);
+        }
+      }
+
+      if (!response || !response.ok || !response.body) {
+        res.status(lastStatus || 500).send('Gagal mengunduh berkas dari tautan sumber.');
         return;
       }
 
@@ -430,7 +519,7 @@ async function startServer() {
 
       const contentLength = response.headers.get('content-length');
       const contentEncoding = response.headers.get('content-encoding');
-      if (contentLength && !contentEncoding) {
+      if (contentLength && !contentEncoding && !isNaN(Number(contentLength))) {
         res.setHeader('Content-Length', contentLength);
       }
 

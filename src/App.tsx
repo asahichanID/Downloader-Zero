@@ -262,8 +262,8 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
       let finalUrl = targetFormat.url;
       let jobId = targetFormat.jobId;
 
-      // If format requires async conversion job (e.g. YouTube loader)
-      if (!targetFormat.isDirect || targetFormat.url.includes('loader.to') || targetFormat.id.startsWith('yt-')) {
+      // Only invoke start-job if format is not already direct or is an async job URL (e.g. YouTube loader)
+      if (!targetFormat.isDirect || targetFormat.url.includes('loader.to')) {
         if (!jobId) {
           const loaderFormat = mapFormatForLoader(targetFormat);
           setDownloadStatusText(`Memulai antrean konversi ${targetFormat.quality}...`);
@@ -283,9 +283,28 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
               } else if (startData.id) {
                 jobId = startData.id;
               }
+            } else {
+              // Fallback to any direct format if start-job returned error
+              const directFallback = currentMedia.formats.find(
+                (f) => f.isDirect && f.url && f.url.startsWith('http') && !f.url.includes('loader.to')
+              );
+              if (directFallback) {
+                finalUrl = directFallback.url;
+              } else {
+                const errData = await startRes.json().catch(() => ({}));
+                throw new Error(errData.error || 'Server konversi sedang sibuk. Silakan pilih resolusi lain.');
+              }
             }
-          } catch (e) {
-            console.warn('Start job notice:', e);
+          } catch (e: any) {
+            console.warn('Start job notice:', e?.message || e);
+            if (!finalUrl || finalUrl.includes('loader.to')) {
+              const directFallback = currentMedia.formats.find(
+                (f) => f.isDirect && f.url && f.url.startsWith('http') && !f.url.includes('loader.to')
+              );
+              if (directFallback) {
+                finalUrl = directFallback.url;
+              }
+            }
           }
         }
 
@@ -317,7 +336,14 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
           }
 
           if (!finished || !finalUrl.startsWith('http') || finalUrl.includes('loader.to')) {
-            throw new Error('Waktu tunggu konversi habis. Silakan pilih resolusi lain atau coba kembali.');
+            const directFallback = currentMedia.formats.find(
+              (f) => f.isDirect && f.url && f.url.startsWith('http') && !f.url.includes('loader.to')
+            );
+            if (directFallback) {
+              finalUrl = directFallback.url;
+            } else {
+              throw new Error('Waktu tunggu konversi habis. Silakan pilih resolusi lain atau coba kembali.');
+            }
           }
         }
       }
@@ -326,10 +352,10 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
         throw new Error('Tautan unduhan tidak valid atau berkas belum siap dari server sumber.');
       }
 
-      let downloadHref = `/api/proxy-download?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(filename)}`;
+      let downloadHref = `/api/proxy-download?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(currentMedia.platform)}&sourceUrl=${encodeURIComponent(currentMedia.url)}`;
       if (currentMedia.platform === 'spotify') {
         const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
-        downloadHref += `&platform=spotify&title=${encodeURIComponent(currentMedia.title || '')}&artist=${encodeURIComponent(currentMedia.author || '')}&album=${encodeURIComponent(currentMedia.album || '')}&genre=${encodeURIComponent(currentMedia.genre || 'Pop')}&year=${encodeURIComponent(currentMedia.releaseDate || '')}&cover=${encodeURIComponent(currentMedia.thumbnail || '')}&apiKey=${encodeURIComponent(customKey)}`;
+        downloadHref += `&title=${encodeURIComponent(currentMedia.title || '')}&artist=${encodeURIComponent(currentMedia.author || '')}&album=${encodeURIComponent(currentMedia.album || '')}&genre=${encodeURIComponent(currentMedia.genre || 'Pop')}&year=${encodeURIComponent(currentMedia.releaseDate || '')}&cover=${encodeURIComponent(currentMedia.thumbnail || '')}&apiKey=${encodeURIComponent(customKey)}`;
       }
 
       // TeraBox Direct Background Download: Browser downloads directly without buffering huge files into RAM
@@ -337,15 +363,18 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
         setDownloadProgress(100);
         setDownloadStatusText('Memulai unduhan langsung di browser...');
 
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = downloadHref;
-        document.body.appendChild(iframe);
+        const dlLink = document.createElement('a');
+        dlLink.href = downloadHref;
+        dlLink.download = filename;
+        dlLink.target = '_blank';
+        dlLink.rel = 'noopener noreferrer';
+        document.body.appendChild(dlLink);
+        dlLink.click();
         setTimeout(() => {
           try {
-            document.body.removeChild(iframe);
+            document.body.removeChild(dlLink);
           } catch {}
-        }, 60000);
+        }, 1000);
 
         try {
           await saveDownloadedMedia({
@@ -454,6 +483,45 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
           console.warn('History save notice:', histErr);
         });
       } catch (fetchErr: any) {
+        // Direct browser download fallback if proxy streaming encounters an issue
+        console.warn('Proxy download notice, attempting direct download fallback:', fetchErr);
+        if (finalUrl && finalUrl.startsWith('http') && !finalUrl.includes('loader.to')) {
+          setDownloadStatusText('Mengalihkan unduhan langsung ke peramban...');
+          const fallbackLink = document.createElement('a');
+          fallbackLink.href = finalUrl;
+          fallbackLink.download = filename;
+          fallbackLink.target = '_blank';
+          fallbackLink.rel = 'noopener noreferrer';
+          document.body.appendChild(fallbackLink);
+          fallbackLink.click();
+          document.body.removeChild(fallbackLink);
+
+          try {
+            await saveDownloadedMedia({
+              sourceUrl: finalUrl,
+              platform: currentMedia.platform,
+              title: currentMedia.title || 'Media DownloaderZero',
+              author: currentMedia.author || 'Creator',
+              thumbnail: currentMedia.thumbnail || '',
+              quality: targetFormat.quality,
+              resolution: targetFormat.resolution,
+              mediaType: targetFormat.type,
+              extension: targetFormat.extension,
+              filename,
+              filesize: targetFormat.filesize || 'Direct Download',
+              filesizeBytes: targetFormat.filesizeBytes || 0
+            });
+          } catch {}
+
+          setDownloadProgress(100);
+          setDownloadStatusText('Unduhan dialihkan ke peramban!');
+          setTimeout(() => {
+            setIsDownloading(false);
+            setDownloadProgress(0);
+            setDownloadStatusText('');
+          }, 2500);
+          return;
+        }
         throw new Error(fetchErr.message || 'Gagal mengunduh berkas media.');
       }
 
