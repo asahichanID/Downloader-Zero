@@ -10,8 +10,22 @@ import { extractMedia } from './src/services/scraper.ts';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Guard against Vite standalone WS port conflicts
+process.on('uncaughtException', (err: any) => {
+  if (err?.code === 'EADDRINUSE' && (err?.port === 24678 || String(err?.message || '').includes('24678'))) {
+    console.warn('[Vite WS] Port 24678 is in use, ignoring since HMR is disabled in AI Studio.');
+    return;
+  }
+  console.error('[server] Uncaught exception:', err);
+});
+
 const isProduction = process.env.NODE_ENV === 'production';
-const PORT = parseInt(process.env.PORT || '3000', 10);
+
+// Support CLI flags (--port 3000) or default to 3000 for AI Studio environment
+const cliArgs = process.argv.slice(2);
+const portFlagIndex = cliArgs.indexOf('--port');
+const cliPort = portFlagIndex !== -1 && cliArgs[portFlagIndex + 1] ? parseInt(cliArgs[portFlagIndex + 1], 10) : null;
+const PORT = cliPort || (isProduction && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
 
 async function startServer() {
   const app = express();
@@ -547,13 +561,17 @@ async function startServer() {
     }
   });
 
+  // Serve public static assets (videos, images, icons)
+  app.use(express.static(path.resolve(__dirname, 'public')));
+
   // 5. Mount Vite in dev, or serve dist in production
   if (!isProduction) {
     const vite = await createViteServer({
       configFile: path.resolve(__dirname, 'vite.config.ts'),
       server: {
         middlewareMode: true,
-        hmr: false
+        hmr: false,
+        ws: false
       },
       appType: 'spa'
     });
