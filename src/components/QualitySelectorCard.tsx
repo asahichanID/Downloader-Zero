@@ -1,5 +1,5 @@
 import React from 'react';
-import { Film, Music, Check, Sparkles, SlidersHorizontal, Info, ShieldCheck } from 'lucide-react';
+import { Film, Music, Check, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { MediaType } from '../types/index.ts';
 
@@ -159,7 +159,7 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
       aria-label="Pilihan Format dan Kualitas Unduhan"
       className="dz-card rounded-2xl p-4 sm:p-5 w-full space-y-4 select-none transition-all duration-200"
     >
-      {/* 1. SINGLE UNIFIED HEADER: Format Switcher (No Duplicate Buttons) */}
+      {/* 1. SINGLE UNIFIED HEADER: Format Switcher (Smoothly folds video when on Spotify) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-slate-200 dark:border-blue-900/40">
         {/* Title & Mode Kicker */}
         <div className="flex items-center gap-2.5 min-w-0">
@@ -175,11 +175,19 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
               <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight">
                 {currentMediaType === 'video' ? 'Pilih Resolusi Video' : 'Pilih Kualitas Audio MP3'}
               </h3>
-              {isAudioOnly && (
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/50 font-semibold">
-                  Spotify Audio
-                </span>
-              )}
+              <AnimatePresence>
+                {isAudioOnly && (
+                  <motion.span
+                    initial={{ opacity: 0, scale: 0.8, x: -6 }}
+                    animate={{ opacity: 1, scale: 1, x: 0 }}
+                    exit={{ opacity: 0, scale: 0.8, x: -6 }}
+                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                    className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/50 font-semibold"
+                  >
+                    Spotify Audio
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </div>
             <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">
               {currentMediaType === 'video' 
@@ -189,60 +197,98 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
           </div>
         </div>
 
-        {/* Unified Segmented Media Type Switcher (Single source of truth) */}
-        {!isAudioOnly ? (
-          <div 
-            role="tablist"
-            aria-label="Tipe Media"
-            className="inline-flex items-center bg-slate-100 dark:bg-[#050e24] p-1 rounded-xl border border-slate-300 dark:border-blue-900/60 shrink-0 self-start sm:self-auto"
+        {/* Unified Segmented Media Type Switcher: Video tab smoothly folds away when isAudioOnly (Spotify) */}
+        <div 
+          role="tablist"
+          aria-label="Tipe Media"
+          className="inline-flex items-center bg-slate-100 dark:bg-[#050e24] p-1 rounded-xl border border-slate-300 dark:border-blue-900/60 shrink-0 self-start sm:self-auto overflow-hidden transition-all duration-300"
+        >
+          <AnimatePresence initial={false}>
+            {!isAudioOnly && (
+              <motion.button
+                key="video-tab-btn"
+                type="button"
+                role="tab"
+                aria-selected={mediaType === 'video'}
+                onClick={() => setMediaType('video')}
+                initial={{ opacity: 0, width: 0, scaleX: 0.7 }}
+                animate={{ opacity: 1, width: 'auto', scaleX: 1 }}
+                exit={{ 
+                  opacity: 0, 
+                  width: 0, 
+                  scaleX: 0.7, 
+                  paddingLeft: 0, 
+                  paddingRight: 0,
+                  transition: { duration: 0.4, ease: [0.25, 1, 0.5, 1] }
+                }}
+                transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+                className={`overflow-hidden px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 whitespace-nowrap transition-colors duration-200 cursor-pointer ${
+                  mediaType === 'video'
+                    ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm ring-1 ring-cyan-300/40'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Film className="h-3.5 w-3.5 shrink-0" />
+                <span>Video (MP4)</span>
+              </motion.button>
+            )}
+          </AnimatePresence>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mediaType === 'audio'}
+            onClick={() => setMediaType('audio')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 whitespace-nowrap transition-all duration-200 cursor-pointer ${
+              mediaType === 'audio'
+                ? isAudioOnly
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-500 text-white shadow-sm ring-1 ring-emerald-300/40'
+                  : 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm ring-1 ring-cyan-300/40'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
           >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mediaType === 'video'}
-              onClick={() => setMediaType('video')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] cursor-pointer ${
-                mediaType === 'video'
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm ring-1 ring-cyan-300/40'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Film className="h-3.5 w-3.5" />
-              <span>Video (MP4)</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mediaType === 'audio'}
-              onClick={() => setMediaType('audio')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.97] cursor-pointer ${
-                mediaType === 'audio'
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm ring-1 ring-cyan-300/40'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Music className="h-3.5 w-3.5" />
-              <span>Audio (MP3)</span>
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-500/40 text-xs font-bold text-emerald-800 dark:text-emerald-300 self-start sm:self-auto">
-            <Music className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Mode Audio Otomatis</span>
-          </div>
-        )}
+            <Music className="h-3.5 w-3.5 shrink-0" />
+            <span>Audio (MP3)</span>
+            {isAudioOnly && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-black/40 text-emerald-200 font-mono">
+                Spotify
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* 2. RESOLUTION / BITRATE UPGRADED CARD GRID */}
+      {/* 2. RESOLUTION / BITRATE CARD GRID: Smooth Paper Fold / Unfold between Video & Audio */}
       <AnimatePresence mode="wait">
         {!isAudioOnly && mediaType === 'video' ? (
           <motion.div
             key="video-resolutions"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className="space-y-3"
+            initial={{ opacity: 0, height: 0, scaleY: 0.05, transformOrigin: 'top center' }}
+            animate={{ 
+              opacity: 1, 
+              height: 'auto', 
+              scaleY: 1, 
+              transformOrigin: 'top center',
+              transition: { 
+                duration: 0.48, 
+                ease: [0.16, 1, 0.3, 1],
+                height: { duration: 0.45, ease: [0.16, 1, 0.3, 1] },
+                scaleY: { duration: 0.48, ease: [0.16, 1, 0.3, 1] }
+              } 
+            }}
+            exit={{ 
+              opacity: 0, 
+              height: 0, 
+              scaleY: 0.05, 
+              transformOrigin: 'top center',
+              transition: { 
+                duration: 0.4, 
+                ease: [0.25, 1, 0.5, 1],
+                height: { duration: 0.4, ease: [0.25, 1, 0.5, 1] },
+                scaleY: { duration: 0.4, ease: [0.25, 1, 0.5, 1] }
+              } 
+            }}
+            className="space-y-3 overflow-hidden"
           >
             {/* Grid of 6 distinct video cards */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-2.5">
@@ -304,11 +350,32 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
         ) : (
           <motion.div
             key="audio-bitrates"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className="space-y-3"
+            initial={{ opacity: 0, height: 0, scaleY: 0.05, transformOrigin: 'top center' }}
+            animate={{ 
+              opacity: 1, 
+              height: 'auto', 
+              scaleY: 1, 
+              transformOrigin: 'top center',
+              transition: { 
+                duration: 0.48, 
+                ease: [0.16, 1, 0.3, 1],
+                height: { duration: 0.45, ease: [0.16, 1, 0.3, 1] },
+                scaleY: { duration: 0.48, ease: [0.16, 1, 0.3, 1] }
+              } 
+            }}
+            exit={{ 
+              opacity: 0, 
+              height: 0, 
+              scaleY: 0.05, 
+              transformOrigin: 'top center',
+              transition: { 
+                duration: 0.4, 
+                ease: [0.25, 1, 0.5, 1],
+                height: { duration: 0.4, ease: [0.25, 1, 0.5, 1] },
+                scaleY: { duration: 0.4, ease: [0.25, 1, 0.5, 1] }
+              } 
+            }}
+            className="space-y-3 overflow-hidden"
           >
             {/* Grid of 6 distinct audio cards */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-2.5">

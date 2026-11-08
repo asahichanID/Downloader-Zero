@@ -28,6 +28,49 @@ import { detectPlatform, formatBytes } from './services/scraper.ts';
 import { saveDownloadedMedia, getAllHistory } from './services/historyStorage.ts';
 import type { PlatformType, MediaType, MediaMetadata, MediaFormat } from './types/index.ts';
 
+// Paper Fold & Unfold Animation Variants (Origami unfold from thin line downwards, reverse on exit)
+const paperFoldVariants: any = {
+  hidden: {
+    height: 0,
+    scaleY: 0.002,
+    opacity: 1,
+    transformOrigin: 'top center',
+    transition: {
+      duration: 0.46,
+      ease: [0.25, 1, 0.5, 1],
+      height: { duration: 0.46, ease: [0.25, 1, 0.5, 1] },
+      scaleY: { duration: 0.46, ease: [0.25, 1, 0.5, 1] },
+      opacity: { duration: 0.08, delay: 0.38 }
+    }
+  },
+  visible: {
+    height: 'auto',
+    scaleY: 1,
+    opacity: 1,
+    transformOrigin: 'top center',
+    transition: {
+      duration: 0.52,
+      ease: [0.16, 1, 0.3, 1],
+      height: { duration: 0.5, ease: [0.16, 1, 0.3, 1] },
+      scaleY: { duration: 0.52, ease: [0.16, 1, 0.3, 1] },
+      opacity: { duration: 0.2, ease: 'easeOut' }
+    }
+  },
+  exit: {
+    height: 0,
+    scaleY: 0.002,
+    opacity: 1,
+    transformOrigin: 'top center',
+    transition: {
+      duration: 0.46,
+      ease: [0.25, 1, 0.5, 1],
+      height: { duration: 0.46, ease: [0.25, 1, 0.5, 1] },
+      scaleY: { duration: 0.46, ease: [0.25, 1, 0.5, 1] },
+      opacity: { duration: 0.08, delay: 0.38 }
+    }
+  }
+};
+
 export default function App() {
   // Input and Platform states
   const [url, setUrl] = useState<string>('');
@@ -709,6 +752,8 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
     selectedPlatform === 'spotify' &&
     /(?:spotify\.com\/(?:intl-[a-z]+\/)?(playlist|album)\/|spotify\.link\/)/i.test(url.trim());
 
+  const hasValidUrl = Boolean(url && url.trim().length > 0);
+
   return (
     <div className={`min-h-screen w-full flex flex-col items-center justify-start antialiased transition-colors duration-200 ${
       isDark
@@ -745,17 +790,22 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
           isAutoDetected={isAutoDetected}
         />
 
-        {/* 5 & 6. Media Type Tabs and Quality Selection Card (Smoothly transitions for TeraBox Direct Mode) */}
+        {/* 5 & 6. Media Format and Quality Selection Card (Smooth Paper Unfold & Fold transitions) */}
         <AnimatePresence mode="wait" initial={false}>
-          {selectedPlatform === 'terabox' ? (
+          {hasValidUrl && (selectedPlatform === 'terabox' ? (
             <motion.div
               key="terabox-cloud-panel"
-              initial={{ opacity: 0, scale: 0.98, y: 6 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.98, y: -6 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full"
+              variants={paperFoldVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="w-full overflow-hidden"
             >
+              {/* Top Crease Line: Garis tipis panjang normal yang muncul seketika */}
+              <div 
+                aria-hidden="true" 
+                className="w-full h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-transparent shadow-[0_0_12px_rgba(56,189,248,0.9)] mb-2" 
+              />
               <div className="w-full dz-card rounded-2xl p-4 sm:p-5 border border-sky-500/40 flex items-center gap-3.5 shadow-sm">
                 <div className="w-11 h-11 rounded-2xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400 shrink-0">
                   <svg className="w-6 h-6 text-sky-400 fill-current" viewBox="0 0 24 24">
@@ -780,12 +830,17 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
           ) : (
             <motion.div
               key="platform-selectors-panel"
-              initial={{ opacity: 0, scale: 0.98, y: 6 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.98, y: -6 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full"
+              variants={paperFoldVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="w-full overflow-hidden"
             >
+              {/* Top Crease Line: Garis tipis panjang normal yang muncul seketika dan melebar ke bawah */}
+              <div 
+                aria-hidden="true" 
+                className="w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-400 dark:via-cyan-300 to-transparent shadow-[0_0_12px_rgba(34,211,238,0.9)] mb-2" 
+              />
               <QualitySelectorCard
                 mediaType={mediaType}
                 setMediaType={setMediaType}
@@ -796,7 +851,7 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
                 isAudioOnly={selectedPlatform === 'spotify'}
               />
             </motion.div>
-          )}
+          ))}
         </AnimatePresence>
 
         {/* 7. Huge Download Button with Cyber Accents */}
