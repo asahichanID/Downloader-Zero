@@ -8,7 +8,6 @@ import { Navbar } from './components/Navbar.tsx';
 import { BannerDZ } from './components/BannerDZ.tsx';
 import { PlatformCards } from './components/PlatformCards.tsx';
 import { UrlInputCard } from './components/UrlInputCard.tsx';
-import { MediaTypeTabs } from './components/MediaTypeTabs.tsx';
 import { QualitySelectorCard } from './components/QualitySelectorCard.tsx';
 import { DownloadButton } from './components/DownloadButton.tsx';
 import { VideoPreviewCard } from './components/VideoPreviewCard.tsx';
@@ -785,14 +784,8 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.98, y: -6 }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full flex flex-col gap-4 sm:gap-5"
+              className="w-full"
             >
-              <MediaTypeTabs
-                mediaType={mediaType}
-                setMediaType={setMediaType}
-                isAudioOnly={selectedPlatform === 'spotify'}
-              />
-
               <QualitySelectorCard
                 mediaType={mediaType}
                 setMediaType={setMediaType}
