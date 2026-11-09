@@ -35,15 +35,13 @@ button, a, input, select {
   touch-action: manipulation;
 }
 
-/* 3D and Futuristic Clean Utilities (Glow blurs removed for silky smooth 60fps performance) */
+/* High-Performance 60FPS Clean Card Utilities (GPU fill-rate optimized, no heavy multi-pass blurs) */
 .dz-card {
-  background: rgba(8, 19, 44, 0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(59, 130, 246, 0.22);
+  background: #08142e;
+  border: 1px solid rgba(59, 130, 246, 0.25);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   transform: translateZ(0);
-  transition: border-color 220ms var(--ease-fluid), background-color 220ms var(--ease-fluid);
+  transition: border-color 180ms ease, background-color 180ms ease;
 }
 
 .dz-card:hover {
@@ -51,11 +49,31 @@ button, a, input, select {
 }
 
 .dz-card-active {
-  background: rgba(14, 38, 80, 0.95);
+  background: #0e2650;
   border: 1.5px solid #22d3ee;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   transform: translateZ(0);
-  transition: border-color 220ms var(--ease-fluid), background-color 220ms var(--ease-fluid);
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+/* 60FPS Hardware-Accelerated Curtain Reveal (Native C++ Grid interpolation, zero JS reflow loop) */
+.dz-curtain-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 340ms cubic-bezier(0.16, 1, 0.3, 1), opacity 220ms ease;
+  opacity: 0;
+  will-change: grid-template-rows, opacity;
+}
+
+.dz-curtain-wrapper.dz-curtain-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.dz-curtain-inner {
+  overflow: hidden;
+  min-height: 0;
+  transform: translateZ(0);
 }
 
 .dz-pill {

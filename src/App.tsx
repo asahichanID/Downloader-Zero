@@ -28,37 +28,6 @@ import { detectPlatform, formatBytes } from './services/scraper.ts';
 import { saveDownloadedMedia, getAllHistory } from './services/historyStorage.ts';
 import type { PlatformType, MediaType, MediaMetadata, MediaFormat } from './types/index.ts';
 
-// Smooth Curtain Reveal Variants (Content stays static like a statue, revealed as curtain drops from line, zero deformation)
-const curtainRevealVariants: any = {
-  hidden: {
-    height: 0,
-    opacity: 0,
-    transition: {
-      duration: 0.35,
-      ease: [0.25, 1, 0.5, 1],
-      opacity: { duration: 0.15 }
-    }
-  },
-  visible: {
-    height: 'auto',
-    opacity: 1,
-    transition: {
-      duration: 0.44,
-      ease: [0.16, 1, 0.3, 1],
-      opacity: { duration: 0.22 }
-    }
-  },
-  exit: {
-    height: 0,
-    opacity: 0,
-    transition: {
-      duration: 0.35,
-      ease: [0.25, 1, 0.5, 1],
-      opacity: { duration: 0.15, delay: 0.12 }
-    }
-  }
-};
-
 export default function App() {
   // Input and Platform states
   const [url, setUrl] = useState<string>('');
@@ -778,71 +747,71 @@ function findMatchingVideoFormat(formats: MediaFormat[], targetRes: string): Med
           isAutoDetected={isAutoDetected}
         />
 
-        {/* 5 & 6. Media Format and Quality Selection Card (Smooth Paper Unfold & Fold transitions) */}
-        <AnimatePresence mode="wait" initial={false}>
-          {hasValidUrl && (selectedPlatform === 'terabox' ? (
-            <motion.div
-              key="terabox-cloud-panel"
-              variants={curtainRevealVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="w-full overflow-hidden will-change-[height]"
-              style={{ transform: 'translateZ(0)' }}
-            >
-              {/* Top Crease Line: Garis tipis panjang normal yang muncul seketika */}
-              <div 
-                aria-hidden="true" 
-                className="w-full h-[2px] bg-gradient-to-r from-transparent via-sky-400 to-transparent shadow-[0_0_12px_rgba(56,189,248,0.9)] mb-2" 
-              />
-              <div className="w-full dz-card rounded-2xl p-4 sm:p-5 border border-sky-500/40 flex items-center gap-3.5 shadow-sm">
-                <div className="w-11 h-11 rounded-2xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400 shrink-0">
-                  <svg className="w-6 h-6 text-sky-400 fill-current" viewBox="0 0 24 24">
-                    <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
-                  </svg>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-xs sm:text-sm font-bold text-white tracking-tight">
-                      Mode Berkas TeraBox Cloud
-                    </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-950/90 text-sky-300 border border-sky-500/50 font-bold">
-                      Direct Cloud File
-                    </span>
+        {/* 5 & 6. Media Format and Quality Selection Card: Native 60fps CSS Grid curtain, zero frame drop */}
+        <div 
+          className={`w-full dz-curtain-wrapper ${hasValidUrl ? 'dz-curtain-open' : ''}`}
+        >
+          <div className="dz-curtain-inner w-full">
+            {/* Top Crease Line */}
+            <div 
+              aria-hidden="true" 
+              className="w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-400 dark:via-cyan-300 to-transparent shadow-[0_0_10px_rgba(34,211,238,0.85)] mb-2 shrink-0" 
+            />
+
+            <AnimatePresence mode="wait" initial={false}>
+              {selectedPlatform === 'terabox' ? (
+                <motion.div
+                  key="terabox-cloud-panel"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.16, ease: 'easeOut' }}
+                  className="w-full"
+                >
+                  <div className="w-full dz-card rounded-2xl p-4 sm:p-5 border border-sky-500/40 flex items-center gap-3.5 shadow-sm">
+                    <div className="w-11 h-11 rounded-2xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-400 shrink-0">
+                      <svg className="w-6 h-6 text-sky-400 fill-current" viewBox="0 0 24 24">
+                        <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/>
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-xs sm:text-sm font-bold text-white tracking-tight">
+                          Mode Berkas TeraBox Cloud
+                        </span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-950/90 text-sky-300 border border-sky-500/50 font-bold">
+                          Direct Cloud File
+                        </span>
+                      </div>
+                      <p className="text-[11px] sm:text-xs text-slate-300 leading-relaxed">
+                        Video atau berkas cloud diunduh langsung dalam kualitas dan ukuran aslinya tanpa perlu memilih resolusi manual.
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-[11px] sm:text-xs text-slate-300 leading-relaxed">
-                    Video atau berkas cloud diunduh langsung dalam kualitas dan ukuran aslinya tanpa perlu memilih resolusi manual.
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="platform-selectors-panel"
-              variants={curtainRevealVariants}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              className="w-full overflow-hidden will-change-[height]"
-              style={{ transform: 'translateZ(0)' }}
-            >
-              {/* Top Crease Line: Garis tipis panjang normal yang muncul seketika */}
-              <div 
-                aria-hidden="true" 
-                className="w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-400 dark:via-cyan-300 to-transparent shadow-[0_0_12px_rgba(34,211,238,0.9)] mb-2" 
-              />
-              <QualitySelectorCard
-                mediaType={mediaType}
-                setMediaType={setMediaType}
-                selectedVideoRes={selectedVideoRes}
-                setSelectedVideoRes={setSelectedVideoRes}
-                selectedAudioQuality={selectedAudioQuality}
-                setSelectedAudioQuality={setSelectedAudioQuality}
-                isAudioOnly={selectedPlatform === 'spotify'}
-              />
-            </motion.div>
-          ))}
-        </AnimatePresence>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="platform-selectors-panel"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.16, ease: 'easeOut' }}
+                  className="w-full"
+                >
+                  <QualitySelectorCard
+                    mediaType={mediaType}
+                    setMediaType={setMediaType}
+                    selectedVideoRes={selectedVideoRes}
+                    setSelectedVideoRes={setSelectedVideoRes}
+                    selectedAudioQuality={selectedAudioQuality}
+                    setSelectedAudioQuality={setSelectedAudioQuality}
+                    isAudioOnly={selectedPlatform === 'spotify'}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
 
         {/* 7. Huge Download Button with Cyber Accents */}
         <DownloadButton
