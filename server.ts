@@ -1,11 +1,19 @@
 import 'dotenv/config';
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import NodeID3 from 'node-id3';
 import { extractMedia } from './src/services/scraper.ts';
+import {
+  isSafePublicUrl,
+  createRateLimiter,
+  antiPrototypePollution,
+  applySecurityHeaders,
+  sanitizeFilename,
+  sanitizeJobId
+} from './src/services/security.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,27 +37,71 @@ const PORT = cliPort || (isProduction && process.env.PORT ? parseInt(process.env
 
 async function startServer() {
   const app = express();
-  app.use(express.json());
+
+  // 1. Core Cyber-Defense: Security Headers & Signature Stripping
+  app.disable('x-powered-by');
+  app.use(applySecurityHeaders);
+  app.use(antiPrototypePollution);
+
+  // 2. Anti-DoS Payload Limiting (128KB max) & JSON Parse Error Interceptor
+  app.use(express.json({ limit: '128kb' }));
+  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+    if (err instanceof SyntaxError && 'body' in err) {
+      res.status(400).json({ success: false, error: 'Format payload tidak valid.' });
+      return;
+    }
+    next(err);
+  });
+
+  // 3. Rate Limiters (DDoS & Spam Guard)
+  const extractLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 60,
+    message: 'Terlalu banyak permintaan ekstrak konten. Harap tunggu beberapa detik.'
+  });
+  const jobLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 60,
+    message: 'Terlalu banyak permintaan konversi format. Harap tunggu beberapa detik.'
+  });
+  const progressLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 180,
+    message: 'Batas frekuensi pemeriksaan status tercapai.'
+  });
+  const proxyLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 180,
+    message: 'Batas aliran unduhan per menit tercapai. Harap tunggu sebentar.'
+  });
 
   // In-memory process cache for Spotify MP3 files (automatically purged 15 seconds after completion)
   const spotifyProcessCache = new Map<string, { buffer: Buffer; timestamp: number }>();
 
-  // 1. Health check
+  // 1. Health check & Security Shield status
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({
       status: 'online',
+      securityShield: 'active',
       service: 'DownloaderZero (DZ) Media Engine',
       version: '2026.1',
       platforms: ['youtube', 'tiktok', 'facebook', 'instagram', 'pinterest', 'spotify', 'terabox']
     });
   });
 
-  // 2. Extract media metadata and formats (API key is loaded from server environment)
-  app.post('/api/extract', async (req: Request, res: Response) => {
+  // 2. Extract media metadata and formats (with anti-SSRF & rate limiter)
+  app.post('/api/extract', extractLimiter, async (req: Request, res: Response) => {
     try {
       const { url, apiKey } = req.body || {};
       if (!url || typeof url !== 'string') {
         res.status(400).json({ success: false, error: 'Parameter URL wajib disertakan.' });
+        return;
+      }
+
+      // SSRF & Malicious Target Verification
+      const safetyCheck = isSafePublicUrl(url);
+      if (!safetyCheck.safe) {
+        res.status(400).json({ success: false, error: safetyCheck.reason || 'Tautan URL tidak diizinkan oleh sistem keamanan.' });
         return;
       }
 
@@ -78,12 +130,19 @@ async function startServer() {
     return f.replace(/p$/i, '');
   }
 
-  // 2b. Start async job for YouTube conversion
-  app.post('/api/start-job', async (req: Request, res: Response) => {
+  // 2b. Start async job for YouTube conversion (with Anti-SSRF & rate limiter)
+  app.post('/api/start-job', jobLimiter, async (req: Request, res: Response) => {
     try {
       const { format, url } = req.body || {};
-      if (!url) {
+      if (!url || typeof url !== 'string') {
         res.status(400).json({ success: false, error: 'URL target wajib disertakan.' });
+        return;
+      }
+
+      // SSRF & Security inspection
+      const safetyCheck = isSafePublicUrl(url);
+      if (!safetyCheck.safe) {
+        res.status(400).json({ success: false, error: safetyCheck.reason || 'URL tidak aman atau diblokir.' });
         return;
       }
 
@@ -169,10 +228,11 @@ async function startServer() {
     }
   });
 
-  // 3. Progress check for async processing (e.g. YouTube loader.to jobs)
-  app.get(['/api/progress', '/api/progress/:jobId'], async (req: Request, res: Response) => {
+  // 3. Progress check for async processing (with rate limiter & sanitized job ID)
+  app.get(['/api/progress', '/api/progress/:jobId'], progressLimiter, async (req: Request, res: Response) => {
     try {
-      const jobId = (req.params.jobId || req.query.jobId || req.query.id || '') as string;
+      const rawJobId = (req.params.jobId || req.query.jobId || req.query.id || '') as string;
+      const jobId = sanitizeJobId(rawJobId);
       if (!jobId) {
         res.status(400).json({ success: false, error: 'Job ID tidak valid.' });
         return;
@@ -205,9 +265,8 @@ async function startServer() {
     }
   });
 
-  // 4. Proxy stream for instant automatic download attachment
-  // 4. Proxy stream for instant automatic download attachment with multi-platform resilience
-  app.get('/api/proxy-download', async (req: Request, res: Response) => {
+  // 4. Proxy stream for instant automatic download attachment with multi-platform resilience & SSRF shielding
+  app.get('/api/proxy-download', proxyLimiter, async (req: Request, res: Response) => {
     try {
       // 1. Extract targetUrl reliably from query or raw URL, preserving all nested parameters
       let targetUrl = '';
@@ -250,6 +309,18 @@ async function startServer() {
         }
       }
 
+      // SSRF & Malicious Target Verification
+      if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
+        res.status(400).send('Target URL tidak valid.');
+        return;
+      }
+
+      const targetSafety = isSafePublicUrl(targetUrl);
+      if (!targetSafety.safe) {
+        res.status(400).send(targetSafety.reason || 'Target URL tidak diizinkan oleh sistem keamanan.');
+        return;
+      }
+
       // If targetUrl points to a loader.to ajax endpoint, resolve to real download URL
       if (targetUrl.includes('loader.to/ajax/download.php') || targetUrl.includes('loader.to')) {
         try {
@@ -269,12 +340,12 @@ async function startServer() {
       }
 
       const rawFilename = (req.query.filename as string) || 'DownloaderZero_Media.mp4';
-      const sanitizedFilename = rawFilename.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      const sanitizedFilename = sanitizeFilename(rawFilename, 'DownloaderZero_Media.mp4');
       const platform = ((req.query.platform as string) || '').toLowerCase();
       const sourceUrl = (req.query.sourceUrl as string) || '';
 
-      if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
-        res.status(400).send('Target URL tidak valid.');
+      if (sourceUrl && !isSafePublicUrl(sourceUrl).safe) {
+        res.status(400).send('Source URL tidak valid atau diblokir.');
         return;
       }
 
@@ -328,19 +399,21 @@ async function startServer() {
         const audioArrayBuffer = await audioRes.arrayBuffer();
         const rawAudioBuffer = Buffer.from(audioArrayBuffer);
 
-        // Fetch Cover Art buffer if cover URL is provided
+        // Fetch Cover Art buffer if cover URL is provided (with SSRF check)
         const coverUrl = req.query.cover as string;
         let coverBuffer: Buffer | null = null;
         let coverMime = 'image/jpeg';
         if (coverUrl && typeof coverUrl === 'string' && coverUrl.startsWith('http')) {
-          try {
-            const cRes = await fetch(coverUrl, { signal: AbortSignal.timeout(7000) });
-            if (cRes.ok) {
-              coverBuffer = Buffer.from(await cRes.arrayBuffer());
-              coverMime = cRes.headers.get('content-type') || 'image/jpeg';
+          if (isSafePublicUrl(coverUrl).safe) {
+            try {
+              const cRes = await fetch(coverUrl, { signal: AbortSignal.timeout(7000) });
+              if (cRes.ok) {
+                coverBuffer = Buffer.from(await cRes.arrayBuffer());
+                coverMime = cRes.headers.get('content-type') || 'image/jpeg';
+              }
+            } catch (covErr) {
+              console.warn('[Spotify Download] Cover image download notice:', covErr);
             }
-          } catch (covErr) {
-            console.warn('[Spotify Download] Cover image download notice:', covErr);
           }
         }
 
