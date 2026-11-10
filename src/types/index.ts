@@ -1,6 +1,9 @@
 export type PlatformType = 'youtube' | 'tiktok' | 'facebook' | 'instagram' | 'pinterest' | 'spotify' | 'terabox' | 'unknown';
 
+export type ServerMode = 'auto' | 'server1' | 'server2';
+
 export type MediaType = 'video' | 'audio' | 'photos';
+
 
 export interface AudioTrack {
   id: string;
@@ -28,6 +31,7 @@ export interface MediaFormat {
   url: string; // direct download or conversion URL
   jobId?: string; // for async polling like loader.to
   isDirect: boolean;
+  needsResolution?: boolean; // When true, resolves exact stream API on-demand upon format selection
   note?: string; // e.g., 'No Watermark', 'Original Audio', 'Lossless'
 }
 

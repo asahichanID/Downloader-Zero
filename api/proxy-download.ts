@@ -209,7 +209,9 @@ export default async function handler(req: any, res: any) {
     let platformReferer = '';
     if (targetUrl.includes('tikwm.com')) {
       platformReferer = 'https://www.tikwm.com/';
-    } else if (targetUrl.includes('tiktok') || targetUrl.includes('byteoversea') || targetUrl.includes('ibyteimg')) {
+    } else if (targetUrl.includes('tiktokcdn') || targetUrl.includes('byteoversea') || targetUrl.includes('ibyteimg')) {
+      platformReferer = '';
+    } else if (targetUrl.includes('tiktok.com')) {
       platformReferer = 'https://www.tiktok.com/';
     } else if (targetUrl.includes('facebook') || targetUrl.includes('fbcdn')) {
       platformReferer = 'https://www.facebook.com/';

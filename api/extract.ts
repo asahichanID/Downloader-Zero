@@ -44,11 +44,15 @@ export default async function handler(req: any, res: any) {
 
     let url = body?.url;
     let apiKey = body?.apiKey;
+    let server = body?.server;
     if (!url) {
       const parsedUrl = new URL(req.url || '', `http://${req.headers?.host || 'localhost'}`);
       url = parsedUrl.searchParams.get('url');
       if (!apiKey) {
         apiKey = parsedUrl.searchParams.get('apiKey') || undefined;
+      }
+      if (!server) {
+        server = parsedUrl.searchParams.get('server') || undefined;
       }
     }
 
@@ -57,8 +61,9 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const data = await extractMedia(url, apiKey);
+    const data = await extractMedia(url, apiKey, server);
     res.status(200).json({ success: true, data });
+
   } catch (err: any) {
     console.error('API Extraction Error:', err?.message || err);
     res.status(400).json({

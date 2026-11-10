@@ -28,7 +28,7 @@ import {
   clearAllHistory,
   purgeExpiredHistoryItems
 } from './services/historyStorage.ts';
-import type { PlatformType, MediaType, MediaMetadata, MediaFormat, HistoryItem } from './types/index.ts';
+import type { PlatformType, MediaType, MediaMetadata, MediaFormat, HistoryItem, ServerMode } from './types/index.ts';
 
 export default function App() {
   // Navigation tab: 'beranda' | 'riwayat' | 'pengaturan'
@@ -112,6 +112,30 @@ export default function App() {
     }
   }, [isDark]);
 
+  // Server mode selection ('auto' | 'server1' | 'server2')
+  const [serverMode, setServerMode] = useState<ServerMode>(() => {
+    try {
+      const saved = localStorage.getItem('dz_server_mode');
+      if (saved === 'server1' || saved === 'server2' || saved === 'auto') {
+        return saved;
+      }
+      return 'auto';
+    } catch {
+      return 'auto';
+    }
+  });
+
+  useEffect(() => {
+    const handleServerModeChange = (e: any) => {
+      const newMode = e.detail;
+      if (newMode === 'auto' || newMode === 'server1' || newMode === 'server2') {
+        setServerMode(newMode);
+      }
+    };
+    window.addEventListener('dz_server_mode_changed', handleServerModeChange);
+    return () => window.removeEventListener('dz_server_mode_changed', handleServerModeChange);
+  }, []);
+
   // Handle URL change with auto platform detection (NO auto-select badge text!)
   const handleUrlChange = (newUrl: string) => {
     setUrl(newUrl);
@@ -179,7 +203,7 @@ export default function App() {
       const response = await fetch('/api/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: trimmed, apiKey: customKey })
+        body: JSON.stringify({ url: trimmed, apiKey: customKey, server: serverMode })
       });
 
       const result = await response.json();
@@ -221,17 +245,25 @@ export default function App() {
       let finalUrl = targetFormat.url;
       let jobId = targetFormat.jobId;
 
-      // Handle resolution if url is missing or requires async conversion
-      if (!finalUrl || !finalUrl.startsWith('http')) {
+      // Handle resolution if url is missing, placeholder, or requires on-demand resolution
+      if (!finalUrl || !finalUrl.startsWith('http') || targetFormat.needsResolution) {
         const loaderFormat = mapFormatForLoader(targetFormat);
-        setDownloadStatusText(`Memulai resolusi ${targetFormat.quality}...`);
+        const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
+        setDownloadStatusText(`Menyiapkan ${targetFormat.quality}...`);
         try {
           const startRes = await fetch('/api/start-job', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              platform: mediaData.platform,
               format: loaderFormat,
-              url: mediaData.url
+              formatId: targetFormat.id,
+              resolution: targetFormat.resolution,
+              quality: targetFormat.quality,
+              type: targetFormat.type,
+              url: mediaData.url,
+              server: serverMode,
+              apiKey: customKey
             })
           });
           if (startRes.ok) {
@@ -522,6 +554,8 @@ export default function App() {
               setIsTermsOpen(true);
             }}
             onClearHistory={handleClearAllHistory}
+            serverMode={serverMode}
+            onSelectServerMode={(mode) => setServerMode(mode)}
           />
         )}
       </main>

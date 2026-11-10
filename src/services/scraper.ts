@@ -1,5 +1,9 @@
-import type { PlatformType, MediaFormat, MediaMetadata, AudioTrack } from '../types/index.ts';
+import type { PlatformType, ServerMode, MediaFormat, MediaMetadata, AudioTrack } from '../types/index.ts';
 import * as cheerio from 'cheerio';
+import { extractTikTokPreview, resolveTikTokDownload } from './previewEngines/tiktokPreview.ts';
+
+export { resolveTikTokDownload };
+
 
 export function detectPlatform(url: string): PlatformType {
   const trimmed = url.trim();
@@ -135,7 +139,8 @@ const NEOXR_BASE_URL = 'https://api.neoxr.eu/api';
 const DEFAULT_NEOXR_KEY = 'j3i3mg';
 
 // ----------------- TIKTOK SCRAPER -----------------
-async function scrapeTikTok(url: string): Promise<MediaMetadata> {
+async function scrapeTikTokServer2(url: string): Promise<MediaMetadata> {
+
   const target = await resolveRedirectUrl(url);
   const cleanUrl = encodeURIComponent(target.trim());
   const endpoints = [
@@ -295,109 +300,116 @@ async function scrapeTikTok(url: string): Promise<MediaMetadata> {
   };
 }
 
-// ----------------- FACEBOOK SCRAPER -----------------
-async function scrapeFacebook(url: string, apiKey?: string): Promise<MediaMetadata> {
-  const target = await resolveRedirectUrl(url);
-  let title = 'Facebook Video';
-  let thumbnail = '';
-  const formats: MediaFormat[] = [];
+async function scrapeTikTok(url: string, _apiKey?: string, _serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
+  // Pengambilan media pertama download: khusus mengambil thumbnail foto utuh, angka durasi, dan judul
+  // Pemakaian API download dipanggil setelah pemilihan format agar tidak dipanggil 2 kali
+  return await extractTikTokPreview(url);
+}
 
-  // Attempt 1: Neoxr /api/fb (proven direct SD & HD streams)
+// ----------------- FACEBOOK SCRAPER -----------------
+async function scrapeFacebookServer1(target: string, apiKey?: string): Promise<MediaMetadata> {
   const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const neoKey = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
-  try {
-    const neoRes = await fetch(`${NEOXR_BASE_URL}/fb?url=${encodeURIComponent(target)}&apikey=${encodeURIComponent(neoKey)}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      signal: AbortSignal.timeout(8000)
-    });
-    if (neoRes.ok) {
-      const neoJson = await neoRes.json();
-      if (neoJson && neoJson.status && Array.isArray(neoJson.data)) {
-        neoJson.data.forEach((item: any, idx: number) => {
-          const itemUrl = item.url || item.link || item.download;
-          if (typeof itemUrl === 'string' && itemUrl.startsWith('http')) {
-            const isHd = /hd|1080|720/i.test(item.quality || '');
-            formats.push({
-              id: `nx-fb-${idx}`,
-              quality: isHd ? '720p / 1080p HD Video' : '360p / 480p SD Video',
-              resolution: isHd ? '720p' : '360p',
-              type: 'video',
-              extension: 'mp4',
-              url: itemUrl,
-              isDirect: true,
-              note: isHd ? 'High Definition Video' : 'Standard Definition'
-            });
-          }
-        });
-      }
-    }
-  } catch (neoErr) {
-    console.warn('[Facebook] Neoxr attempt skipped:', neoErr);
+  const formats: MediaFormat[] = [];
+  const neoRes = await fetch(`${NEOXR_BASE_URL}/fb?url=${encodeURIComponent(target)}&apikey=${encodeURIComponent(neoKey)}`, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!neoRes.ok) throw new Error(`Server 1 Facebook HTTP ${neoRes.status}`);
+  const neoJson = await neoRes.json();
+  if (!neoJson || !neoJson.status || !Array.isArray(neoJson.data) || neoJson.data.length === 0) {
+    throw new Error('Server 1 tidak dapat menemukan media Facebook.');
   }
-
-  // Attempt 2: fdown.co.in API (verified active)
-  if (formats.length === 0) {
-    try {
-      const res = await fetch('https://fdown.co.in/ajax', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': 'https://fdown.co.in',
-          'Referer': 'https://fdown.co.in/',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
-        body: JSON.stringify({ url: target }),
-        signal: AbortSignal.timeout(8000)
+  neoJson.data.forEach((item: any, idx: number) => {
+    const itemUrl = item.url || item.link || item.download;
+    if (typeof itemUrl === 'string' && itemUrl.startsWith('http')) {
+      const isHd = /hd|1080|720/i.test(item.quality || '');
+      formats.push({
+        id: `nx-fb-${idx}`,
+        quality: isHd ? '720p / 1080p HD Video' : '360p / 480p SD Video',
+        resolution: isHd ? '720p' : '360p',
+        type: 'video',
+        extension: 'mp4',
+        url: itemUrl,
+        isDirect: true,
+        note: isHd ? 'High Definition Video' : 'Standard Definition'
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.links) {
-          if (data.title) title = data.title;
-          if (data.thumbnail) thumbnail = data.thumbnail;
-
-          const links = Object.entries(data.links).filter(([, l]) => typeof l === 'string' && (l as string).startsWith('http'));
-          for (const [label, link] of links) {
-            const lStr = link as string;
-            const isHd = /hd|1080|720/i.test(label);
-            formats.push({
-              id: `fb-${label.toLowerCase().replace(/\s+/g, '-')}`,
-              quality: isHd ? '720p / 1080p HD Video' : '360p / 480p SD Video',
-              resolution: isHd ? '720p' : '360p',
-              type: 'video',
-              extension: 'mp4',
-              url: lStr,
-              isDirect: true,
-              note: isHd ? 'High Definition Video' : 'Standard Definition'
-            });
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('[Facebook] fdown attempt skipped:', err);
     }
-  }
+  });
+  if (formats.length === 0) throw new Error('Format video tidak ditemukan di Server 1.');
+  formats.push({
+    id: 'fb-audio-mp3',
+    quality: '192 kbps (Ekstrak Audio MP3)',
+    resolution: 'Audio',
+    type: 'audio',
+    extension: 'mp3',
+    url: formats[0].url,
+    isDirect: false,
+    note: 'Dikonversi ke audio MP3 jernih'
+  });
+  return {
+    id: `fb-${Date.now()}`,
+    url: target,
+    platform: 'facebook',
+    title: 'Facebook Video',
+    author: 'Facebook Creator',
+    thumbnail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800',
+    duration: 60,
+    durationFormatted: '01:00',
+    formats,
+    source: 'Server 1 Engine',
+    createdAt: new Date().toISOString()
+  };
+}
 
-  // Audio format option (extract audio from direct MP4)
-  if (formats.length > 0) {
+async function scrapeFacebookServer2(target: string): Promise<MediaMetadata> {
+  const formats: MediaFormat[] = [];
+  let title = 'Facebook Video';
+  let thumbnail = '';
+  const res = await fetch('https://fdown.co.in/ajax', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Origin': 'https://fdown.co.in',
+      'Referer': 'https://fdown.co.in/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    },
+    body: JSON.stringify({ url: target }),
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!res.ok) throw new Error(`Server 2 Facebook HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.success || !data.links) {
+    throw new Error('Server 2 tidak dapat menemukan media Facebook.');
+  }
+  if (data.title) title = data.title;
+  if (data.thumbnail) thumbnail = data.thumbnail;
+  const links = Object.entries(data.links).filter(([, l]) => typeof l === 'string' && (l as string).startsWith('http'));
+  for (const [label, link] of links) {
+    const lStr = link as string;
+    const isHd = /hd|1080|720/i.test(label);
     formats.push({
-      id: 'fb-audio-mp3',
-      quality: '192 kbps (Ekstrak Audio MP3)',
-      resolution: 'Audio',
-      type: 'audio',
-      extension: 'mp3',
-      url: formats[0].url,
-      isDirect: false,
-      note: 'Dikonversi ke audio MP3 jernih'
+      id: `fb-${label.toLowerCase().replace(/\s+/g, '-')}`,
+      quality: isHd ? '720p / 1080p HD Video' : '360p / 480p SD Video',
+      resolution: isHd ? '720p' : '360p',
+      type: 'video',
+      extension: 'mp4',
+      url: lStr,
+      isDirect: true,
+      note: isHd ? 'High Definition Video' : 'Standard Definition'
     });
   }
-
-  if (formats.length === 0) {
-    throw new Error('Tidak dapat mengekstrak video Facebook. Pastikan video bersifat Publik dan tautan valid.');
-  }
-
+  if (formats.length === 0) throw new Error('Format media tidak ditemukan di Server 2.');
+  formats.push({
+    id: 'fb-audio-mp3',
+    quality: '192 kbps (Ekstrak Audio MP3)',
+    resolution: 'Audio',
+    type: 'audio',
+    extension: 'mp3',
+    url: formats[0].url,
+    isDirect: false,
+    note: 'Dikonversi ke audio MP3 jernih'
+  });
   return {
     id: `fb-${Date.now()}`,
     url: target,
@@ -408,14 +420,32 @@ async function scrapeFacebook(url: string, apiKey?: string): Promise<MediaMetada
     duration: 60,
     durationFormatted: '01:00',
     formats,
-    source: 'Facebook Cloud Extraction',
+    source: 'Server 2 Engine',
     createdAt: new Date().toISOString()
   };
 }
 
-// ----------------- YOUTUBE SCRAPER -----------------
-async function scrapeYouTube(url: string, apiKey?: string): Promise<MediaMetadata> {
+async function scrapeFacebook(url: string, apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
   const target = await resolveRedirectUrl(url);
+  if (serverMode === 'server1') {
+    return await scrapeFacebookServer1(target, apiKey);
+  }
+  if (serverMode === 'server2') {
+    return await scrapeFacebookServer2(target);
+  }
+  try {
+    return await scrapeFacebookServer1(target, apiKey);
+  } catch (err) {
+    console.warn('[Facebook] Server 1 failed, switching to Server 2:', err);
+    return await scrapeFacebookServer2(target);
+  }
+}
+
+
+// ----------------- YOUTUBE SCRAPER -----------------
+async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
+  const target = await resolveRedirectUrl(url);
+
   let title = 'YouTube Video';
   let author = 'YouTube Channel';
   let thumbnail = '';
@@ -456,62 +486,70 @@ async function scrapeYouTube(url: string, apiKey?: string): Promise<MediaMetadat
   let direct360Url = '';
   let directAudioUrl = '';
 
-  try {
-    const [vRes720, vRes480, vRes360, aRes] = await Promise.allSettled([
-      fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=video&quality=720p&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) }),
-      fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=video&quality=480p&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) }),
-      fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=video&quality=360p&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) }),
-      fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=audio&quality=128kbps&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) })
-    ]);
+  // Step 2: Query Server 1 (Neoxr API) if serverMode is 'server1' or 'auto'
+  if (serverMode !== 'server2') {
+    try {
+      const [vRes720, vRes480, vRes360, aRes] = await Promise.allSettled([
+        fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=video&quality=720p&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) }),
+        fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=video&quality=480p&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) }),
+        fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=video&quality=360p&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) }),
+        fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=audio&quality=128kbps&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) })
+      ]);
 
-    if (vRes720.status === 'fulfilled' && vRes720.value.ok) {
-      const j = await vRes720.value.json();
-      if (j && j.status) {
-        if (j.data?.url) direct720Url = j.data.url;
-        if (j.thumbnail) thumbnail = j.thumbnail;
-        if (j.title && title === 'YouTube Video') title = j.title;
-        if (j.channel && author === 'YouTube Channel') author = j.channel;
-        if (j.duration_seconds && !isNaN(Number(j.duration_seconds))) {
-          duration = Number(j.duration_seconds);
-        } else if (typeof j.duration === 'string') {
-          const parts = j.duration.split(':').map((p: string) => Number(p.trim()));
-          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-            duration = parts[0] * 60 + parts[1];
-          } else if (parts.length === 3) {
-            duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (vRes720.status === 'fulfilled' && vRes720.value.ok) {
+        const j = await vRes720.value.json();
+        if (j && j.status) {
+          if (j.data?.url) direct720Url = j.data.url;
+          if (j.thumbnail) thumbnail = j.thumbnail;
+          if (j.title && title === 'YouTube Video') title = j.title;
+          if (j.channel && author === 'YouTube Channel') author = j.channel;
+          if (j.duration_seconds && !isNaN(Number(j.duration_seconds))) {
+            duration = Number(j.duration_seconds);
+          } else if (typeof j.duration === 'string') {
+            const parts = j.duration.split(':').map((p: string) => Number(p.trim()));
+            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+              duration = parts[0] * 60 + parts[1];
+            } else if (parts.length === 3) {
+              duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+            }
+          }
+          if (j.duration && typeof j.duration === 'string') {
+            durationFormatted = j.duration;
           }
         }
-        if (j.duration && typeof j.duration === 'string') {
-          durationFormatted = j.duration;
+      }
+
+      if (vRes480.status === 'fulfilled' && vRes480.value.ok) {
+        const j = await vRes480.value.json();
+        if (j && j.status && j.data?.url) direct480Url = j.data.url;
+      }
+
+      if (vRes360.status === 'fulfilled' && vRes360.value.ok) {
+        const j = await vRes360.value.json();
+        if (j && j.status && j.data?.url) direct360Url = j.data.url;
+      }
+
+      if (aRes.status === 'fulfilled' && aRes.value.ok) {
+        const j = await aRes.value.json();
+        if (j && j.status && j.data?.url) {
+          directAudioUrl = j.data.url;
+          if (!duration && j.duration_seconds) {
+            duration = Number(j.duration_seconds);
+          }
+          if (!durationFormatted && j.duration) {
+            durationFormatted = String(j.duration);
+          }
         }
       }
+    } catch (err) {
+      console.warn('[YouTube] Server 1 query notice:', err);
     }
 
-    if (vRes480.status === 'fulfilled' && vRes480.value.ok) {
-      const j = await vRes480.value.json();
-      if (j && j.status && j.data?.url) direct480Url = j.data.url;
+    if (serverMode === 'server1' && !direct720Url && !direct480Url && !direct360Url && !directAudioUrl) {
+      throw new Error('Server 1 tidak dapat menemukan stream video YouTube.');
     }
-
-    if (vRes360.status === 'fulfilled' && vRes360.value.ok) {
-      const j = await vRes360.value.json();
-      if (j && j.status && j.data?.url) direct360Url = j.data.url;
-    }
-
-    if (aRes.status === 'fulfilled' && aRes.value.ok) {
-      const j = await aRes.value.json();
-      if (j && j.status && j.data?.url) {
-        directAudioUrl = j.data.url;
-        if (!duration && j.duration_seconds) {
-          duration = Number(j.duration_seconds);
-        }
-        if (!durationFormatted && j.duration) {
-          durationFormatted = String(j.duration);
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('[YouTube] Neoxr stream query notice:', err);
   }
+
 
   // Step 3: Fallback YouTube watch page HTML duration extraction if not detected yet
   if (!duration && videoId) {
@@ -612,85 +650,110 @@ async function scrapeYouTube(url: string, apiKey?: string): Promise<MediaMetadat
 }
 
 // ----------------- INSTAGRAM SCRAPER -----------------
-async function scrapeInstagram(url: string, apiKey?: string): Promise<MediaMetadata> {
-  const target = await resolveRedirectUrl(url);
+async function scrapeInstagramServer1(target: string, apiKey?: string): Promise<MediaMetadata> {
+  const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const neoKey = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const formats: MediaFormat[] = [];
+  const images: string[] = [];
+  const title = 'Instagram Reel / Post';
+  const thumbnail = '';
+
+  const neoRes = await fetch(`${NEOXR_BASE_URL}/ig?url=${encodeURIComponent(target)}&apikey=${encodeURIComponent(neoKey)}`, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!neoRes.ok) throw new Error(`Server 1 Instagram HTTP ${neoRes.status}`);
+  const neoJson = await neoRes.json();
+  if (!neoJson || !neoJson.status || !neoJson.data) {
+    throw new Error('Server 1 tidak dapat menemukan media Instagram.');
+  }
+
+  const rawData = neoJson.data;
+  const items = Array.isArray(rawData) ? rawData : (Array.isArray(rawData.data) ? rawData.data : [rawData]);
+  items.forEach((item: any, idx: number) => {
+    const itemUrl = item.url || item.video || item.photo || item.image || item.download || item;
+    if (typeof itemUrl === 'string' && itemUrl.startsWith('http')) {
+      const isAudio = /\.(mp3|m4a)(\?|$)/i.test(itemUrl);
+      const isImage = /\.(jpg|jpeg|png|webp)(\?|$)/i.test(itemUrl) || item.type === 'image';
+      if (isImage) {
+        images.push(itemUrl);
+        formats.push({
+          id: `ig-photo-${idx}`,
+          quality: `HD Foto Instagram #${idx + 1}`,
+          resolution: 'HD Foto',
+          type: 'photos',
+          extension: 'jpg',
+          url: itemUrl,
+          isDirect: true,
+          note: 'Foto Instagram Resolusi Penuh'
+        });
+      } else if (isAudio) {
+        formats.push({
+          id: `ig-audio-${idx}`,
+          quality: 'MP3 Audio Instagram',
+          resolution: 'Audio',
+          type: 'audio',
+          extension: 'mp3',
+          url: itemUrl,
+          isDirect: true,
+          note: 'Audio asli postingan Instagram'
+        });
+      } else {
+        formats.push({
+          id: `ig-vid-${idx}`,
+          quality: '1080p HD Video MP4',
+          resolution: '1080p',
+          type: 'video',
+          extension: 'mp4',
+          url: itemUrl,
+          isDirect: true,
+          note: 'Video Instagram Jernih'
+        });
+      }
+    }
+  });
+
+  if (formats.length === 0) throw new Error('Format media tidak ditemukan di Server 1.');
+
+  const videoFmt = formats.find((f) => f.type === 'video');
+  if (videoFmt && !formats.some((f) => f.type === 'audio')) {
+    formats.push({
+      id: 'ig-audio',
+      quality: '320 kbps MP3 Audio',
+      resolution: 'Audio',
+      type: 'audio',
+      extension: 'mp3',
+      url: videoFmt.url,
+      isDirect: false,
+      note: 'Ekstrak audio dari video Instagram'
+    });
+  }
+
+  return {
+    id: `ig-${Date.now()}`,
+    url: target,
+    platform: 'instagram',
+    title,
+    author: 'Instagram Creator',
+    thumbnail: thumbnail || (images[0] || 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=800'),
+    duration: 30,
+    durationFormatted: '00:30',
+    formats,
+    images: images.length > 0 ? images : undefined,
+    isPhotoSlide: images.length > 1,
+    source: 'Server 1 Engine',
+    createdAt: new Date().toISOString()
+  };
+}
+
+async function scrapeInstagramServer2(target: string, shortcode: string): Promise<MediaMetadata> {
   let title = 'Instagram Reel / Post';
   let thumbnail = '';
   const formats: MediaFormat[] = [];
   let images: string[] = [];
 
-  const shortcodeMatch = target.match(/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i);
-  const shortcode = shortcodeMatch ? shortcodeMatch[1] : '';
-
-  // Attempt 1: Neoxr /api/ig (official working endpoint)
-  const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
-  const neoKey = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
-
-  try {
-    const neoRes = await fetch(`${NEOXR_BASE_URL}/ig?url=${encodeURIComponent(target)}&apikey=${encodeURIComponent(neoKey)}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      signal: AbortSignal.timeout(8000)
-    });
-
-    if (neoRes.ok) {
-      const neoJson = await neoRes.json();
-      if (neoJson && neoJson.status && neoJson.data) {
-        const rawData = neoJson.data;
-        const items = Array.isArray(rawData) ? rawData : (Array.isArray(rawData.data) ? rawData.data : [rawData]);
-
-        items.forEach((item: any, idx: number) => {
-          const itemUrl = item.url || item.video || item.photo || item.image || item.download || item;
-          if (typeof itemUrl === 'string' && itemUrl.startsWith('http')) {
-            const isAudio = /\.(mp3|m4a)(\?|$)/i.test(itemUrl);
-            const isImage = /\.(jpg|jpeg|png|webp)(\?|$)/i.test(itemUrl) || item.type === 'image';
-
-            if (isImage) {
-              images.push(itemUrl);
-              formats.push({
-                id: `ig-photo-${idx}`,
-                quality: `HD Foto Instagram #${idx + 1}`,
-                resolution: 'HD Foto',
-                type: 'photos',
-                extension: 'jpg',
-                url: itemUrl,
-                isDirect: true,
-                note: 'Foto Instagram Resolusi Penuh'
-              });
-            } else if (isAudio) {
-              formats.push({
-                id: `ig-audio-${idx}`,
-                quality: 'MP3 Audio Instagram',
-                resolution: 'Audio',
-                type: 'audio',
-                extension: 'mp3',
-                url: itemUrl,
-                isDirect: true,
-                note: 'Audio asli postingan Instagram'
-              });
-            } else {
-              formats.push({
-                id: `ig-vid-${idx}`,
-                quality: '1080p HD Video MP4',
-                resolution: '1080p',
-                type: 'video',
-                extension: 'mp4',
-                url: itemUrl,
-                isDirect: true,
-                note: 'Video Instagram Jernih'
-              });
-            }
-          }
-        });
-      }
-    }
-  } catch (neoErr) {
-    console.warn('[Instagram] Neoxr attempt skipped:', neoErr);
-  }
-
-  // Attempt 2: Instagram Embed captioned page parser (direct CDN extraction)
-  if (formats.length === 0 && shortcode) {
+  // Attempt 2a: Embed captioned page parser
+  if (shortcode) {
     try {
       const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`;
       const embedRes = await fetch(embedUrl, {
@@ -741,11 +804,11 @@ async function scrapeInstagram(url: string, apiKey?: string): Promise<MediaMetad
         }
       }
     } catch (embedErr) {
-      console.warn('[Instagram] Embed extraction skipped:', embedErr);
+      console.warn('[Instagram] Server 2 embed notice:', embedErr);
     }
   }
 
-  // Attempt 3: fdown.co.in Instagram endpoint
+  // Attempt 2b: fdown.co.in alternative endpoint
   if (formats.length === 0) {
     try {
       const res = await fetch('https://fdown.co.in/ajax', {
@@ -781,11 +844,10 @@ async function scrapeInstagram(url: string, apiKey?: string): Promise<MediaMetad
         }
       }
     } catch (e) {
-      console.warn('[Instagram] fdown fallback skipped:', e);
+      console.warn('[Instagram] Server 2 fdown notice:', e);
     }
   }
 
-  // Audio extraction format if video exists
   const videoFmt = formats.find((f) => f.type === 'video');
   if (videoFmt && !formats.some((f) => f.type === 'audio')) {
     formats.push({
@@ -801,7 +863,7 @@ async function scrapeInstagram(url: string, apiKey?: string): Promise<MediaMetad
   }
 
   if (formats.length === 0) {
-    throw new Error('Tidak dapat mengekstrak media dari tautan Instagram ini. Pastikan konten bersifat publik.');
+    throw new Error('Server 2 tidak dapat mengekstrak media Instagram.');
   }
 
   return {
@@ -816,161 +878,192 @@ async function scrapeInstagram(url: string, apiKey?: string): Promise<MediaMetad
     formats,
     images: images.length > 0 ? images : undefined,
     isPhotoSlide: images.length > 1,
-    source: 'Instagram Cloud Engine',
+    source: 'Server 2 Engine',
     createdAt: new Date().toISOString()
   };
 }
 
+async function scrapeInstagram(url: string, apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
+  const target = await resolveRedirectUrl(url);
+  const shortcodeMatch = target.match(/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i);
+  const shortcode = shortcodeMatch ? shortcodeMatch[1] : '';
+
+  if (serverMode === 'server1') {
+    return await scrapeInstagramServer1(target, apiKey);
+  }
+  if (serverMode === 'server2') {
+    return await scrapeInstagramServer2(target, shortcode);
+  }
+  try {
+    return await scrapeInstagramServer1(target, apiKey);
+  } catch (err) {
+    console.warn('[Instagram] Server 1 failed, switching to Server 2:', err);
+    return await scrapeInstagramServer2(target, shortcode);
+  }
+}
+
+
 // ----------------- PINTEREST SCRAPER -----------------
-async function scrapePinterest(rawUrl: string, apiKey?: string): Promise<MediaMetadata> {
-  const url = await resolveRedirectUrl(rawUrl);
+async function scrapePinterestServer1(url: string, apiKey?: string): Promise<MediaMetadata> {
   let title = 'Pinterest Media';
   let author = 'Pinterest Creator';
   let thumbnail = '';
   const formats: MediaFormat[] = [];
   let images: string[] = [];
 
-  // Attempt 1: Neoxr /api/pin (verified correct endpoint)
   const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const neoKey = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
 
-  try {
-    const neoRes = await fetch(`${NEOXR_BASE_URL}/pin?url=${encodeURIComponent(url)}&apikey=${encodeURIComponent(neoKey)}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(8000)
+  const neoRes = await fetch(`${NEOXR_BASE_URL}/pin?url=${encodeURIComponent(url)}&apikey=${encodeURIComponent(neoKey)}`, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!neoRes.ok) throw new Error(`Server 1 Pinterest HTTP ${neoRes.status}`);
+  const neoJson = await neoRes.json();
+  if (!neoJson || !neoJson.status || !neoJson.data) {
+    throw new Error('Server 1 tidak dapat menemukan media Pinterest.');
+  }
+
+  const d = neoJson.data;
+  if (d.title) title = d.title;
+  if (d.author) author = d.author;
+  if (d.thumbnail || d.cover) thumbnail = d.thumbnail || d.cover;
+
+  const vidUrl = d.url || d.video || d.video_url || d.download;
+  const isVid = vidUrl && (/\.mp4/i.test(vidUrl) || d.type === 'video');
+
+  if (isVid && typeof vidUrl === 'string') {
+    formats.push({
+      id: 'nx-pin-vid-1080',
+      quality: '1080p Full HD Video',
+      resolution: '1080p',
+      type: 'video',
+      extension: 'mp4',
+      url: vidUrl,
+      isDirect: true,
+      note: 'Video Pinterest Resolusi Penuh'
     });
-    if (neoRes.ok) {
-      const neoJson = await neoRes.json();
-      if (neoJson && neoJson.status && neoJson.data) {
-        const d = neoJson.data;
-        if (d.title) title = d.title;
-        if (d.author) author = d.author;
-        if (d.thumbnail || d.cover) thumbnail = d.thumbnail || d.cover;
-
-        const vidUrl = d.url || d.video || d.video_url || d.download;
-        const isVid = vidUrl && (/\.mp4/i.test(vidUrl) || d.type === 'video');
-
-        if (isVid && typeof vidUrl === 'string') {
-          formats.push({
-            id: 'nx-pin-vid-1080',
-            quality: '1080p Full HD Video',
-            resolution: '1080p',
-            type: 'video',
-            extension: 'mp4',
-            url: vidUrl,
-            isDirect: true,
-            note: 'Video Pinterest Resolusi Penuh'
-          });
-          formats.push({
-            id: 'nx-pin-audio',
-            quality: '320 kbps (Ekstrak Audio MP3)',
-            resolution: 'Audio',
-            type: 'audio',
-            extension: 'mp3',
-            url: vidUrl,
-            isDirect: false,
-            note: 'Audio musik pin'
-          });
-        }
-
-        const photoUrl = d.image || d.photo || (!isVid ? d.url : undefined);
-        if (photoUrl && typeof photoUrl === 'string' && photoUrl.startsWith('http')) {
-          const origPhoto = photoUrl.replace(/\/(?:236x|474x|564x|736x)\//i, '/originals/');
-          images = [origPhoto];
-          formats.push({
-            id: 'nx-pin-photo',
-            quality: 'Ultra HD 4K Original (Resolusi Asli)',
-            resolution: '4K Foto',
-            type: 'photos',
-            extension: origPhoto.endsWith('.png') ? 'png' : 'jpg',
-            url: origPhoto,
-            isDirect: true,
-            note: 'Foto asli tanpa kompresi'
-          });
-          if (!thumbnail) thumbnail = origPhoto;
-        }
-      }
-    }
-  } catch (neoErr) {
-    console.warn('[Pinterest] Neoxr attempt skipped:', neoErr);
+    formats.push({
+      id: 'nx-pin-audio',
+      quality: '320 kbps (Ekstrak Audio MP3)',
+      resolution: 'Audio',
+      type: 'audio',
+      extension: 'mp3',
+      url: vidUrl,
+      isDirect: false,
+      note: 'Audio musik pin'
+    });
   }
 
-  // Attempt 2: Direct Pinterest HTML & __PWS_DATA__ extraction
-  if (formats.length === 0) {
+  const photoUrl = d.image || d.photo || (!isVid ? d.url : undefined);
+  if (photoUrl && typeof photoUrl === 'string' && photoUrl.startsWith('http')) {
+    const origPhoto = photoUrl.replace(/\/(?:236x|474x|564x|736x)\//i, '/originals/');
+    images = [origPhoto];
+    formats.push({
+      id: 'nx-pin-photo',
+      quality: 'Ultra HD 4K Original (Resolusi Asli)',
+      resolution: '4K Foto',
+      type: 'photos',
+      extension: origPhoto.endsWith('.png') ? 'png' : 'jpg',
+      url: origPhoto,
+      isDirect: true,
+      note: 'Foto asli tanpa kompresi'
+    });
+    if (!thumbnail) thumbnail = origPhoto;
+  }
+
+  if (formats.length === 0) throw new Error('Format media tidak ditemukan di Server 1.');
+
+  return {
+    id: `pin-${Date.now()}`,
+    url,
+    platform: 'pinterest',
+    title,
+    author,
+    thumbnail: thumbnail || (images[0] || ''),
+    duration: 15,
+    durationFormatted: '00:15',
+    formats,
+    images: images.length > 0 ? images : undefined,
+    isPhotoSlide: images.length > 1,
+    source: 'Server 1 Engine',
+    createdAt: new Date().toISOString()
+  };
+}
+
+async function scrapePinterestServer2(url: string): Promise<MediaMetadata> {
+  let title = 'Pinterest Media';
+  let author = 'Pinterest Creator';
+  let thumbnail = '';
+  const formats: MediaFormat[] = [];
+  let images: string[] = [];
+
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9'
+    },
+    signal: AbortSignal.timeout(8000)
+  });
+
+  if (!response.ok) throw new Error(`Server 2 Pinterest HTTP ${response.status}`);
+  const html = await response.text();
+  const $ = cheerio.load(html);
+
+  const pageTitle = $('title').text() || $('meta[property="og:title"]').attr('content');
+  if (pageTitle) {
+    title = pageTitle.replace(/\s*\|\s*Pinterest.*$/i, '').trim() || 'Pinterest Pin';
+  }
+
+  const pwsJson = $('#__PWS_DATA__').html();
+  if (pwsJson) {
     try {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9'
-        },
-        signal: AbortSignal.timeout(8000)
-      });
-
-      if (response.ok) {
-        const html = await response.text();
-        const $ = cheerio.load(html);
-
-        const pageTitle = $('title').text() || $('meta[property="og:title"]').attr('content');
-        if (pageTitle) {
-          title = pageTitle.replace(/\s*\|\s*Pinterest.*$/i, '').trim() || 'Pinterest Pin';
-        }
-
-        // Check __PWS_DATA__ JSON script
-        const pwsJson = $('#__PWS_DATA__').html();
-        if (pwsJson) {
-          try {
-            const pwsData = JSON.parse(pwsJson);
-            const extracted = extractAllMediaUrls(pwsData);
-            for (const v of extracted.videos) {
-              formats.push({
-                id: `pin-vid-${formats.length}`,
-                quality: '1080p Full HD Video',
-                resolution: '1080p',
-                type: 'video',
-                extension: 'mp4',
-                url: v,
-                isDirect: true,
-                note: 'Video Pinterest Resolusi Asli'
-              });
-            }
-            for (const img of extracted.images) {
-              const origImg = img.replace(/\/(?:236x|474x|564x|736x)\//i, '/originals/');
-              if (!images.includes(origImg)) images.push(origImg);
-            }
-          } catch {}
-        }
-
-        // Regex scan for original pin images
-        const origMatches = [...html.matchAll(/https:\/\/[^"'\s\\]+\.pinimg\.com\/originals\/[^"'\s\\]+/gi)]
-          .map((m) => m[0].replace(/\\/g, '').replace(/["')\];,].*$/, ''))
-          .filter((u) => /\.(jpg|jpeg|png|webp)/i.test(u));
-
-        for (const orig of origMatches) {
-          if (!images.includes(orig)) images.push(orig);
-        }
-
-        if (images.length > 0) {
-          if (!thumbnail) thumbnail = images[0];
-          formats.push({
-            id: 'pin-photo-orig',
-            quality: 'Ultra HD 4K Original (Resolusi Asli)',
-            resolution: '4K Foto',
-            type: 'photos',
-            extension: images[0].endsWith('.png') ? 'png' : 'jpg',
-            url: images[0],
-            isDirect: true,
-            note: 'Gambar asli resolusi penuh tanpa kompresi'
-          });
-        }
+      const pwsData = JSON.parse(pwsJson);
+      const extracted = extractAllMediaUrls(pwsData);
+      for (const v of extracted.videos) {
+        formats.push({
+          id: `pin-vid-${formats.length}`,
+          quality: '1080p Full HD Video',
+          resolution: '1080p',
+          type: 'video',
+          extension: 'mp4',
+          url: v,
+          isDirect: true,
+          note: 'Video Pinterest Resolusi Asli'
+        });
       }
-    } catch (htmlErr) {
-      console.warn('[Pinterest] HTML parsing skipped:', htmlErr);
-    }
+      for (const img of extracted.images) {
+        const origImg = img.replace(/\/(?:236x|474x|564x|736x)\//i, '/originals/');
+        if (!images.includes(origImg)) images.push(origImg);
+      }
+    } catch {}
+  }
+
+  const origMatches = [...html.matchAll(/https:\/\/[^"'\s\\]+\.pinimg\.com\/originals\/[^"'\s\\]+/gi)]
+    .map((m) => m[0].replace(/\\/g, '').replace(/["')\];,].*$/, ''))
+    .filter((u) => /\.(jpg|jpeg|png|webp)/i.test(u));
+
+  for (const orig of origMatches) {
+    if (!images.includes(orig)) images.push(orig);
+  }
+
+  if (images.length > 0) {
+    if (!thumbnail) thumbnail = images[0];
+    formats.push({
+      id: 'pin-photo-orig',
+      quality: 'Ultra HD 4K Original (Resolusi Asli)',
+      resolution: '4K Foto',
+      type: 'photos',
+      extension: images[0].endsWith('.png') ? 'png' : 'jpg',
+      url: images[0],
+      isDirect: true,
+      note: 'Gambar asli resolusi penuh tanpa kompresi'
+    });
   }
 
   if (formats.length === 0) {
-    throw new Error('Tidak dapat menemukan media dari pin Pinterest ini. Pastikan tautan bersifat publik.');
+    throw new Error('Server 2 tidak dapat menemukan media Pinterest.');
   }
 
   return {
@@ -985,10 +1078,27 @@ async function scrapePinterest(rawUrl: string, apiKey?: string): Promise<MediaMe
     formats,
     images: images.length > 0 ? images : undefined,
     isPhotoSlide: images.length > 1,
-    source: 'Pinterest Native Cloud Engine',
+    source: 'Server 2 Engine',
     createdAt: new Date().toISOString()
   };
 }
+
+async function scrapePinterest(rawUrl: string, apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
+  const url = await resolveRedirectUrl(rawUrl);
+  if (serverMode === 'server1') {
+    return await scrapePinterestServer1(url, apiKey);
+  }
+  if (serverMode === 'server2') {
+    return await scrapePinterestServer2(url);
+  }
+  try {
+    return await scrapePinterestServer1(url, apiKey);
+  } catch (err) {
+    console.warn('[Pinterest] Server 1 failed, switching to Server 2:', err);
+    return await scrapePinterestServer2(url);
+  }
+}
+
 
 // ----------------- SPOTIFY METADATA & GENRE ENRICHER -----------------
 async function enrichSpotifyMetadata(
@@ -1065,7 +1175,7 @@ async function enrichSpotifyMetadata(
 }
 
 // ----------------- SPOTIFY SCRAPER -----------------
-async function scrapeSpotify(rawUrl: string, apiKey?: string): Promise<MediaMetadata> {
+async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
   const trimmed = rawUrl.trim();
   
   // Extract entity type and ID: track, playlist, album, episode
@@ -1099,57 +1209,64 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string): Promise<MediaMeta
   const formats: MediaFormat[] = [];
 
   // =========================================================================
-  // STEP 1: Cek API Neo terlebih dahulu (menggunakan apikey j3i3mg secara default)
+  // STEP 1: Cek Server 1 (jika mode server1 atau auto)
   // =========================================================================
   let neoSucceeded = false;
-  try {
-    const neoEndpoint = `https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(trimmed)}&apikey=${encodeURIComponent(neoKey)}`;
-    const neoRes = await fetch(neoEndpoint, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json'
-      },
-      signal: AbortSignal.timeout(10000)
-    });
+  if (serverMode !== 'server2') {
+    try {
+      const neoEndpoint = `https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(trimmed)}&apikey=${encodeURIComponent(neoKey)}`;
+      const neoRes = await fetch(neoEndpoint, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json'
+        },
+        signal: AbortSignal.timeout(10000)
+      });
 
-    if (neoRes.ok) {
-      const neoJson = await neoRes.json();
-      if (neoJson && (neoJson.status === true || neoJson.data)) {
-        const d = neoJson.data?.data || neoJson.data;
-        if (d && typeof d === 'object') {
-          neoSucceeded = true;
+      if (neoRes.ok) {
+        const neoJson = await neoRes.json();
+        if (neoJson && (neoJson.status === true || neoJson.data)) {
+          const d = neoJson.data?.data || neoJson.data;
+          if (d && typeof d === 'object') {
+            neoSucceeded = true;
 
-          if (d.title) title = d.title;
-          if (d.artist || d.author) author = d.artist || d.author;
-          if (d.thumbnail || d.cover) thumbnail = d.thumbnail || d.cover;
-          if (d.preview || d.preview_url) previewUrl = d.preview || d.preview_url;
-          if (d.url || d.download || d.link) fullDownloadUrl = d.url || d.download || d.link;
+            if (d.title) title = d.title;
+            if (d.artist || d.author) author = d.artist || d.author;
+            if (d.thumbnail || d.cover) thumbnail = d.thumbnail || d.cover;
+            if (d.preview || d.preview_url) previewUrl = d.preview || d.preview_url;
+            if (d.url || d.download || d.link) fullDownloadUrl = d.url || d.download || d.link;
 
-          // Parse duration
-          if (typeof d.duration === 'string' && d.duration.includes(':')) {
-            const parts = d.duration.split(':').map((p: string) => Number(p.trim()));
-            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-              duration = parts[0] * 60 + parts[1];
-            } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-              duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+            // Parse duration
+            if (typeof d.duration === 'string' && d.duration.includes(':')) {
+              const parts = d.duration.split(':').map((p: string) => Number(p.trim()));
+              if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                duration = parts[0] * 60 + parts[1];
+              } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+                duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+              }
+            } else if (typeof d.duration === 'number') {
+              duration = d.duration > 1000 ? Math.round(d.duration / 1000) : d.duration;
             }
-          } else if (typeof d.duration === 'number') {
-            duration = d.duration > 1000 ? Math.round(d.duration / 1000) : d.duration;
-          }
 
-          // Clean title if Neo returns "Song Title - Artist"
-          if (title.includes(' - ') && author && title.toLowerCase().includes(author.toLowerCase())) {
-            const parts = title.split(' - ');
-            if (parts[1].trim().toLowerCase() === author.trim().toLowerCase()) {
-              title = parts[0].trim();
+            // Clean title if Neo returns "Song Title - Artist"
+            if (title.includes(' - ') && author && title.toLowerCase().includes(author.toLowerCase())) {
+              const parts = title.split(' - ');
+              if (parts[1].trim().toLowerCase() === author.trim().toLowerCase()) {
+                title = parts[0].trim();
+              }
             }
           }
         }
       }
+    } catch (neoErr: any) {
+      console.warn('[Spotify Engine] Server 1 API check notice:', neoErr?.message || neoErr);
     }
-  } catch (neoErr: any) {
-    console.warn('[Spotify Engine] Neo API check notice:', neoErr?.message || neoErr);
+
+    if (serverMode === 'server1' && (!neoSucceeded || !fullDownloadUrl)) {
+      throw new Error('Server 1 tidak dapat menemukan media Spotify.');
+    }
   }
+
 
   // =========================================================================
   // STEP 2: Lengkapi Metadata Resmi (Genre, Album, Cover HD, Pratinjau Audio)
@@ -1319,7 +1436,8 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string): Promise<MediaMeta
 }
 
 // ----------------- TERABOX SCRAPER -----------------
-async function scrapeTerabox(url: string, apiKey?: string): Promise<MediaMetadata> {
+async function scrapeTerabox(url: string, apiKey?: string, _serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
+
   const target = await resolveRedirectUrl(url);
   const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const key = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
@@ -1917,7 +2035,11 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
 }
 
 // ----------------- MAIN EXTRACTOR DISPATCHER -----------------
-export async function extractMedia(rawUrl: string, apiKey?: string): Promise<MediaMetadata> {
+export async function extractMedia(
+  rawUrl: string,
+  apiKey?: string,
+  serverMode: ServerMode = 'auto'
+): Promise<MediaMetadata> {
   let url = rawUrl.trim();
   if (!url) {
     throw new Error('Masukkan URL video atau audio yang ingin diunduh.');
@@ -1939,39 +2061,32 @@ export async function extractMedia(rawUrl: string, apiKey?: string): Promise<Med
     throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Facebook, Instagram, Pinterest, Spotify, dan TeraBox.');
   }
 
-  // 2. YouTube has dedicated multi-resolution stream generator (includes Neoxr high-speed direct stream)
-  if (platform === 'youtube') {
-    return await scrapeYouTube(url, apiKey);
-  }
+  const mode: ServerMode = serverMode || 'auto';
 
-  // 3. Spotify dedicated engine (Neo API first, then official Spotify Web API enricher)
-  if (platform === 'spotify') {
-    return await scrapeSpotify(url, apiKey);
-  }
+  // Platforms without dedicated Server 2 backup (e.g. TeraBox)
+  // Per requirement: "sementara platform tersebut tetep pakai server 1 tapi gada peringatan apapun karena server 2 di platform anu belum ada"
+  const effectiveMode: ServerMode =
+    platform === 'terabox' && mode === 'server2'
+      ? 'server1'
+      : mode;
 
-  // 4. PRIMARY ENGINE for TikTok, Facebook, Instagram, Pinterest, TeraBox: Try Neoxr API
-  try {
-    const neoxrResult = await scrapeNeoxr(url, platform, apiKey);
-    if (neoxrResult && neoxrResult.formats.length > 0) {
-      return neoxrResult;
-    }
-  } catch (neoxrErr: any) {
-    console.warn(`[Engine] Neoxr primary engine skipped (${neoxrErr?.message || neoxrErr}). Switching to dedicated engine...`);
-  }
-
-  // 5. SECONDARY ENGINE: Platform-specific dedicated extractors
   switch (platform) {
+    case 'youtube':
+      return await scrapeYouTube(url, apiKey, effectiveMode);
     case 'tiktok':
-      return await scrapeTikTok(url);
+      return await scrapeTikTok(url, apiKey, effectiveMode);
     case 'facebook':
-      return await scrapeFacebook(url, apiKey);
+      return await scrapeFacebook(url, apiKey, effectiveMode);
     case 'instagram':
-      return await scrapeInstagram(url, apiKey);
+      return await scrapeInstagram(url, apiKey, effectiveMode);
     case 'pinterest':
-      return await scrapePinterest(url, apiKey);
+      return await scrapePinterest(url, apiKey, effectiveMode);
+    case 'spotify':
+      return await scrapeSpotify(url, apiKey, effectiveMode);
     case 'terabox':
-      return await scrapeTerabox(url, apiKey);
+      return await scrapeTerabox(url, apiKey, effectiveMode);
     default:
       throw new Error('Platform tidak didukung.');
   }
 }
+
