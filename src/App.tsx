@@ -20,7 +20,7 @@ import { TermsModal } from './components/TermsModal.tsx';
 import { AnimatePresence, motion } from 'motion/react';
 import { Loader2, Download, CheckCircle2, AlertCircle, X } from 'lucide-react';
 
-import { detectPlatform } from './services/scraper.ts';
+import { detectPlatform, formatDuration, formatBytes } from './services/scraper.ts';
 import {
   saveDownloadedMedia,
   getAllHistory,
@@ -221,56 +221,41 @@ export default function App() {
       let finalUrl = targetFormat.url;
       let jobId = targetFormat.jobId;
 
-      // Handle async conversion if needed (e.g. YouTube loader)
-      if (!targetFormat.isDirect || (targetFormat.url && targetFormat.url.includes('loader.to'))) {
-        if (!jobId) {
-          const loaderFormat = mapFormatForLoader(targetFormat);
-          setDownloadStatusText(`Memulai antrean konversi ${targetFormat.quality}...`);
-          try {
-            const startRes = await fetch('/api/start-job', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                format: loaderFormat,
-                url: mediaData.url
-              })
-            });
-            if (startRes.ok) {
-              const startData = await startRes.json();
-              if (startData.downloadUrl) {
-                finalUrl = startData.downloadUrl;
-              } else if (startData.id) {
-                jobId = startData.id;
-              }
-            } else {
-              const directFallback = mediaData.formats.find(
-                (f) => f.isDirect && f.url && f.url.startsWith('http') && !f.url.includes('loader.to')
-              );
-              if (directFallback) {
-                finalUrl = directFallback.url;
-              }
-            }
-          } catch (e: any) {
-            console.warn('Start job notice:', e);
-            const directFallback = mediaData.formats.find(
-              (f) => f.isDirect && f.url && f.url.startsWith('http') && !f.url.includes('loader.to')
-            );
-            if (directFallback) {
-              finalUrl = directFallback.url;
+      // Handle resolution if url is missing or requires async conversion
+      if (!finalUrl || !finalUrl.startsWith('http')) {
+        const loaderFormat = mapFormatForLoader(targetFormat);
+        setDownloadStatusText(`Memulai resolusi ${targetFormat.quality}...`);
+        try {
+          const startRes = await fetch('/api/start-job', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              format: loaderFormat,
+              url: mediaData.url
+            })
+          });
+          if (startRes.ok) {
+            const startData = await startRes.json();
+            if (startData.downloadUrl) {
+              finalUrl = startData.downloadUrl;
+            } else if (startData.id) {
+              jobId = startData.id;
             }
           }
+        } catch (e: any) {
+          console.warn('Start job notice:', e);
         }
 
         // Poll progress if jobId exists
-        if (jobId && (!finalUrl.startsWith('http') || finalUrl.includes('loader.to'))) {
-          setDownloadStatusText('Sedang mengonversi format...');
+        if (jobId && (!finalUrl || !finalUrl.startsWith('http'))) {
+          setDownloadStatusText('Sedang menyiapkan format...');
           let finished = false;
           let attempts = 0;
 
-          while (!finished && attempts < 35) {
+          while (!finished && attempts < 25) {
             attempts++;
-            await new Promise((r) => setTimeout(r, 1200));
-            setDownloadProgress((prev) => Math.min(88, prev + 2));
+            await new Promise((r) => setTimeout(r, 1000));
+            setDownloadProgress((prev) => Math.min(85, prev + 3));
 
             try {
               const progRes = await fetch(`/api/progress/${encodeURIComponent(jobId)}`);
@@ -288,26 +273,25 @@ export default function App() {
               console.warn('Progress poll notice:', e);
             }
           }
+        }
+      }
 
-          if (!finished || !finalUrl.startsWith('http')) {
-            const directFallback = mediaData.formats.find(
-              (f) => f.isDirect && f.url && f.url.startsWith('http') && !f.url.includes('loader.to')
-            );
-            if (directFallback) {
-              finalUrl = directFallback.url;
-            } else {
-              throw new Error('Waktu tunggu habis. Silakan pilih resolusi lain atau coba lagi.');
-            }
-          }
+      // Direct fallback to best available format from metadata if still missing
+      if (!finalUrl || !finalUrl.startsWith('http')) {
+        const directFallback = mediaData.formats.find(
+          (f) => f.isDirect && f.url && f.url.startsWith('http') && !f.url.includes('loader.to')
+        );
+        if (directFallback) {
+          finalUrl = directFallback.url;
         }
       }
 
       if (!finalUrl || typeof finalUrl !== 'string' || !finalUrl.startsWith('http')) {
-        throw new Error('Tautan unduhan tidak valid dari server sumber.');
+        throw new Error('Tautan unduhan tidak tersedia dari server sumber saat ini.');
       }
 
-      setDownloadProgress(90);
-      setDownloadStatusText('Memulai pengunduhan berkas...');
+      setDownloadProgress(50);
+      setDownloadStatusText('Mengunduh berkas media...');
 
       let downloadHref = `/api/proxy-download?url=${encodeURIComponent(finalUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(mediaData.platform)}&sourceUrl=${encodeURIComponent(mediaData.url)}`;
       if (mediaData.platform === 'spotify') {
@@ -315,22 +299,52 @@ export default function App() {
         downloadHref += `&title=${encodeURIComponent(mediaData.title || '')}&artist=${encodeURIComponent(mediaData.author || '')}&album=${encodeURIComponent(mediaData.album || '')}&genre=${encodeURIComponent(mediaData.genre || 'Pop')}&year=${encodeURIComponent(mediaData.releaseDate || '')}&cover=${encodeURIComponent(mediaData.thumbnail || '')}&apiKey=${encodeURIComponent(customKey)}`;
       }
 
-      // Trigger automatic browser download
+      // Fetch the binary media stream and verify it is not an HTML/JSON error
+      const dlResponse = await fetch(downloadHref);
+      if (!dlResponse.ok) {
+        const errText = await dlResponse.text();
+        let errMsg = 'Gagal mengunduh media dari server sumber.';
+        try {
+          const parsed = JSON.parse(errText);
+          if (parsed.error) errMsg = parsed.error;
+        } catch {}
+        throw new Error(errMsg);
+      }
+
+      const contentType = dlResponse.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const parsed = await dlResponse.json();
+        throw new Error(parsed.error || 'Server sumber gagal menyediakan stream media.');
+      }
+
+      setDownloadProgress(80);
+      setDownloadStatusText('Menyimpan berkas ke perangkat...');
+
+      const mediaBlob = await dlResponse.blob();
+      if (mediaBlob.size < 120 && mediaBlob.type.includes('text')) {
+        throw new Error('Berkas media yang diterima tidak valid.');
+      }
+
+      // Trigger instant automatic browser download from in-memory verified blob
+      const blobUrl = URL.createObjectURL(mediaBlob);
       const dlLink = document.createElement('a');
-      dlLink.href = downloadHref;
+      dlLink.href = blobUrl;
       dlLink.download = filename;
-      dlLink.target = '_blank';
-      dlLink.rel = 'noopener noreferrer';
       document.body.appendChild(dlLink);
       dlLink.click();
       setTimeout(() => {
         try {
           document.body.removeChild(dlLink);
+          URL.revokeObjectURL(blobUrl);
         } catch {}
-      }, 1500);
+      }, 30000);
 
-      // Save to lightweight IndexedDB history (storing streamable downloadUrl, duration, thumbnail, title)
+      // Save to lightweight IndexedDB history with duration, thumbnail, and streamable URL
       try {
+        const finalDuration = mediaData.duration || (targetFormat.type === 'audio' ? 210 : 60);
+        const finalDurationFormatted = mediaData.durationFormatted || formatDuration(finalDuration);
+        const finalThumbnail = mediaData.thumbnail || (mediaData.platform === 'spotify' ? 'https://open.spotifycdn.com/cdn/images/favicon.0f31d2ea.ico' : '');
+
         await saveDownloadedMedia({
           sourceUrl: mediaData.url,
           platform: mediaData.platform,
@@ -338,17 +352,18 @@ export default function App() {
           author: mediaData.author || mediaData.platform,
           artist: mediaData.author,
           album: mediaData.album,
-          thumbnail: mediaData.thumbnail,
-          duration: mediaData.duration,
-          durationFormatted: mediaData.durationFormatted,
+          thumbnail: finalThumbnail,
+          duration: finalDuration,
+          durationFormatted: finalDurationFormatted,
           quality: targetFormat.quality || selectedVideoRes,
           resolution: targetFormat.resolution || selectedVideoRes,
           mediaType: targetFormat.type,
           extension: ext as any,
           filename: filename,
-          filesize: targetFormat.filesize || '',
-          filesizeBytes: targetFormat.filesizeBytes || 0,
-          downloadUrl: finalUrl
+          filesize: targetFormat.filesize || formatBytes(mediaBlob.size),
+          filesizeBytes: mediaBlob.size,
+          downloadUrl: finalUrl,
+          blob: mediaBlob
         });
         await loadHistory();
       } catch (histErr) {

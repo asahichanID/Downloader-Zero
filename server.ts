@@ -153,82 +153,48 @@ async function startServer() {
       }
 
       const normalizedFormat = normalizeLoaderFormat(format);
-      const response = await fetch(
-        `https://loader.to/ajax/download.php?format=${encodeURIComponent(normalizedFormat)}&url=${encodeURIComponent(url)}`,
-        {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          },
+      const neoKey = (process.env.NEOXR_API_KEY || 'j3i3mg').trim().replace(/^["']|["']$/g, '');
+      const isAudio = normalizedFormat === 'mp3';
+      const qualityMap: Record<string, string> = {
+        '2160': '720p',
+        '1440': '720p',
+        '1080': '720p',
+        '720': '720p',
+        '480': '480p',
+        '360': '360p',
+        'mp3': '128kbps'
+      };
+      const neoQ = qualityMap[normalizedFormat] || (isAudio ? '128kbps' : '720p');
+      const neoType = isAudio ? 'audio' : 'video';
+      const neoEp = `https://api.neoxr.eu/api/youtube?url=${encodeURIComponent(url)}&type=${neoType}&quality=${neoQ}&apikey=${encodeURIComponent(neoKey)}`;
+
+      try {
+        const neoRes = await fetch(neoEp, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
           signal: AbortSignal.timeout(10000)
-        }
-      );
-
-      let loaderFailed = false;
-      let loaderErrMsg = '';
-      if (!response.ok) {
-        loaderFailed = true;
-      } else {
-        const data = await response.json();
-        if (data.id || data.download_url) {
-          res.json({
-            success: true,
-            id: data.id || null,
-            downloadUrl: data.download_url || null,
-            format: normalizedFormat,
-            text: data.text || ''
-          });
-          return;
-        } else {
-          loaderFailed = true;
-          loaderErrMsg = data.message || '';
-        }
-      }
-
-      // If loader.to fails (e.g. requires api key), seamlessly fallback to Neoxr YouTube API
-      if (loaderFailed) {
-        const neoKey = (process.env.NEOXR_API_KEY || 'j3i3mg').trim().replace(/^["']|["']$/g, '');
-        const isAudio = normalizedFormat === 'mp3';
-        const qualityMap: Record<string, string> = {
-          '2160': '720p',
-          '1440': '720p',
-          '1080': '720p',
-          '720': '720p',
-          '480': '480p',
-          '360': '360p',
-          'mp3': '128kbps'
-        };
-        const neoQ = qualityMap[normalizedFormat] || (isAudio ? '128kbps' : '720p');
-        const neoType = isAudio ? 'audio' : 'video';
-        const neoEp = `https://api.neoxr.eu/api/youtube?url=${encodeURIComponent(url)}&type=${neoType}&quality=${neoQ}&apikey=${encodeURIComponent(neoKey)}`;
-
-        try {
-          const neoRes = await fetch(neoEp, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            signal: AbortSignal.timeout(8000)
-          });
-          if (neoRes.ok) {
-            const neoJson = await neoRes.json();
-            if (neoJson && neoJson.status && neoJson.data?.url) {
-              res.json({
-                success: true,
-                id: null,
-                downloadUrl: neoJson.data.url,
-                format: normalizedFormat,
-                text: `Siap diunduh (${neoJson.data.quality || normalizedFormat})!`
-              });
-              return;
-            }
-          }
-        } catch (neoErr) {
-          console.warn('[server] Neoxr start-job fallback error:', neoErr);
-        }
-
-        res.status(502).json({
-          success: false,
-          error: loaderErrMsg || 'Gagal memulai konversi resolusi yang dipilih. Silakan coba kembali.'
         });
-        return;
+        if (neoRes.ok) {
+          const neoJson = await neoRes.json();
+          if (neoJson && neoJson.status && neoJson.data?.url) {
+            res.json({
+              success: true,
+              id: null,
+              downloadUrl: neoJson.data.url,
+              format: normalizedFormat,
+              text: `Siap diunduh (${neoJson.data.quality || normalizedFormat})!`
+            });
+            return;
+          }
+        }
+      } catch (neoErr) {
+        console.warn('[server] Neoxr start-job error:', neoErr);
       }
+
+      res.status(502).json({
+        success: false,
+        error: 'Gagal memproses media untuk resolusi ini. Silakan coba kembali.'
+      });
+      return;
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -582,17 +548,42 @@ async function startServer() {
       }
 
       if (!response || !response.ok || !response.body) {
-        res.status(lastStatus || 500).send('Gagal mengunduh berkas dari tautan sumber.');
+        res.status(lastStatus || 500).json({ success: false, error: 'Gagal mengunduh berkas dari tautan sumber.' });
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const { done: initialDone, value: firstChunk } = await reader.read();
+
+      if (initialDone || !firstChunk || firstChunk.length === 0) {
+        res.status(502).json({ success: false, error: 'Berkas kosong dari server sumber.' });
+        return;
+      }
+
+      // Check first chunk for text/html or JSON error signatures
+      const sampleText = Buffer.from(firstChunk.slice(0, 512)).toString('utf-8').trim();
+      const isHtmlDoc =
+        sampleText.startsWith('<!DOCTYPE html') ||
+        sampleText.startsWith('<!doctype html') ||
+        sampleText.startsWith('<html') ||
+        sampleText.includes('<title>Error') ||
+        sampleText.includes('Attention Required! | Cloudflare');
+      const isJsonError =
+        sampleText.startsWith('{"docs_url"') ||
+        sampleText.startsWith('{"error_code"') ||
+        sampleText.startsWith('{"success":false') ||
+        (sampleText.startsWith('{') && sampleText.includes('"status":false'));
+
+      if (isHtmlDoc || isJsonError) {
+        console.warn('[proxy-download] Upstream served HTML/JSON error text instead of binary media:', sampleText.slice(0, 150));
+        res.status(502).json({
+          success: false,
+          error: 'Tautan unduhan tidak menghasilkan berkas media yang valid dari server sumber.'
+        });
         return;
       }
 
       const rawContentType = response.headers.get('content-type') || '';
-      const isHtml = rawContentType.includes('text/html');
-      const isKnownMediaUrl = targetUrl.includes('pages.dev') || targetUrl.includes('neoxr') || targetUrl.includes('scdn.co');
-      if (rawContentType.includes('application/json') || (isHtml && !isKnownMediaUrl && !sanitizedFilename.endsWith('.html'))) {
-        res.status(400).send('Tautan unduhan tidak valid atau berkas belum siap dari server sumber.');
-        return;
-      }
 
       // Determine proper MIME type instead of generic octet-stream
       let mimeType = 'application/octet-stream';
@@ -616,13 +607,14 @@ async function startServer() {
         res.setHeader('Content-Length', contentLength);
       }
 
-      // Stream chunks directly to user's browser
-      const reader = response.body.getReader();
       req.on('close', () => {
         try {
           reader.cancel();
         } catch {}
       });
+
+      // Write verified first chunk, then stream the rest
+      res.write(Buffer.from(firstChunk));
 
       while (true) {
         const { done, value } = await reader.read();
@@ -635,7 +627,7 @@ async function startServer() {
     } catch (err: any) {
       console.error('Proxy download stream error:', err);
       if (!res.headersSent) {
-        res.status(500).send(`Download gagal: ${err.message}`);
+        res.status(500).json({ success: false, error: `Download gagal: ${err.message}` });
       }
     }
   });

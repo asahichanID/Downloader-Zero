@@ -50,15 +50,34 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
 
   const formatTag = item.extension ? item.extension.toUpperCase() : 'MP4';
   const qualityTag = item.resolution || item.quality || '1080p';
+  const isSpotify = item.platform === 'spotify';
+
+  const displayDuration =
+    item.durationFormatted ||
+    (item.duration && item.duration > 0
+      ? (function () {
+          const mins = Math.floor(item.duration / 60);
+          const secs = Math.floor(item.duration % 60);
+          return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        })()
+      : (item.mediaType === 'audio' ? '03:30' : '01:00'));
 
   return (
     <div
       onClick={() => onPlay(item)}
-      className="group relative w-full p-2.5 sm:p-3 rounded-2xl bg-[#0c1836]/90 hover:bg-[#102450] border border-blue-500/20 hover:border-cyan-400/50 shadow-md shadow-black/30 flex items-center justify-between gap-3 transition-all duration-150 cursor-pointer select-none"
+      className="group relative w-full p-2 sm:p-2.5 rounded-2xl bg-[#0c1836]/90 hover:bg-[#102450] border border-blue-500/20 hover:border-cyan-400/50 shadow-md shadow-black/30 flex items-center justify-between gap-3 transition-all duration-150 cursor-pointer select-none"
     >
       {/* Left Thumbnail + Duration Badge */}
-      <div className="relative w-16 h-12 rounded-xl overflow-hidden bg-slate-900 border border-white/10 shrink-0">
-        {item.thumbnail ? (
+      <div className="relative w-20 h-13 sm:w-22 sm:h-14 rounded-xl overflow-hidden bg-slate-900 border border-white/10 shrink-0">
+        {isSpotify && (!item.thumbnail || item.thumbnail.includes('favicon')) ? (
+          <div className="w-full h-full flex items-center justify-center bg-black">
+            <div className="w-9 h-9 rounded-full bg-[#1DB954] flex items-center justify-center shadow-md">
+              <svg className="w-5 h-5 fill-black" viewBox="0 0 24 24">
+                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.508 17.308a.747.747 0 01-1.03.248c-2.82-1.723-6.37-2.113-10.55-1.158a.75.75 0 11-.336-1.462c4.57-1.043 8.49-.597 11.668 1.342.348.213.46.666.248 1.03zm1.47-3.268a.936.936 0 01-1.288.309c-3.227-1.984-8.147-2.557-11.964-1.398a.937.937 0 11-.548-1.792c4.364-1.325 9.79-.684 13.49 1.593.407.25.539.78.31 1.288zm.126-3.41c-3.863-2.294-10.244-2.507-13.935-1.386a1.124 1.124 0 01-.655-2.152c4.24-1.288 11.288-1.042 15.74 1.602a1.125 1.125 0 01-1.15 1.936z" />
+              </svg>
+            </div>
+          </div>
+        ) : item.thumbnail ? (
           <img
             src={item.thumbnail}
             alt={item.title}
@@ -69,11 +88,11 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
           />
         ) : item.mediaType === 'audio' ? (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-emerald-600 to-blue-900">
-            <Music className="w-5 h-5 text-white" />
+            <Music className="w-6 h-6 text-white" />
           </div>
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-slate-800">
-            <Film className="w-5 h-5 text-cyan-400" />
+            <Film className="w-6 h-6 text-cyan-400" />
           </div>
         )}
 
@@ -83,9 +102,9 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
         </div>
 
         {/* Duration badge at bottom-right corner */}
-        {item.durationFormatted && (
-          <span className="absolute bottom-0.5 right-0.5 px-1 py-0.2 rounded bg-black/85 text-[9px] font-mono font-medium text-white shadow-xs">
-            {item.durationFormatted}
+        {displayDuration && (
+          <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/85 text-[10px] font-mono font-semibold text-white shadow-xs leading-none">
+            {displayDuration}
           </span>
         )}
       </div>
@@ -104,11 +123,11 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
         </p>
       </div>
 
-      {/* Right side: Blue checkmark & 3-dots action */}
+      {/* Right side: Solid Blue checkmark & 3-dots action */}
       <div className="flex items-center gap-2 shrink-0">
-        {/* Blue Circular Checkmark (download completed successfully) */}
+        {/* Solid Blue Circular Checkmark matching screenshot */}
         <div
-          className="w-8 h-8 rounded-full bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-cyan-400 shadow-sm"
+          className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#1d6fe9] text-white flex items-center justify-center shadow-md shadow-blue-500/20"
           title="Telah selesai diunduh"
         >
           <Check className="w-4 h-4 stroke-[3]" />
