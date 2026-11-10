@@ -74,7 +74,11 @@ export interface HistoryItem {
   platform: PlatformType;
   title: string;
   author: string;
+  artist?: string;
+  album?: string;
   thumbnail: string;
+  duration?: number;
+  durationFormatted?: string;
   quality: string;
   resolution?: string;
   mediaType: 'video' | 'audio' | 'photos';
@@ -82,6 +86,7 @@ export interface HistoryItem {
   filename: string;
   filesize: string;
   filesizeBytes: number;
+  downloadUrl?: string; // Direct streamable URL for instant floating player playback
   blob?: Blob;
   downloadedAt: number;
 }

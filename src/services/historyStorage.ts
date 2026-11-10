@@ -100,57 +100,63 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 /**
- * Check if the 24-hour cycle has expired.
- * If expired, perform full cleanup (pembersihan berjalan full) of all history items.
+ * Purge individual items older than 24 hours (86,400,000 ms)
  */
-export async function checkAndRunCycleCleanup(): Promise<{
-  purged: boolean;
-  purgedCount: number;
-}> {
-  const status = getCycleStatus();
-  if (!status.isExpired) {
-    return { purged: false, purgedCount: 0 };
-  }
+export async function purgeExpiredHistoryItems(): Promise<number> {
+  const now = Date.now();
+  const maxAge = 24 * 60 * 60 * 1000;
+  let purgedCount = 0;
 
-  // Cycle has expired! Wipe the entire history store at once (full trash purge)
   try {
     const db = await openDB();
-    const count = await new Promise<number>((res) => {
+    const items = await new Promise<HistoryItem[]>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
-      const countReq = tx.objectStore(STORE_NAME).count();
-      countReq.onsuccess = () => res(countReq.result || 0);
-      countReq.onerror = () => res(0);
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+      req.onsuccess = () => resolve((req.result as HistoryItem[]) || []);
+      req.onerror = () => reject(req.error);
     });
 
-    await new Promise<void>((res, rej) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const req = tx.objectStore(STORE_NAME).clear();
-      req.onsuccess = () => res();
-      req.onerror = () => rej(req.error);
-    });
+    const expiredIds = items
+      .filter((it) => now - it.downloadedAt > maxAge)
+      .map((it) => it.id);
 
-    memoryHistoryFallback.clear();
-    setStoredCycleStart(Date.now());
-    notifyHistoryChange();
-
-    return { purged: true, purgedCount: count };
+    if (expiredIds.length > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        expiredIds.forEach((id) => store.delete(id));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      purgedCount = expiredIds.length;
+    }
   } catch (err) {
-    console.warn('Cycle cleanup fallback wipe:', err);
-    memoryHistoryFallback.clear();
-    setStoredCycleStart(Date.now());
-    notifyHistoryChange();
-    return { purged: true, purgedCount: 0 };
+    console.warn('Expired history purge notice:', err);
   }
+
+  // Also clean memory fallback
+  for (const [id, item] of memoryHistoryFallback.entries()) {
+    if (now - item.downloadedAt > maxAge) {
+      memoryHistoryFallback.delete(id);
+      purgedCount++;
+    }
+  }
+
+  if (purgedCount > 0) {
+    notifyHistoryChange();
+  }
+
+  return purgedCount;
 }
 
 /**
- * Save downloaded media item into local IndexedDB history with its binary blob.
+ * Save downloaded media item into local IndexedDB history with its streamable URL and metadata.
  */
 export async function saveDownloadedMedia(
   item: Omit<HistoryItem, 'id' | 'downloadedAt'>
 ): Promise<string> {
-  // First check if existing cycle expired and clean up if needed
-  await checkAndRunCycleCleanup();
+  await purgeExpiredHistoryItems();
 
   const id = `dz_dl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const record: HistoryItem = {
@@ -169,25 +175,6 @@ export async function saveDownloadedMedia(
       req.onerror = () => reject(req.error);
     });
   } catch (err) {
-    // If Blob cloning failed (e.g. WebKit bug in some browsers), convert blob to ArrayBuffer and retry
-    if (record.blob) {
-      try {
-        const buffer = await record.blob.arrayBuffer();
-        const fallbackRecord = { ...record, buffer, blob: undefined };
-        const db = await openDB();
-        await new Promise<void>((resolve, reject) => {
-          const tx = db.transaction(STORE_NAME, 'readwrite');
-          const store = tx.objectStore(STORE_NAME);
-          const req = store.put(fallbackRecord);
-          req.onsuccess = () => resolve();
-          req.onerror = () => reject(req.error);
-        });
-        notifyHistoryChange();
-        return id;
-      } catch (bufErr) {
-        console.warn('ArrayBuffer save failed:', bufErr);
-      }
-    }
     console.warn('IndexedDB save failed, using memory fallback:', err);
     memoryHistoryFallback.set(id, record);
   }
@@ -197,10 +184,12 @@ export async function saveDownloadedMedia(
 }
 
 /**
- * Fetch all history items ordered from newest to oldest.
+ * Fetch all history items ordered from newest to oldest, automatically filtering out items > 24 hours.
  */
 export async function getAllHistory(): Promise<HistoryItem[]> {
-  await checkAndRunCycleCleanup();
+  await purgeExpiredHistoryItems();
+  const now = Date.now();
+  const maxAge = 24 * 60 * 60 * 1000;
 
   try {
     const db = await openDB();
@@ -221,13 +210,15 @@ export async function getAllHistory(): Promise<HistoryItem[]> {
       }
     }
 
-    // Sort descending (newest first)
-    return items.sort((a, b) => b.downloadedAt - a.downloadedAt);
+    // Keep only unexpired (< 24h) and sort descending (newest first)
+    return items
+      .filter((item) => now - item.downloadedAt <= maxAge)
+      .sort((a, b) => b.downloadedAt - a.downloadedAt);
   } catch (err) {
     console.warn('IndexedDB read failed, using memory fallback:', err);
-    return Array.from(memoryHistoryFallback.values()).sort(
-      (a, b) => b.downloadedAt - a.downloadedAt
-    );
+    return Array.from(memoryHistoryFallback.values())
+      .filter((item) => now - item.downloadedAt <= maxAge)
+      .sort((a, b) => b.downloadedAt - a.downloadedAt);
   }
 }
 

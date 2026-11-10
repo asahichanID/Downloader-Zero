@@ -1,97 +1,86 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Download } from 'lucide-react';
 import bannerImage from '../assets/images/banner_dz.png';
 
-const LOCAL_VIDEO_URL = '/banner_zero.mp4';
-const CDN_FALLBACK_URL = 'https://cdn.jsdelivr.net/gh/asahichanID/media@main/banner_zero.mp4';
-const GITHUB_FALLBACK_URL = 'https://raw.githubusercontent.com/asahichanID/media/main/banner_zero.mp4';
-
 export const BannerDZ: React.FC = () => {
-  // false = showing PNG banner (3 seconds), true = showing MP4 banner (5 seconds)
   const [showVideo, setShowVideo] = useState<boolean>(false);
-  const [videoSrc, setVideoSrc] = useState<string>(LOCAL_VIDEO_URL);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Infinitely alternate: Photo for 3 seconds -> Video for 5 seconds -> Photo for 3 seconds...
+  // Smoothly alternate image and video without jarring jumps
   useEffect(() => {
-    const duration = showVideo ? 5000 : 3000;
+    const duration = showVideo ? 6000 : 4000;
     const timer = setTimeout(() => {
       setShowVideo((prev) => !prev);
     }, duration);
-
     return () => clearTimeout(timer);
   }, [showVideo]);
 
-  // Video play & resource management with smooth restart on every video turn
   useEffect(() => {
-    if (showVideo) {
-      if (videoRef.current) {
-        videoRef.current.currentTime = 0;
-        videoRef.current.play().catch((err) => {
-          console.warn('[BannerDZ] Video autoplay notice:', err);
-        });
-      }
-    } else {
-      const pauseTimer = setTimeout(() => {
-        if (!showVideo && videoRef.current) {
-          videoRef.current.pause();
-        }
-      }, 750);
-      return () => clearTimeout(pauseTimer);
+    if (showVideo && videoRef.current) {
+      videoRef.current.currentTime = 0;
+      videoRef.current.play().catch(() => {});
+    } else if (!showVideo && videoRef.current) {
+      videoRef.current.pause();
     }
   }, [showVideo]);
 
-  // Fallback cascade: Local -> jsDelivr CDN -> Raw GitHub
-  const handleVideoError = () => {
-    if (videoSrc === LOCAL_VIDEO_URL) {
-      console.warn('[BannerDZ] Local video failed, falling back to jsDelivr CDN');
-      setVideoSrc(CDN_FALLBACK_URL);
-    } else if (videoSrc === CDN_FALLBACK_URL) {
-      console.warn('[BannerDZ] CDN video failed, falling back to GitHub raw');
-      setVideoSrc(GITHUB_FALLBACK_URL);
-    }
-  };
-
   return (
-    <section 
-      aria-label="Banner DownloaderZero"
-      className="relative w-full rounded-2xl sm:rounded-3xl border border-blue-600/30 bg-[#06122d] p-1.5 sm:p-2 shadow-md shadow-blue-950/40 transition-colors duration-150 hover:border-cyan-500/40 overflow-hidden"
-    >
-      {/* Decorative Subtle Blue / Cyan Accents */}
-      <div className="pointer-events-none absolute -top-12 -left-12 h-36 w-36 rounded-full bg-cyan-500/5" />
-      <div className="pointer-events-none absolute -bottom-12 -right-12 h-36 w-36 rounded-full bg-blue-600/5" />
-
-      {/* Cyber Corner Borders (Dekorasi pembatas sisi sudut) */}
-      <div className="pointer-events-none absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 border-cyan-400/80 rounded-tl-sm z-20" />
-      <div className="pointer-events-none absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 border-cyan-400/80 rounded-tr-sm z-20" />
-      <div className="pointer-events-none absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-cyan-400/80 rounded-bl-sm z-20" />
-      <div className="pointer-events-none absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-cyan-400/80 rounded-br-sm z-20" />
-
-      {/* Media Container with exact aspect ratio preserving size */}
-      <div className="relative w-full aspect-[1671/941] overflow-hidden rounded-xl sm:rounded-2xl border border-blue-900/60 bg-[#030818]">
-        {/* Banner PNG Image (Visible for 3 seconds) */}
+    <div className="relative w-full overflow-hidden select-none bg-[#050B18]">
+      {/* Background Media Container (Full-width edge-to-edge) */}
+      <div className="relative w-full h-[270px] sm:h-[320px] md:h-[360px] lg:h-[400px] overflow-hidden">
+        {/* Banner PNG Image */}
         <img
           src={bannerImage}
-          alt="DownloaderZero Official Banner"
-          className={`absolute inset-0 w-full h-full object-contain block select-none transition-opacity duration-700 ease-in-out ${
-            showVideo ? 'opacity-0 pointer-events-none z-0' : 'opacity-100 z-10'
+          alt="DownloaderZero Banner"
+          className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center transition-opacity duration-700 ease-in-out ${
+            showVideo ? 'opacity-0' : 'opacity-100'
           }`}
           loading="eager"
         />
 
-        {/* Banner MP4 Video (Visible for 5 seconds) */}
+        {/* Banner MP4 Video (Smooth background transition) */}
         <video
           ref={videoRef}
-          src={videoSrc}
-          onError={handleVideoError}
+          src="/banner_zero.mp4"
           muted
           playsInline
           loop
           preload="auto"
-          className={`absolute inset-0 w-full h-full object-contain block select-none transition-opacity duration-700 ease-in-out ${
-            showVideo ? 'opacity-100 z-10' : 'opacity-0 pointer-events-none z-0'
+          className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center transition-opacity duration-700 ease-in-out ${
+            showVideo ? 'opacity-100' : 'opacity-0'
           }`}
         />
+
+        {/* Ambient Dark-Blue & Shimmer Overlays */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#050B18]/90 via-[#050B18]/45 to-transparent" />
+        <div className="absolute inset-0 bg-blue-950/20 mix-blend-color" />
+
+        {/* Bottom 15% Gradient Fade: Allows the URL input card to overlap seamlessly */}
+        <div className="absolute inset-x-0 bottom-0 h-32 sm:h-36 md:h-40 bg-gradient-to-t from-[#050B18] via-[#050B18]/85 to-transparent pointer-events-none" />
+
+        {/* Brand Lockup Overlay (Aligned with content container) */}
+        <div className="absolute inset-0 max-w-4xl mx-auto px-4 sm:px-6 pointer-events-none flex flex-col justify-start">
+          <div className="pt-7 sm:pt-10 max-w-[280px] sm:max-w-sm pointer-events-auto">
+            {/* Blue Download Icon Badge */}
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 p-0.5 shadow-lg shadow-blue-500/40 mb-3 flex items-center justify-center">
+              <div className="w-full h-full rounded-[14px] bg-[#0c245c]/70 backdrop-blur-xs flex items-center justify-center">
+                <Download className="w-6 h-6 text-white stroke-[2.5]" />
+              </div>
+            </div>
+
+            {/* Title */}
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white drop-shadow-md">
+              Downloader<span className="text-cyan-400">Zero</span>
+            </h1>
+
+            {/* Subtitle */}
+            <p className="text-xs sm:text-sm font-medium text-blue-100/90 mt-1 leading-snug drop-shadow-xs">
+              Download Video & Audio <br className="hidden sm:inline" />
+              dari berbagai platform
+            </p>
+          </div>
+        </div>
       </div>
-    </section>
+    </div>
   );
 };

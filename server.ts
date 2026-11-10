@@ -18,7 +18,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Guard against Vite standalone WS port conflicts
+// Guard against Vite standalone WS port conflicts and unhandled errors
 process.on('uncaughtException', (err: any) => {
   if (err?.code === 'EADDRINUSE' && (err?.port === 24678 || String(err?.message || '').includes('24678'))) {
     console.warn('[Vite WS] Port 24678 is in use, ignoring since HMR is disabled in AI Studio.');
@@ -27,13 +27,19 @@ process.on('uncaughtException', (err: any) => {
   console.error('[server] Uncaught exception:', err);
 });
 
+process.on('unhandledRejection', (reason: any) => {
+  console.warn('[server] Unhandled Promise Rejection:', reason?.message || reason);
+});
+
 const isProduction = process.env.NODE_ENV === 'production';
 
-// Support CLI flags (--port 3000) or default to 3000 for AI Studio environment
+// Support CLI flags (--port 3000, --host 0.0.0.0) or default to 3000 for AI Studio environment
 const cliArgs = process.argv.slice(2);
 const portFlagIndex = cliArgs.indexOf('--port');
 const cliPort = portFlagIndex !== -1 && cliArgs[portFlagIndex + 1] ? parseInt(cliArgs[portFlagIndex + 1], 10) : null;
-const PORT = cliPort || (isProduction && process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
+const hostFlagIndex = cliArgs.indexOf('--host');
+const HOST = hostFlagIndex !== -1 && cliArgs[hostFlagIndex + 1] ? cliArgs[hostFlagIndex + 1] : '0.0.0.0';
+const PORT = cliPort || (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
 
 async function startServer() {
   const app = express();
@@ -656,9 +662,25 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[DownloaderZero] Server running at http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`[DownloaderZero] Server running at http://${HOST}:${PORT}`);
   });
+
+  server.on('error', (err: any) => {
+    if (err?.code === 'EADDRINUSE') {
+      console.warn(`[DownloaderZero] Port ${PORT} already in use or reloading.`);
+    } else {
+      console.error('[DownloaderZero] Server error:', err);
+    }
+  });
+
+  const shutdown = () => {
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 startServer().catch((err) => {
