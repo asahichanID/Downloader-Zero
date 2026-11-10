@@ -36,81 +36,48 @@ export default async function handler(req: any, res: any) {
     }
 
     const normalizedFormat = normalizeLoaderFormat(format);
-    const response = await fetch(
-      `https://loader.to/ajax/download.php?format=${encodeURIComponent(normalizedFormat)}&url=${encodeURIComponent(url)}`,
-      {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
+    const neoKey = (process.env.NEOXR_API_KEY || 'j3i3mg').trim().replace(/^["']|["']$/g, '');
+    const isAudio = normalizedFormat === 'mp3';
+    const qualityMap: Record<string, string> = {
+      '2160': '720p',
+      '1440': '720p',
+      '1080': '720p',
+      '720': '720p',
+      '480': '480p',
+      '360': '360p',
+      'mp3': '128kbps'
+    };
+    const neoQ = qualityMap[normalizedFormat] || (isAudio ? '128kbps' : '720p');
+    const neoType = isAudio ? 'audio' : 'video';
+    const neoEp = `https://api.neoxr.eu/api/youtube?url=${encodeURIComponent(url)}&type=${neoType}&quality=${neoQ}&apikey=${encodeURIComponent(neoKey)}`;
+
+    try {
+      const neoRes = await fetch(neoEp, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
         signal: AbortSignal.timeout(10000)
-      }
-    );
-
-    let loaderFailed = false;
-    let loaderErrMsg = '';
-    if (!response.ok) {
-      loaderFailed = true;
-    } else {
-      const data = await response.json();
-      if (data.id || data.download_url) {
-        res.json({
-          success: true,
-          id: data.id || null,
-          downloadUrl: data.download_url || null,
-          format: normalizedFormat,
-          text: data.text || ''
-        });
-        return;
-      } else {
-        loaderFailed = true;
-        loaderErrMsg = data.message || '';
-      }
-    }
-
-    if (loaderFailed) {
-      const neoKey = (process.env.NEOXR_API_KEY || 'j3i3mg').trim().replace(/^["']|["']$/g, '');
-      const isAudio = normalizedFormat === 'mp3';
-      const qualityMap: Record<string, string> = {
-        '2160': '720p',
-        '1440': '720p',
-        '1080': '720p',
-        '720': '720p',
-        '480': '480p',
-        '360': '360p',
-        'mp3': '128kbps'
-      };
-      const neoQ = qualityMap[normalizedFormat] || (isAudio ? '128kbps' : '720p');
-      const neoType = isAudio ? 'audio' : 'video';
-      const neoEp = `https://api.neoxr.eu/api/youtube?url=${encodeURIComponent(url)}&type=${neoType}&quality=${neoQ}&apikey=${encodeURIComponent(neoKey)}`;
-
-      try {
-        const neoRes = await fetch(neoEp, {
-          headers: { 'User-Agent': 'Mozilla/5.0' },
-          signal: AbortSignal.timeout(8000)
-        });
-        if (neoRes.ok) {
-          const neoJson = await neoRes.json();
-          if (neoJson && neoJson.status && neoJson.data?.url) {
-            res.json({
-              success: true,
-              id: null,
-              downloadUrl: neoJson.data.url,
-              format: normalizedFormat,
-              text: `Siap diunduh (${neoJson.data.quality || normalizedFormat})!`
-            });
-            return;
-          }
-        }
-      } catch (neoErr) {
-        console.warn('[api/start-job] Neoxr fallback error:', neoErr);
-      }
-
-      res.status(502).json({
-        success: false,
-        error: loaderErrMsg || 'Gagal memulai konversi resolusi yang dipilih. Silakan coba kembali.'
       });
-      return;
+      if (neoRes.ok) {
+        const neoJson = await neoRes.json();
+        if (neoJson && neoJson.status && neoJson.data?.url) {
+          res.json({
+            success: true,
+            id: null,
+            downloadUrl: neoJson.data.url,
+            format: normalizedFormat,
+            text: `Siap diunduh (${neoJson.data.quality || normalizedFormat})!`
+          });
+          return;
+        }
+      }
+    } catch (neoErr) {
+      console.warn('[api/start-job] Neoxr start-job error:', neoErr);
     }
+
+    res.status(502).json({
+      success: false,
+      error: 'Gagal memproses media untuk resolusi ini. Silakan coba kembali.'
+    });
+    return;
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

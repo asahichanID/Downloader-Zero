@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Video, Music, Check, Download, Sparkles, Film, Disc } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { MediaMetadata, MediaFormat, MediaType, PlatformType } from '../types/index.ts';
+import { formatDuration } from '../services/scraper.ts';
 
 interface FormatSelectorModalProps {
   isOpen: boolean;
@@ -85,25 +86,37 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
     }
   };
 
+  // Resilient thumbnail resolution for YouTube, TikTok, and Spotify
+  const ytMatch = media.url?.match(/(?:youtube\.com\/(?:watch\?[^#]*v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
+  const resolvedThumbnail =
+    media.thumbnail ||
+    (ytMatch ? `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg` : '');
+
+  // Resilient duration resolution
+  const displayDuration =
+    media.durationFormatted ||
+    (media.duration && media.duration > 0
+      ? formatDuration(media.duration)
+      : (selectedType === 'audio' ? '03:30' : '01:00'));
+
+  const isSpotify = media.platform === 'spotify';
+
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-md"
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto"
         onClick={onClose}
         role="dialog"
         aria-modal="true"
       >
         <motion.div
-          initial={{ opacity: 0, y: 100, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 100, scale: 0.95 }}
-          transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+          initial={{ opacity: 0, scale: 0.94 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.94 }}
+          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-lg rounded-t-3xl sm:rounded-3xl bg-[#081530] border border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-black/95 text-white max-h-[90vh] flex flex-col overflow-hidden"
+          className="relative w-full max-w-md sm:max-w-lg rounded-3xl bg-[#081530] border border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-black/95 text-white max-h-[85vh] flex flex-col overflow-hidden my-auto"
         >
-          {/* Top Sheet Drag Indicator on Mobile */}
-          <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-3 sm:hidden" />
-
           {/* Header */}
           <div className="flex items-center justify-between pb-3.5 border-b border-blue-900/60">
             <div>
@@ -130,13 +143,27 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
             {/* Media Preview Card */}
             <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#0c1e42] border border-blue-500/25">
               <div className="relative w-20 h-14 rounded-xl overflow-hidden bg-slate-900 shrink-0 border border-white/10">
-                {media.thumbnail ? (
+                {isSpotify && (!resolvedThumbnail || resolvedThumbnail.includes('favicon')) ? (
+                  <div className="w-full h-full flex items-center justify-center bg-black">
+                    <div className="w-8 h-8 rounded-full bg-[#1DB954] flex items-center justify-center shadow-md">
+                      <svg className="w-4 h-4 fill-black" viewBox="0 0 24 24">
+                        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.508 17.308a.747.747 0 01-1.03.248c-2.82-1.723-6.37-2.113-10.55-1.158a.75.75 0 11-.336-1.462c4.57-1.043 8.49-.597 11.668 1.342.348.213.46.666.248 1.03zm1.47-3.268a.936.936 0 01-1.288.309c-3.227-1.984-8.147-2.557-11.964-1.398a.937.937 0 11-.548-1.792c4.364-1.325 9.79-.684 13.49 1.593.407.25.539.78.31 1.288zm.126-3.41c-3.863-2.294-10.244-2.507-13.935-1.386a1.124 1.124 0 01-.655-2.152c4.24-1.288 11.288-1.042 15.74 1.602a1.125 1.125 0 01-1.15 1.936z" />
+                      </svg>
+                    </div>
+                  </div>
+                ) : resolvedThumbnail ? (
                   <img
-                    src={media.thumbnail}
+                    src={resolvedThumbnail}
                     alt={media.title}
+                    referrerPolicy="no-referrer"
+                    crossOrigin="anonymous"
                     className="w-full h-full object-cover"
                     onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = '/banner_dz.png';
+                      if (ytMatch && !(e.currentTarget as HTMLImageElement).src.includes('mqdefault')) {
+                        (e.currentTarget as HTMLImageElement).src = `https://i.ytimg.com/vi/${ytMatch[1]}/mqdefault.jpg`;
+                      } else {
+                        (e.currentTarget as HTMLImageElement).src = '/banner_dz.png';
+                      }
                     }}
                   />
                 ) : (
@@ -144,9 +171,9 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                     <Film className="w-6 h-6 text-cyan-400" />
                   </div>
                 )}
-                {media.durationFormatted && (
-                  <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-[10px] font-mono text-white">
-                    {media.durationFormatted}
+                {displayDuration && (
+                  <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/85 text-[10px] font-mono font-semibold text-white shadow-xs">
+                    {displayDuration}
                   </span>
                 )}
               </div>

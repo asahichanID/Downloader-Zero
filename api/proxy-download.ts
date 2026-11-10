@@ -304,17 +304,42 @@ export default async function handler(req: any, res: any) {
     }
 
     if (!remoteRes || !remoteRes.ok || !remoteRes.body) {
-      res.status(lastStatus || 500).send('Gagal mengunduh berkas dari tautan sumber.');
+      res.status(lastStatus || 500).json({ success: false, error: 'Gagal mengunduh berkas dari tautan sumber.' });
+      return;
+    }
+
+    const reader = remoteRes.body.getReader();
+    const { done: initialDone, value: firstChunk } = await reader.read();
+
+    if (initialDone || !firstChunk || firstChunk.length === 0) {
+      res.status(502).json({ success: false, error: 'Berkas kosong dari server sumber.' });
+      return;
+    }
+
+    // Check first chunk for text/html or JSON error signatures
+    const sampleText = Buffer.from(firstChunk.slice(0, 512)).toString('utf-8').trim();
+    const isHtmlDoc =
+      sampleText.startsWith('<!DOCTYPE html') ||
+      sampleText.startsWith('<!doctype html') ||
+      sampleText.startsWith('<html') ||
+      sampleText.includes('<title>Error') ||
+      sampleText.includes('Attention Required! | Cloudflare');
+    const isJsonError =
+      sampleText.startsWith('{"docs_url"') ||
+      sampleText.startsWith('{"error_code"') ||
+      sampleText.startsWith('{"success":false') ||
+      (sampleText.startsWith('{') && sampleText.includes('"status":false'));
+
+    if (isHtmlDoc || isJsonError) {
+      console.warn('[api/proxy-download] Upstream served HTML/JSON error text instead of binary media:', sampleText.slice(0, 150));
+      res.status(502).json({
+        success: false,
+        error: 'Tautan unduhan tidak menghasilkan berkas media yang valid dari server sumber.'
+      });
       return;
     }
 
     const rawContentType = remoteRes.headers.get('content-type') || '';
-    const isHtml = rawContentType.includes('text/html');
-    const isKnownMediaUrl = targetUrl.includes('pages.dev') || targetUrl.includes('neoxr') || targetUrl.includes('scdn.co');
-    if (rawContentType.includes('application/json') || (isHtml && !isKnownMediaUrl && !sanitizedFilename.endsWith('.html'))) {
-      res.status(400).send('Tautan unduhan tidak valid atau berkas belum siap dari server sumber.');
-      return;
-    }
 
     // Determine proper MIME type instead of generic octet-stream
     let mimeType = 'application/octet-stream';
@@ -338,12 +363,14 @@ export default async function handler(req: any, res: any) {
       res.setHeader('Content-Length', contentLength);
     }
 
-    const reader = remoteRes.body.getReader();
     req.on?.('close', () => {
       try {
         reader.cancel();
       } catch {}
     });
+
+    // Write verified first chunk, then stream the rest
+    res.write(Buffer.from(firstChunk));
 
     while (true) {
       const { done, value } = await reader.read();
@@ -355,7 +382,7 @@ export default async function handler(req: any, res: any) {
     res.end();
   } catch (err: any) {
     if (!res.headersSent) {
-      res.status(500).send(`Download gagal: ${err.message}`);
+      res.status(500).json({ success: false, error: `Download gagal: ${err.message}` });
     }
   }
 }

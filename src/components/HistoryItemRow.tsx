@@ -62,6 +62,11 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
         })()
       : (item.mediaType === 'audio' ? '03:30' : '01:00'));
 
+  const ytMatch = (item.sourceUrl || item.downloadUrl || '').match(/(?:watch\?[^#]*v=|shorts\/|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
+  const resolvedThumbnail =
+    item.thumbnail ||
+    (ytMatch ? `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg` : '');
+
   return (
     <div
       onClick={() => onPlay(item)}
@@ -69,7 +74,7 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
     >
       {/* Left Thumbnail + Duration Badge */}
       <div className="relative w-20 h-13 sm:w-22 sm:h-14 rounded-xl overflow-hidden bg-slate-900 border border-white/10 shrink-0">
-        {isSpotify && (!item.thumbnail || item.thumbnail.includes('favicon')) ? (
+        {isSpotify && (!resolvedThumbnail || resolvedThumbnail.includes('favicon')) ? (
           <div className="w-full h-full flex items-center justify-center bg-black">
             <div className="w-9 h-9 rounded-full bg-[#1DB954] flex items-center justify-center shadow-md">
               <svg className="w-5 h-5 fill-black" viewBox="0 0 24 24">
@@ -77,13 +82,19 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
               </svg>
             </div>
           </div>
-        ) : item.thumbnail ? (
+        ) : resolvedThumbnail ? (
           <img
-            src={item.thumbnail}
+            src={resolvedThumbnail}
             alt={item.title}
+            referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
             onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src = '/banner_dz.png';
+              if (ytMatch && !(e.currentTarget as HTMLImageElement).src.includes('mqdefault')) {
+                (e.currentTarget as HTMLImageElement).src = `https://i.ytimg.com/vi/${ytMatch[1]}/mqdefault.jpg`;
+              } else {
+                (e.currentTarget as HTMLImageElement).src = '/banner_dz.png';
+              }
             }}
           />
         ) : item.mediaType === 'audio' ? (
