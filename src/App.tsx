@@ -159,11 +159,12 @@ export default function App() {
     const res = (fmt.resolution || '').toLowerCase();
     const qual = (fmt.quality || '').toLowerCase();
 
+    // Check 2K / 1440p explicitly first so 2K never gets overridden by 4K
+    if (res === '2k' || res.includes('1440') || id.includes('1440') || id === 'tt-2k' || qual.includes('1440') || qual.includes('2k')) {
+      return '1440';
+    }
     if (id.includes('2160') || res.includes('2160') || res === '4k' || qual.includes('2160') || qual.includes('4k')) {
       return '2160';
-    }
-    if (id.includes('1440') || res.includes('1440') || res === '2k' || qual.includes('1440') || qual.includes('2k')) {
-      return '1440';
     }
     if (id.includes('1080') || res.includes('1080') || qual.includes('1080')) {
       return '1080';

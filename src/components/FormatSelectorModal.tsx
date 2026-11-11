@@ -57,31 +57,74 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
   // Determine current active format to download
   const handleStartDownload = () => {
     if (selectedType === 'audio') {
-      const matchAudio = audioFormats.find((f) => f.quality.includes(selectedAudioQuality)) ||
-        audioFormats[0] || {
-          id: 'audio-mp3',
-          quality: `${selectedAudioQuality} kbps`,
-          type: 'audio' as const,
-          extension: 'mp3' as const,
-          url: media.formats[0]?.url || media.url,
-          isDirect: false
-        };
+      const matchAudio = audioFormats.find((f) => {
+        const q = (f.quality || '').toLowerCase();
+        const id = (f.id || '').toLowerCase();
+        return q.includes(selectedAudioQuality) || id.includes(selectedAudioQuality);
+      }) || audioFormats[0] || {
+        id: `audio-${selectedAudioQuality}`,
+        quality: `${selectedAudioQuality} kbps (Original Sound MP3)`,
+        resolution: 'Audio',
+        type: 'audio' as const,
+        extension: 'mp3' as const,
+        url: '',
+        isDirect: false,
+        needsResolution: true
+      };
       onConfirmDownload(matchAudio);
     } else {
-      // Find matching video format
-      const matchVideo = videoFormats.find((f) => {
+      const targetRes = selectedVideoRes.toLowerCase();
+      const is2K = targetRes.includes('1440') || targetRes.includes('2k');
+      const is4K = targetRes.includes('2160') || targetRes.includes('4k');
+
+      // Strictly find matching format for the selected resolution
+      let matchVideo = videoFormats.find((f) => {
         const r = (f.resolution || '').toLowerCase();
         const q = (f.quality || '').toLowerCase();
-        return r.includes(selectedVideoRes) || q.includes(selectedVideoRes);
-      }) || videoFormats[0] || {
-        id: 'video-mp4',
-        quality: selectedVideoRes,
-        resolution: selectedVideoRes,
-        type: 'video' as const,
-        extension: 'mp4' as const,
-        url: media.formats[0]?.url || media.url,
-        isDirect: false
-      };
+        const id = (f.id || '').toLowerCase();
+        if (is2K) {
+          // Strictly match 2K or 1440, NEVER 4K or 2160!
+          return (r === '2k' || r.includes('1440') || q.includes('1440') || q.includes('2k') || id.includes('1440') || id.includes('2k')) &&
+                 !r.includes('4k') && !r.includes('2160') && !q.includes('4k') && !q.includes('2160');
+        }
+        if (is4K) {
+          return r === '4k' || r.includes('2160') || q.includes('2160') || q.includes('4k') || id.includes('2160') || id.includes('4k');
+        }
+        return r.includes(targetRes) || q.includes(targetRes) || id.includes(targetRes);
+      });
+
+      // CRITICAL FIX: If exact format exists, enforce strictly correct resolution tag
+      if (matchVideo) {
+        if (is2K) {
+          matchVideo = {
+            ...matchVideo,
+            id: matchVideo.id && !matchVideo.id.includes('4k') ? matchVideo.id : 'tt-2k',
+            resolution: '2K',
+            quality: matchVideo.quality && !matchVideo.quality.includes('4K') ? matchVideo.quality : '2K Quad HD (1440p Tanpa Watermark)'
+          };
+        } else if (is4K) {
+          matchVideo = {
+            ...matchVideo,
+            resolution: '4K',
+            quality: matchVideo.quality || '4K Ultra HD (2160p Tanpa Watermark)'
+          };
+        }
+      } else {
+        // If not found in media.formats, build dedicated format strictly matching selection
+        const preset = videoPresets.find((p) => p.resolution === selectedVideoRes || p.id === selectedVideoRes);
+        const resolvedTag = is2K ? '2K' : (is4K ? '4K' : selectedVideoRes);
+        matchVideo = {
+          id: is2K ? 'tt-2k' : (is4K ? 'tt-4k' : `video-${selectedVideoRes}`),
+          quality: preset ? preset.label : `${selectedVideoRes} Video`,
+          resolution: resolvedTag,
+          type: 'video',
+          extension: 'mp4',
+          url: '',
+          isDirect: false,
+          needsResolution: true
+        };
+      }
+
       onConfirmDownload(matchVideo);
     }
   };

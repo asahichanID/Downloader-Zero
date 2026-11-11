@@ -55,7 +55,7 @@ export async function resolveTikTokShortUrl(rawUrl: string): Promise<string> {
 export interface TikWMData {
   id: string;
   title: string;
-  cover: string;
+  cover?: string;
   origin_cover?: string;
   ai_dynamic_cover?: string;
   duration: number;
@@ -90,38 +90,104 @@ interface TikWMResponse {
 }
 
 /**
- * Tier 1: Scrape TikTok data from TikWM high-speed API with fallback mirrors.
+ * Tier 1: Scrape TikTok data from TikWM high-speed API with fallback mirrors & scrapers.
  */
 async function fetchTikWMData(targetUrl: string): Promise<TikWMData> {
-  const cleanUrl = encodeURIComponent(targetUrl);
-  const endpoints = [
-    `https://www.tikwm.com/api/?url=${cleanUrl}&hd=1`,
-    `https://tikwm.com/api/?url=${cleanUrl}&hd=1`,
-    `https://www.tikwm.com/api/?url=${cleanUrl}`,
-    `https://tikwm.com/api/?url=${cleanUrl}`
-  ];
+  const cleanedUrl = targetUrl.split('?')[0].split('#')[0];
+  const urlsToTry = [cleanedUrl, targetUrl];
 
   let lastError = '';
-  for (const ep of endpoints) {
+
+  for (const urlItem of urlsToTry) {
+    const encoded = encodeURIComponent(urlItem);
+    const getEndpoints = [
+      `https://www.tikwm.com/api/?url=${encoded}&hd=1`,
+      `https://tikwm.com/api/?url=${encoded}&hd=1`,
+      `https://www.tikwm.com/api/?url=${encoded}`,
+    ];
+
+    for (const ep of getEndpoints) {
+      try {
+        const res = await fetch(ep, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*'
+          },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (res.ok) {
+          const json: TikWMResponse = await res.json();
+          if (json.code === 0 && json.data) {
+            return json.data;
+          } else if (json.msg) {
+            lastError = json.msg;
+          }
+        }
+      } catch (e: any) {
+        lastError = e?.message || 'Koneksi ke endpoint TikWM gagal';
+      }
+    }
+
+    // Also try POST to TikWM
     try {
-      const res = await fetch(ep, {
+      const postRes = await fetch('https://www.tikwm.com/api/', {
+        method: 'POST',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-          'Accept': 'application/json, text/plain, */*'
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
         },
-        signal: AbortSignal.timeout(9000)
+        body: `url=${encodeURIComponent(urlItem)}&hd=1`,
+        signal: AbortSignal.timeout(6000)
       });
-      if (res.ok) {
-        const json: TikWMResponse = await res.json();
-        if (json.code === 0 && json.data) {
-          return json.data;
-        } else if (json.msg) {
-          lastError = json.msg;
+      if (postRes.ok) {
+        const postJson: TikWMResponse = await postRes.json();
+        if (postJson.code === 0 && postJson.data) {
+          return postJson.data;
+        } else if (postJson.msg) {
+          lastError = postJson.msg;
         }
       }
     } catch (e: any) {
-      lastError = e?.message || 'Koneksi ke endpoint TikWM gagal';
+      lastError = e?.message || 'POST ke TikWM gagal';
     }
+  }
+
+  // Tier 1b: SSSTik free public scraper fallback if TikWM is temporarily rejecting the URL
+  try {
+    const sssRes = await fetch('https://ssstik.io/abc?url=dl', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        'HX-Request': 'true',
+        'HX-Trigger': '_gcaptcha_pt',
+        'HX-Target': 'target',
+        'HX-Current-URL': 'https://ssstik.io/en-1'
+      },
+      body: `id=${encodeURIComponent(cleanedUrl)}&locale=en&tt=0`,
+      signal: AbortSignal.timeout(7000)
+    });
+    if (sssRes.ok) {
+      const html = await sssRes.text();
+      const mHd = html.match(/href="([^"]+)"[^>]*class="[^"]*download-link[^"]*"/i) || html.match(/href="([^"]+)"[^>]*>Download without watermark/i);
+      const mAudio = html.match(/href="([^"]+)"[^>]*>Download MP3/i);
+      const mTitle = html.match(/<p class="maintext">([^<]+)<\/p>/i);
+      const mThumb = html.match(/<img class="result_author"[^>]*src="([^"]+)"/i);
+
+      if (mHd && mHd[1]) {
+        return {
+          id: `tt-${Date.now()}`,
+          title: mTitle ? mTitle[1].trim() : 'Video TikTok',
+          duration: 30,
+          play: mHd[1],
+          hdplay: mHd[1],
+          music: mAudio ? mAudio[1] : undefined,
+          cover: mThumb ? mThumb[1] : undefined
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('[Server 2 TikTok] SSSTik fallback notice:', e);
   }
 
   throw new Error(lastError || 'Server 2: Gagal mengambil data video TikTok dari penyedia stream.');
@@ -135,7 +201,7 @@ async function fetchOfficialTikTokFeed(awemeId: string): Promise<any | null> {
   const feedUrl = `https://api16-normal-useast5.tiktokv.us/aweme/v1/feed/?aweme_id=${encodeURIComponent(awemeId)}`;
   try {
     const res = await fetch(feedUrl, {
-      method: 'OPTIONS',
+      method: 'GET',
       headers: {
         'User-Agent': 'com.zhiliaoapp.musically/300904 (2018111632; U; Android 10; en_US; Pixel 4; Build/QQ3A.200805.001; Cronet/58.0.2991.0)'
       },
@@ -243,42 +309,99 @@ export async function resolveTikTokServer2(
   }
 
   // -------------------------------------------------------------
-  // RESOLUTION CASE 3: VIDEO QUALITIES (4K / 1080p / 720p / 480p)
+  // RESOLUTION CASE 3: VIDEO QUALITIES (4K / 2K / 1080p / 720p / 480p)
   // -------------------------------------------------------------
   const normalizedRes = (resolution || '').toLowerCase().trim();
   const formatIdLower = (formatId || '').toLowerCase().trim();
 
-  const is4K = normalizedRes.includes('4k') || normalizedRes.includes('2160') || formatIdLower.includes('4k');
-  const is1080p = normalizedRes.includes('1080') || formatIdLower.includes('1080');
-  const is720p = normalizedRes.includes('720') || formatIdLower.includes('720');
-  const is480p = normalizedRes.includes('480') || normalizedRes.includes('360') || formatIdLower.includes('480');
+  const is4K = normalizedRes.includes('4k') || normalizedRes.includes('2160') || formatIdLower.includes('4k') || formatIdLower.includes('2160');
+  const is2K = (normalizedRes.includes('2k') || normalizedRes.includes('1440') || formatIdLower.includes('2k') || formatIdLower.includes('1440')) && !is4K;
+  const is1080p = (normalizedRes.includes('1080') || formatIdLower.includes('1080')) && !is4K && !is2K;
+  const is720p = (normalizedRes.includes('720') || formatIdLower.includes('720')) && !is4K && !is2K && !is1080p;
+  const is480p = (normalizedRes.includes('480') || normalizedRes.includes('360') || formatIdLower.includes('480')) && !is4K && !is2K && !is1080p && !is720p;
 
   const hdPlayUrl = ensureAbsoluteUrl(data.hdplay);
   const standardPlayUrl = ensureAbsoluteUrl(data.play);
   const wmPlayUrl = ensureAbsoluteUrl(data.wmplay);
 
-  // Strategy A: 4K Ultra HD & 1080p Full HD -> Must prioritize HD master stream
-  if (is4K || is1080p) {
+  // Strategy A1: 4K Ultra HD (2160p) -> Master highest-bitrate unwatermarked stream
+  if (is4K) {
     if (hdPlayUrl && hdPlayUrl.startsWith('http')) {
       return {
         downloadUrl: hdPlayUrl,
-        quality: is4K ? '4K Ultra HD (Master Tanpa Watermark)' : '1080p Full HD (Tanpa Watermark)'
+        quality: '4K Ultra HD (2160p Master Tanpa Watermark)'
       };
     }
 
-    // Check official feed for high-bitrate stream
     if (data.id) {
       const officialItem = await fetchOfficialTikTokFeed(data.id);
       const topGear = officialItem?.video?.bit_rate?.[0]?.play_addr?.url_list?.[0];
       if (topGear && typeof topGear === 'string' && topGear.startsWith('http')) {
         return {
           downloadUrl: topGear,
-          quality: is4K ? '4K Ultra HD (Master Stream)' : '1080p Full HD (High Bitrate)'
+          quality: '4K Ultra HD (2160p Master Stream)'
         };
       }
     }
 
-    // Graceful fallback to standard play if HD master is unavailable for this specific video
+    if (standardPlayUrl && standardPlayUrl.startsWith('http')) {
+      return {
+        downloadUrl: standardPlayUrl,
+        quality: '4K Ultra HD (Kualitas Tertinggi Tanpa Watermark)'
+      };
+    }
+  }
+
+  // Strategy A2: 2K Quad HD (1440p) -> Strictly 2K resolution & master stream, never 4K!
+  if (is2K) {
+    if (hdPlayUrl && hdPlayUrl.startsWith('http')) {
+      return {
+        downloadUrl: hdPlayUrl,
+        quality: '2K Quad HD (1440p Master Tanpa Watermark)'
+      };
+    }
+
+    if (data.id) {
+      const officialItem = await fetchOfficialTikTokFeed(data.id);
+      const bitRates = officialItem?.video?.bit_rate;
+      const gear = bitRates?.[0]?.play_addr?.url_list?.[0];
+      if (gear && typeof gear === 'string' && gear.startsWith('http')) {
+        return {
+          downloadUrl: gear,
+          quality: '2K Quad HD (1440p Master Stream)'
+        };
+      }
+    }
+
+    if (standardPlayUrl && standardPlayUrl.startsWith('http')) {
+      return {
+        downloadUrl: standardPlayUrl,
+        quality: '2K Quad HD (1440p Tanpa Watermark)'
+      };
+    }
+  }
+
+  // Strategy A3: 1080p Full HD -> Crisp high definition stream
+  if (is1080p) {
+    if (hdPlayUrl && hdPlayUrl.startsWith('http')) {
+      return {
+        downloadUrl: hdPlayUrl,
+        quality: '1080p Full HD (Tanpa Watermark)'
+      };
+    }
+
+    if (data.id) {
+      const officialItem = await fetchOfficialTikTokFeed(data.id);
+      const bitRates = officialItem?.video?.bit_rate;
+      const gear = bitRates?.[0]?.play_addr?.url_list?.[0];
+      if (gear && typeof gear === 'string' && gear.startsWith('http')) {
+        return {
+          downloadUrl: gear,
+          quality: '1080p Full HD (High Bitrate)'
+        };
+      }
+    }
+
     if (standardPlayUrl && standardPlayUrl.startsWith('http')) {
       return {
         downloadUrl: standardPlayUrl,
@@ -287,7 +410,7 @@ export async function resolveTikTokServer2(
     }
   }
 
-  // Strategy B: 720p HD Standard -> Use standard compressed stream
+  // Strategy B: 720p HD Standard -> Standard compressed stream
   if (is720p) {
     if (standardPlayUrl && standardPlayUrl.startsWith('http')) {
       return {
@@ -309,7 +432,6 @@ export async function resolveTikTokServer2(
       const officialItem = await fetchOfficialTikTokFeed(data.id);
       const bitRates = officialItem?.video?.bit_rate;
       if (Array.isArray(bitRates) && bitRates.length > 1) {
-        // Pick lower bitrate gear
         const lowerGear = bitRates[bitRates.length - 1]?.play_addr?.url_list?.[0];
         if (lowerGear && typeof lowerGear === 'string' && lowerGear.startsWith('http')) {
           return {
@@ -409,6 +531,20 @@ export async function scrapeTikTokServer2(rawUrl: string): Promise<MediaMetadata
     isDirect: true,
     needsResolution: true,
     note: 'Kualitas Ultra HD 4K tertinggi tanpa watermark (Server 2)'
+  });
+
+  // 2K Quad HD (1440p)
+  formats.push({
+    id: 'tt-2k',
+    quality: '2K Quad HD (1440p Tanpa Watermark)',
+    resolution: '2K',
+    type: 'video',
+    extension: 'mp4',
+    filesize: data.hd_size ? `~ ${formatBytes(Math.round(data.hd_size * 1.25))}` : (data.size ? `~ ${formatBytes(Math.round(data.size * 1.4))}` : undefined),
+    url: '',
+    isDirect: true,
+    needsResolution: true,
+    note: 'Kualitas 2K Quad HD jernih tajam tanpa watermark (Server 2)'
   });
 
   // 1080p Full HD

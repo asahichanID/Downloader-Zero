@@ -3,8 +3,8 @@ import { detectPlatform, resolveTikTokDownload } from './_utils/scraper.ts';
 function normalizeLoaderFormat(raw: string | undefined): string {
   if (!raw) return '1080';
   const f = String(raw).toLowerCase().trim();
-  if (f === '4k' || f === '2160' || f === '2160p' || f.includes('2160') || f.includes('4k')) return '2160';
   if (f === '2k' || f === '1440' || f === '1440p' || f.includes('1440') || f.includes('2k') || f.includes('qhd')) return '1440';
+  if (f === '4k' || f === '2160' || f === '2160p' || f.includes('2160') || f.includes('4k')) return '2160';
   if (f === '1080' || f === '1080p' || f.includes('1080')) return '1080';
   if (f === '720' || f === '720p' || f.includes('720')) return '720';
   if (f === '480' || f === '480p' || f.includes('480')) return '480';
@@ -76,15 +76,15 @@ export default async function handler(req: any, res: any) {
       const key = (apiKey || envKey || 'j3i3mg').trim().replace(/^["']|["']$/g, '');
       const isAudio = normalizedFormat === 'mp3';
       const qualityMap: Record<string, string> = {
-        '2160': '720p',
-        '1440': '720p',
-        '1080': '720p',
+        '2160': '1080p',
+        '1440': '1080p',
+        '1080': '1080p',
         '720': '720p',
         '480': '480p',
         '360': '360p',
         'mp3': '128kbps'
       };
-      const neoQ = qualityMap[normalizedFormat] || (isAudio ? '128kbps' : '720p');
+      const neoQ = qualityMap[normalizedFormat] || (isAudio ? '128kbps' : '1080p');
       const neoType = isAudio ? 'audio' : 'video';
       const neoEp = `https://api.neoxr.eu/api/youtube?url=${encodeURIComponent(url)}&type=${neoType}&quality=${neoQ}&apikey=${encodeURIComponent(key)}`;
 
@@ -142,19 +142,37 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // Auto mode
-    try {
-      const result1 = await tryServer1();
-      res.json(result1);
-      return;
-    } catch (err1) {
-      console.warn('[api/start-job] Server 1 failed, fallback to Server 2:', err1);
+    // Auto mode: For high-res (2160 / 4K, 1440 / 2K, 1080 / Full HD), prioritize Server 2
+    const isHighRes = normalizedFormat === '2160' || normalizedFormat === '1440' || normalizedFormat === '1080';
+    if (isHighRes) {
       try {
         const result2 = await tryServer2();
         res.json(result2);
         return;
       } catch (err2) {
-        console.warn('[api/start-job] Server 2 failed:', err2);
+        console.warn('[api/start-job] High-res Server 2 failed, falling back to Server 1:', err2);
+        try {
+          const result1 = await tryServer1();
+          res.json(result1);
+          return;
+        } catch (err1) {
+          console.warn('[api/start-job] Server 1 also failed:', err1);
+        }
+      }
+    } else {
+      try {
+        const result1 = await tryServer1();
+        res.json(result1);
+        return;
+      } catch (err1) {
+        console.warn('[api/start-job] Server 1 failed, fallback to Server 2:', err1);
+        try {
+          const result2 = await tryServer2();
+          res.json(result2);
+          return;
+        } catch (err2) {
+          console.warn('[api/start-job] Server 2 failed:', err2);
+        }
       }
     }
 

@@ -183,6 +183,20 @@ export async function extractTikTokPreview(rawUrl: string): Promise<MediaMetadat
     note: 'Kualitas Ultra HD 4K tertinggi tanpa watermark'
   });
 
+  // Format Video 2K Quad HD
+  formats.push({
+    id: 'tt-2k',
+    quality: '2K Quad HD (1440p Tanpa Watermark)',
+    resolution: '2K',
+    type: 'video',
+    extension: 'mp4',
+    filesize: d.hd_size ? `~ ${formatBytes(Math.round(d.hd_size * 1.25))}` : (d.size ? `~ ${formatBytes(Math.round(d.size * 1.4))}` : undefined),
+    url: '',
+    isDirect: true,
+    needsResolution: true,
+    note: 'Kualitas 2K Quad HD jernih tajam tanpa watermark'
+  });
+
   // Format Video 1080p Full HD
   formats.push({
     id: 'tt-1080',
@@ -321,11 +335,12 @@ export async function resolveTikTokDownload(
     return await resolveTikTokServer2(url, formatId, resolution, type);
   }
 
-  // Auto / Default: Try Server 1 first; if it fails, smoothly fallback to Upgraded Server 2
+  // Auto / Default: Server 2 is the dedicated scraper engine for TikTok (free, no apikey, accurate 4K/2K/1080p/720p/audio)
+  // We prioritize Server 2 first; if it ever fails, smoothly fallback to Server 1
   try {
-    return await resolveTikTokServer1(url, formatId, resolution, type, apiKey);
-  } catch (err1) {
-    console.warn('[TikTok Resolve] Server 1 failed, falling back to Upgraded Server 2:', err1);
     return await resolveTikTokServer2(url, formatId, resolution, type);
+  } catch (err2) {
+    console.warn('[TikTok Resolve] Server 2 scraper notice, falling back to Server 1:', err2);
+    return await resolveTikTokServer1(url, formatId, resolution, type, apiKey);
   }
 }

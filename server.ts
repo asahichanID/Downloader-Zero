@@ -123,12 +123,11 @@ async function startServer() {
     }
   });
 
-  // Helper to normalize format parameter for loader.to engine
   function normalizeLoaderFormat(raw: string | undefined): string {
     if (!raw) return '1080';
     const f = String(raw).toLowerCase().trim();
-    if (f === '4k' || f === '2160' || f === '2160p' || f.includes('2160') || f.includes('4k')) return '2160';
     if (f === '2k' || f === '1440' || f === '1440p' || f.includes('1440') || f.includes('2k') || f.includes('qhd')) return '1440';
+    if (f === '4k' || f === '2160' || f === '2160p' || f.includes('2160') || f.includes('4k')) return '2160';
     if (f === '1080' || f === '1080p' || f.includes('1080')) return '1080';
     if (f === '720' || f === '720p' || f.includes('720')) return '720';
     if (f === '480' || f === '480p' || f.includes('480')) return '480';
@@ -192,15 +191,15 @@ async function startServer() {
         const key = (apiKey || envKey || 'j3i3mg').trim().replace(/^["']|["']$/g, '');
         const isAudio = normalizedFormat === 'mp3';
         const qualityMap: Record<string, string> = {
-          '2160': '720p',
-          '1440': '720p',
-          '1080': '720p',
+          '2160': '1080p',
+          '1440': '1080p',
+          '1080': '1080p',
           '720': '720p',
           '480': '480p',
           '360': '360p',
           'mp3': '128kbps'
         };
-        const neoQ = qualityMap[normalizedFormat] || (isAudio ? '128kbps' : '720p');
+        const neoQ = qualityMap[normalizedFormat] || (isAudio ? '128kbps' : '1080p');
         const neoType = isAudio ? 'audio' : 'video';
         const neoEp = `https://api.neoxr.eu/api/youtube?url=${encodeURIComponent(url)}&type=${neoType}&quality=${neoQ}&apikey=${encodeURIComponent(key)}`;
 
@@ -258,19 +257,40 @@ async function startServer() {
         return;
       }
 
-      // Auto: Try Server 1 first; fallback to Server 2 on failure
-      try {
-        const result1 = await tryServer1();
-        res.json(result1);
-        return;
-      } catch (err1) {
-        console.warn('[server] Server 1 start-job failed, falling back to Server 2:', err1);
+      // Auto Mode:
+      // For high resolutions (2160 / 4K, 1440 / 2K, 1080 / Full HD), prioritize Server 2 (Loader.to)
+      // because Loader.to converts true 4K and 2K streams, whereas Server 1 maxes out at 1080p/720p!
+      const isHighRes = normalizedFormat === '2160' || normalizedFormat === '1440' || normalizedFormat === '1080';
+      if (isHighRes) {
         try {
           const result2 = await tryServer2();
           res.json(result2);
           return;
         } catch (err2) {
-          console.warn('[server] Server 2 start-job failed:', err2);
+          console.warn('[server] High-res Server 2 start-job failed, falling back to Server 1:', err2);
+          try {
+            const result1 = await tryServer1();
+            res.json(result1);
+            return;
+          } catch (err1) {
+            console.warn('[server] Server 1 start-job also failed:', err1);
+          }
+        }
+      } else {
+        // Standard quality (720p, 480p, 360p, mp3): Try Server 1 first
+        try {
+          const result1 = await tryServer1();
+          res.json(result1);
+          return;
+        } catch (err1) {
+          console.warn('[server] Server 1 start-job failed, falling back to Server 2:', err1);
+          try {
+            const result2 = await tryServer2();
+            res.json(result2);
+            return;
+          } catch (err2) {
+            console.warn('[server] Server 2 start-job failed:', err2);
+          }
         }
       }
 
