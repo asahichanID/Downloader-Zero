@@ -1,4 +1,5 @@
 import type { MediaMetadata, MediaFormat, ServerMode } from '../../types/index.ts';
+import { resolveTikTokServer2 as resolveTikTokServer2S2 } from '../server2/tiktok-s2.ts';
 
 // Helper to format bytes
 function formatBytes(bytes?: number): string {
@@ -293,95 +294,14 @@ export async function resolveTikTokServer1(
   throw new Error('Server 1 tidak menghasilkan link unduhan yang valid.');
 }
 
-// Resolve on Server 2 (UPGRADED: True 4K / 1080p Master stream & 320kbps Audio)
+// Resolve on Server 2 (DEDICATED SERVER 2 ENGINE in server2/tiktok-s2.ts)
 export async function resolveTikTokServer2(
   url: string,
   formatId: string,
   resolution: string,
   type: string
 ): Promise<{ downloadUrl: string; quality?: string }> {
-  const target = await resolveTikTokUrl(url);
-  const cleanUrl = encodeURIComponent(target);
-
-  const endpoints = [
-    `https://www.tikwm.com/api/?url=${cleanUrl}&hd=1`,
-    `https://tikwm.com/api/?url=${cleanUrl}&hd=1`,
-    `https://www.tikwm.com/api/?url=${cleanUrl}`,
-    `https://tikwm.com/api/?url=${cleanUrl}`
-  ];
-
-  let d: any = null;
-  let lastErr = '';
-
-  for (const ep of endpoints) {
-    try {
-      const res = await fetch(ep, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
-        signal: AbortSignal.timeout(10000)
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.code === 0 && json.data) {
-          d = json.data;
-          break;
-        } else {
-          lastErr = json.msg || 'Server 2 response code bukan 0';
-        }
-      }
-    } catch (e: any) {
-      lastErr = e.message || 'Koneksi ke Server 2 gagal';
-    }
-  }
-
-  if (!d) {
-    throw new Error(lastErr || 'Server 2 tidak dapat memproses video TikTok ini.');
-  }
-
-  const fixUrl = (u?: string): string => {
-    if (!u) return '';
-    if (u.startsWith('http://') || u.startsWith('https://')) return u;
-    return `https://www.tikwm.com${u.startsWith('/') ? '' : '/'}${u}`;
-  };
-
-  const isAudio = type === 'audio' || formatId === 'tt-audio';
-  if (isAudio) {
-    const audioUrl = fixUrl(d.music || d.music_info?.play);
-    if (audioUrl) {
-      return { downloadUrl: audioUrl, quality: '320 kbps (Original Sound MP3)' };
-    }
-  }
-
-  // 4K Ultra HD & 1080p FHD: Use master high-bitrate stream from TikTok CDN
-  const is4K = resolution === '4K' || resolution === '2160p' || formatId === 'tt-4k';
-  const is1080p = resolution === '1080p' || formatId === 'tt-1080';
-
-  if (is4K || is1080p) {
-    const masterHd = fixUrl(d.hdplay || d.play);
-    if (masterHd) {
-      return {
-        downloadUrl: masterHd,
-        quality: is4K ? '4K Ultra HD' : '1080p Full HD'
-      };
-    }
-  }
-
-  // 720p HD Standard
-  const standardPlay = fixUrl(d.play || d.hdplay);
-  if (standardPlay) {
-    return { downloadUrl: standardPlay, quality: '720p HD' };
-  }
-
-  // Photo slide fallback
-  if (Array.isArray(d.images) && d.images.length > 0) {
-    const imgUrl = fixUrl(d.images[0]);
-    if (imgUrl) {
-      return { downloadUrl: imgUrl, quality: 'HD Photo' };
-    }
-  }
-
-  throw new Error('Server 2 tidak menemukan tautan unduhan.');
+  return await resolveTikTokServer2S2(url, formatId, resolution, type);
 }
 
 // Master Dispatcher for TikTok format download (Server 1 vs Server 2 vs Auto)

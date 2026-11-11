@@ -28,35 +28,52 @@ export const BannerDZ: React.FC = () => {
     <div className="relative w-full overflow-hidden select-none bg-[#050B18]">
       {/* Background Media Container (Full-width edge-to-edge) */}
       <div className="relative w-full h-[270px] sm:h-[320px] md:h-[360px] lg:h-[400px] overflow-hidden">
-        {/* Banner PNG Image */}
-        <img
-          src={bannerImage}
-          alt="DownloaderZero Banner"
-          className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center transition-opacity duration-700 ease-in-out ${
-            showVideo ? 'opacity-0' : 'opacity-100'
-          }`}
-          loading="eager"
-        />
+        {/* Banner Media Layer with 5% bottom transparency fade mask */}
+        <div
+          className="absolute inset-0 w-full h-full"
+          style={{
+            maskImage: 'linear-gradient(to bottom, black 0%, black 95%, transparent 100%)',
+            WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 95%, transparent 100%)',
+          }}
+        >
+          {/* Banner PNG Image */}
+          <img
+            src={bannerImage}
+            alt="DownloaderZero Banner"
+            className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center transition-opacity duration-700 ease-in-out ${
+              showVideo ? 'opacity-0' : 'opacity-100'
+            }`}
+            loading="eager"
+          />
 
-        {/* Banner MP4 Video (Smooth background transition) */}
-        <video
-          ref={videoRef}
-          src="/banner_zero.mp4"
-          muted
-          playsInline
-          loop
-          preload="auto"
-          className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center transition-opacity duration-700 ease-in-out ${
-            showVideo ? 'opacity-100' : 'opacity-0'
-          }`}
-        />
+          {/* Banner MP4 Video (Smooth background transition) */}
+          <video
+            ref={videoRef}
+            src="/banner_zero.mp4"
+            muted
+            playsInline
+            loop
+            preload="auto"
+            className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center transition-opacity duration-700 ease-in-out ${
+              showVideo ? 'opacity-100' : 'opacity-0'
+            }`}
+          />
+        </div>
 
         {/* Ambient Dark-Blue & Shimmer Overlays */}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#050B18]/90 via-[#050B18]/45 to-transparent" />
-        <div className="absolute inset-0 bg-blue-950/20 mix-blend-color" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#050B18]/90 via-[#050B18]/45 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-blue-950/20 mix-blend-color pointer-events-none" />
 
-        {/* Bottom 15% Gradient Fade: Allows the URL input card to overlap seamlessly */}
-        <div className="absolute inset-x-0 bottom-0 h-32 sm:h-36 md:h-40 bg-gradient-to-t from-[#050B18] via-[#050B18]/85 to-transparent pointer-events-none" />
+        {/* Bottom 5% Gradient Fade: Fades down smoothly to background black (#050B18) at the very bottom edge */}
+        <div
+          className="absolute inset-x-0 -bottom-[1px] h-[6%] min-h-[16px] max-h-[22px] bg-gradient-to-b from-transparent via-[#050B18]/75 to-[#050B18] pointer-events-none"
+          aria-hidden="true"
+        />
+        {/* 1.5px subpixel seam-eliminator ensuring zero border/line in production */}
+        <div
+          className="absolute inset-x-0 -bottom-[1px] h-[1.5px] bg-[#050B18] pointer-events-none"
+          aria-hidden="true"
+        />
 
         {/* Brand Lockup Overlay (Aligned with content container) */}
         <div className="absolute inset-0 max-w-4xl mx-auto px-4 sm:px-6 pointer-events-none flex flex-col justify-start">

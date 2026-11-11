@@ -479,7 +479,7 @@ export default function App() {
   return (
     <div className="relative min-h-screen w-full bg-[#050B18] text-slate-100 flex flex-col items-center overflow-x-hidden">
       {/* Top Banner (Spans 100% full-width across the screen) */}
-      <header className="w-full">
+      <header className="w-full bg-[#050B18]">
         <BannerDZ />
       </header>
 

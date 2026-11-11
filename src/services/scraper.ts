@@ -1,8 +1,9 @@
 import type { PlatformType, ServerMode, MediaFormat, MediaMetadata, AudioTrack } from '../types/index.ts';
 import * as cheerio from 'cheerio';
 import { extractTikTokPreview, resolveTikTokDownload } from './previewEngines/tiktokPreview.ts';
+import { scrapeTikTokServer2, resolveTikTokServer2 } from './server2/tiktok-s2.ts';
 
-export { resolveTikTokDownload };
+export { resolveTikTokDownload, resolveTikTokServer2, scrapeTikTokServer2 };
 
 
 export function detectPlatform(url: string): PlatformType {
@@ -138,169 +139,11 @@ function extractAllMediaUrls(data: any): { videos: string[]; audios: string[]; i
 const NEOXR_BASE_URL = 'https://api.neoxr.eu/api';
 const DEFAULT_NEOXR_KEY = 'j3i3mg';
 
-// ----------------- TIKTOK SCRAPER -----------------
-async function scrapeTikTokServer2(url: string): Promise<MediaMetadata> {
-
-  const target = await resolveRedirectUrl(url);
-  const cleanUrl = encodeURIComponent(target.trim());
-  const endpoints = [
-    `https://www.tikwm.com/api/?url=${cleanUrl}`,
-    `https://tikwm.com/api/?url=${cleanUrl}`
-  ];
-
-  let d: any = null;
-  let lastErr = '';
-
-  for (const ep of endpoints) {
-    try {
-      const response = await fetch(ep, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
-        },
-        signal: AbortSignal.timeout(8000)
-      });
-      if (response.ok) {
-        const json = await response.json();
-        if (json.code === 0 && json.data) {
-          d = json.data;
-          break;
-        } else {
-          lastErr = json.msg || 'Gagal mengekstrak data dari TikWM';
-        }
-      }
-    } catch (e: any) {
-      lastErr = e.message || 'Koneksi ke server TikTok gagal';
-    }
+// ----------------- TIKTOK SCRAPER (Delegated to dedicated modular server2/tiktok-s2.ts) -----------------
+async function scrapeTikTok(url: string, _apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
+  if (serverMode === 'server2') {
+    return await scrapeTikTokServer2(url);
   }
-
-  if (!d) {
-    throw new Error(lastErr || 'Konten TikTok tidak ditemukan atau video bersifat privat.');
-  }
-
-  const fixUrl = (u?: string): string => {
-    if (!u) return '';
-    if (u.startsWith('http://') || u.startsWith('https://')) return u;
-    return `https://www.tikwm.com${u.startsWith('/') ? '' : '/'}${u}`;
-  };
-
-  const formats: MediaFormat[] = [];
-  const rawImages: string[] = Array.isArray(d.images)
-    ? d.images.filter((img: any) => typeof img === 'string' && img.startsWith('http'))
-    : [];
-  const isPhotoSlide = rawImages.length > 0;
-
-  // Photo slide format
-  if (isPhotoSlide) {
-    formats.push({
-      id: 'tt-photos-all',
-      quality: `Koleksi Foto (${rawImages.length} Slide Gambar HD)`,
-      resolution: 'HD Foto',
-      type: 'photos',
-      extension: 'jpg',
-      url: rawImages[0],
-      isDirect: true,
-      note: `${rawImages.length} foto resolusi penuh siap unduh`
-    });
-
-    rawImages.slice(0, 10).forEach((imgUrl, i) => {
-      formats.push({
-        id: `tt-photo-${i + 1}`,
-        quality: `Foto Slide #${i + 1}`,
-        resolution: 'HD Foto',
-        type: 'photos',
-        extension: 'jpg',
-        url: imgUrl,
-        isDirect: true,
-        note: `Gambar ke-${i + 1}`
-      });
-    });
-  }
-
-  // HD Video (No Watermark)
-  const hd = fixUrl(d.hdplay || d.play);
-  if (hd) {
-    formats.push({
-      id: 'tt-hd',
-      quality: '1080p FHD (Tanpa Watermark)',
-      resolution: '1080p',
-      type: 'video',
-      extension: 'mp4',
-      filesize: formatBytes(d.hd_size || d.size),
-      filesizeBytes: d.hd_size || d.size,
-      url: hd,
-      isDirect: true,
-      note: 'Kualitas tertinggi tanpa watermark'
-    });
-  }
-
-  // Standard Video (No Watermark)
-  const sd = fixUrl(d.play);
-  if (sd && sd !== hd) {
-    formats.push({
-      id: 'tt-sd',
-      quality: '720p HD (Tanpa Watermark)',
-      resolution: '720p',
-      type: 'video',
-      extension: 'mp4',
-      filesize: formatBytes(d.size),
-      filesizeBytes: d.size,
-      url: sd,
-      isDirect: true,
-      note: 'Ukuran lebih hemat data'
-    });
-  }
-
-  // Original MP3 Audio
-  const music = fixUrl(d.music);
-  if (music) {
-    formats.push({
-      id: 'tt-audio',
-      quality: '320 kbps (Original Sound MP3)',
-      resolution: 'Audio',
-      type: 'audio',
-      extension: 'mp3',
-      url: music,
-      isDirect: true,
-      note: d.music_info?.title ? `Lagu: ${d.music_info.title}` : 'Audio musik jernih'
-    });
-  }
-
-  // Optional Watermarked Video
-  const wm = fixUrl(d.wmplay);
-  if (wm) {
-    formats.push({
-      id: 'tt-wm',
-      quality: '720p (Dengan Watermark)',
-      resolution: '720p',
-      type: 'video',
-      extension: 'mp4',
-      filesize: formatBytes(d.wm_size),
-      filesizeBytes: d.wm_size,
-      url: wm,
-      isDirect: true,
-      note: 'Format asli TikTok'
-    });
-  }
-
-  return {
-    id: d.id || `tt-${Date.now()}`,
-    url: target,
-    platform: 'tiktok',
-    title: d.title || d.caption || (isPhotoSlide ? 'TikTok Photo Slideshow' : 'Video TikTok'),
-    author: d.author?.nickname || d.author?.unique_id || 'Kreator TikTok',
-    authorUrl: d.author?.unique_id ? `https://www.tiktok.com/@${d.author.unique_id}` : undefined,
-    thumbnail: rawImages[0] || fixUrl(d.cover) || fixUrl(d.origin_cover) || '',
-    duration: d.duration || 0,
-    durationFormatted: formatDuration(d.duration),
-    formats,
-    images: rawImages,
-    isPhotoSlide,
-    source: 'TikWM Live Engine',
-    createdAt: new Date().toISOString()
-  };
-}
-
-async function scrapeTikTok(url: string, _apiKey?: string, _serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
   // Pengambilan media pertama download: khusus mengambil thumbnail foto utuh, angka durasi, dan judul
   // Pemakaian API download dipanggil setelah pemilihan format agar tidak dipanggil 2 kali
   return await extractTikTokPreview(url);

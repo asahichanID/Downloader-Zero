@@ -12,6 +12,9 @@ export default defineConfig(() => {
       },
     },
     server: {
+      host: '0.0.0.0',
+      port: 3000,
+      allowedHosts: true as const,
       // HMR and standalone WS server disabled to prevent port 24678 conflicts
       hmr: false as const,
       ws: false as const,
