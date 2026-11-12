@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Moon, Sun, Shield, Server, CheckCircle2, Info, Check, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { ApkDownloadCard } from './ApkDownloadCard.tsx';
 import type { ServerMode } from '../types/index.ts';
 
 interface SettingsModalProps {
@@ -111,6 +112,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {/* Modal Body */}
             <div className="py-5 space-y-5">
+              {/* 0. PREMIUM ANDROID APK DOWNLOAD CARD (Paling Atas) */}
+              <ApkDownloadCard />
+
               {/* 1. Server API Engine Selection (Server 1 & Server 2) */}
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-blue-900/50 space-y-3">
                 <div className="flex items-center justify-between">

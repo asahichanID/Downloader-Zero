@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import fs from 'fs';
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import path from 'path';
@@ -33,12 +34,24 @@ process.on('unhandledRejection', (reason: any) => {
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-// Support CLI flags (--port 3000, --host 0.0.0.0) or default to 3000 for AI Studio environment
+// Support CLI flags (--port 3000, --port=3000, --host 0.0.0.0, --host=0.0.0.0) or default to 3000 for AI Studio environment
 const cliArgs = process.argv.slice(2);
-const portFlagIndex = cliArgs.indexOf('--port');
-const cliPort = portFlagIndex !== -1 && cliArgs[portFlagIndex + 1] ? parseInt(cliArgs[portFlagIndex + 1], 10) : null;
-const hostFlagIndex = cliArgs.indexOf('--host');
-const HOST = hostFlagIndex !== -1 && cliArgs[hostFlagIndex + 1] ? cliArgs[hostFlagIndex + 1] : '0.0.0.0';
+let cliPort: number | null = null;
+let cliHost: string | null = null;
+for (let i = 0; i < cliArgs.length; i++) {
+  const arg = cliArgs[i];
+  if (arg === '--port' && cliArgs[i + 1]) {
+    cliPort = parseInt(cliArgs[i + 1], 10);
+  } else if (arg.startsWith('--port=')) {
+    cliPort = parseInt(arg.split('=')[1], 10);
+  }
+  if (arg === '--host' && cliArgs[i + 1]) {
+    cliHost = cliArgs[i + 1];
+  } else if (arg.startsWith('--host=')) {
+    cliHost = arg.split('=')[1];
+  }
+}
+const HOST = cliHost || (process.env.HOST ? process.env.HOST : '0.0.0.0');
 const PORT = cliPort || (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
 
 async function startServer() {
@@ -93,6 +106,24 @@ async function startServer() {
       version: '2026.1',
       platforms: ['youtube', 'tiktok', 'facebook', 'instagram', 'pinterest', 'spotify', 'terabox']
     });
+  });
+
+  // 1b. Direct APK Download Endpoint (Android Package Archive with instant streaming & no-cache)
+  app.get(['/api/download-apk', '/download-apk', '/DownloaderZero.apk'], (_req: Request, res: Response) => {
+    const apkFilePath = path.resolve(__dirname, 'public', 'DownloaderZero.apk');
+    if (fs.existsSync(apkFilePath)) {
+      const stat = fs.statSync(apkFilePath);
+      res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+      res.setHeader('Content-Disposition', 'attachment; filename="DownloaderZero.apk"');
+      res.setHeader('Content-Length', stat.size);
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      const stream = fs.createReadStream(apkFilePath);
+      stream.pipe(res);
+    } else {
+      res.status(404).json({ success: false, error: 'Berkas DownloaderZero.apk tidak ditemukan.' });
+    }
   });
 
   // 2. Extract media metadata and formats (with anti-SSRF & rate limiter)
@@ -760,22 +791,50 @@ async function startServer() {
     });
   }
 
-  const server = app.listen(PORT, HOST, () => {
-    console.log(`[DownloaderZero] Server running at http://${HOST}:${PORT}`);
-  });
+  let server: any;
+  let retryCount = 0;
 
-  server.on('error', (err: any) => {
-    if (err?.code === 'EADDRINUSE') {
-      console.warn(`[DownloaderZero] Port ${PORT} already in use or reloading.`);
-    } else {
-      console.error('[DownloaderZero] Server error:', err);
-    }
-  });
+  function listen() {
+    server = app.listen(PORT, HOST, () => {
+      console.log(`[DownloaderZero] Server running at http://${HOST}:${PORT}`);
+    });
+
+    server.on('error', (err: any) => {
+      if (err?.code === 'EADDRINUSE') {
+        if (retryCount < 10) {
+          retryCount++;
+          console.warn(`[DownloaderZero] Port ${PORT} already in use, retrying in 500ms (attempt ${retryCount}/10)...`);
+          setTimeout(() => {
+            try {
+              server.close();
+            } catch {}
+            listen();
+          }, 500);
+        } else {
+          console.error(`[DownloaderZero] Port ${PORT} still in use after 10 attempts.`);
+          process.exit(1);
+        }
+      } else {
+        console.error('[DownloaderZero] Server error:', err);
+        process.exit(1);
+      }
+    });
+  }
+
+  listen();
 
   const shutdown = () => {
-    server.close(() => {
+    if (server) {
+      server.close(() => {
+        process.exit(0);
+      });
+      // Safety timeout in case open connections prevent clean close
+      setTimeout(() => {
+        process.exit(0);
+      }, 2000).unref();
+    } else {
       process.exit(0);
-    });
+    }
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);

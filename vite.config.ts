@@ -18,7 +18,9 @@ export default defineConfig(() => {
       // HMR and standalone WS server disabled to prevent port 24678 conflicts
       hmr: false as const,
       ws: false as const,
-      watch: null,
+      watch: {
+        ignored: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
+      },
     },
   };
 });

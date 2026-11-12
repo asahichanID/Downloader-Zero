@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Moon, Sun, Key, Trash2, FileText, Shield, Info, ArrowLeft, Check, Sparkles, Server, Cpu, CheckCircle2 } from 'lucide-react';
+import { ApkDownloadCard } from './ApkDownloadCard.tsx';
 import type { ServerMode } from '../types/index.ts';
 
 interface SettingsFullViewProps {
@@ -84,6 +85,9 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
           <h1 className="text-lg font-bold text-white">Pengaturan & Konfigurasi</h1>
         </div>
       </div>
+
+      {/* 0. PREMIUM ANDROID APK DOWNLOAD CARD (Paling Atas) */}
+      <ApkDownloadCard />
 
       {/* 1. Server API Engine Selection (Server 1 & Server 2) */}
       <div className="p-4 rounded-2xl bg-[#0c1836]/90 border border-blue-500/20 space-y-3.5 shadow-lg shadow-black/40">
