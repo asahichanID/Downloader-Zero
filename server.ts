@@ -110,7 +110,10 @@ async function startServer() {
 
   // 1b. Direct APK Download Endpoint (Android Package Archive with instant streaming & no-cache)
   app.get(['/api/download-apk', '/download-apk', '/DownloaderZero.apk'], (_req: Request, res: Response) => {
-    const apkFilePath = path.resolve(__dirname, 'public', 'DownloaderZero.apk');
+    let apkFilePath = path.resolve(__dirname, 'public', 'DownloaderZero.apk');
+    if (!fs.existsSync(apkFilePath)) {
+      apkFilePath = path.resolve(__dirname, 'dist', 'DownloaderZero.apk');
+    }
     if (fs.existsSync(apkFilePath)) {
       const stat = fs.statSync(apkFilePath);
       res.setHeader('Content-Type', 'application/vnd.android.package-archive');
@@ -799,6 +802,15 @@ async function startServer() {
       console.log(`[DownloaderZero] Server running at http://${HOST}:${PORT}`);
     });
 
+    server.on('clientError', (err: any, socket: any) => {
+      if (err?.code === 'ECONNRESET' || !socket.writable) {
+        return;
+      }
+      try {
+        socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+      } catch {}
+    });
+
     server.on('error', (err: any) => {
       if (err?.code === 'EADDRINUSE') {
         if (retryCount < 10) {
@@ -806,41 +818,23 @@ async function startServer() {
           console.warn(`[DownloaderZero] Port ${PORT} already in use, retrying in 500ms (attempt ${retryCount}/10)...`);
           setTimeout(() => {
             try {
-              server.close();
+              server?.close();
             } catch {}
             listen();
           }, 500);
         } else {
           console.error(`[DownloaderZero] Port ${PORT} still in use after 10 attempts.`);
-          process.exit(1);
         }
       } else {
-        console.error('[DownloaderZero] Server error:', err);
-        process.exit(1);
+        console.error('[DownloaderZero] Server notice:', err?.message || err);
       }
     });
   }
 
   listen();
-
-  const shutdown = () => {
-    if (server) {
-      server.close(() => {
-        process.exit(0);
-      });
-      // Safety timeout in case open connections prevent clean close
-      setTimeout(() => {
-        process.exit(0);
-      }, 2000).unref();
-    } else {
-      process.exit(0);
-    }
-  };
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
 }
 
 startServer().catch((err) => {
   console.error('Failed to start server:', err);
-  process.exit(1);
 });
+

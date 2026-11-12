@@ -81,7 +81,7 @@ export const ApkDownloadCard: React.FC<ApkDownloadCardProps> = ({ className = ''
         </div>
         <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px]">
           <HardDrive className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <span className="text-slate-300 font-semibold truncate">Ukuran ~13.7 MB</span>
+          <span className="text-slate-300 font-semibold truncate">Ukuran ~9.7 MB</span>
         </div>
         <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px]">
           <Cpu className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
