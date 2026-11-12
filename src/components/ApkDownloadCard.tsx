@@ -15,7 +15,7 @@ export const ApkDownloadCard: React.FC<ApkDownloadCardProps> = ({ className = ''
 
     const cacheBuster = Date.now();
     const link = document.createElement('a');
-    link.href = `/api/download-apk?v=2.4.0&t=${cacheBuster}`;
+    link.href = `/api/download-apk?v=2.5.0&t=${cacheBuster}`;
     link.setAttribute('download', 'DownloaderZero.apk');
     document.body.appendChild(link);
     link.click();
@@ -77,11 +77,11 @@ export const ApkDownloadCard: React.FC<ApkDownloadCardProps> = ({ className = ''
       <div className="relative z-10 grid grid-cols-3 gap-2 mt-3.5 pt-3 border-t border-blue-500/15">
         <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px]">
           <Smartphone className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-          <span className="text-slate-300 font-semibold truncate">v2.4.0 (Resmi)</span>
+          <span className="text-slate-300 font-semibold truncate">v2.5.0 (Resmi)</span>
         </div>
         <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px]">
           <HardDrive className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <span className="text-slate-300 font-semibold truncate">Ukuran 4.5 MB</span>
+          <span className="text-slate-300 font-semibold truncate">Ukuran ~13.7 MB</span>
         </div>
         <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px]">
           <Cpu className="w-3.5 h-3.5 text-emerald-400 shrink-0" />

@@ -20,7 +20,7 @@ import { TermsModal } from './components/TermsModal.tsx';
 import { AnimatePresence, motion } from 'motion/react';
 import { Loader2, Download, CheckCircle2, AlertCircle, X } from 'lucide-react';
 
-import { detectPlatform, formatDuration, formatBytes } from './services/scraper.ts';
+import { detectPlatform, formatDuration, formatBytes, extractMedia, resolveTikTokDownload } from './services/scraper.ts';
 import {
   saveDownloadedMedia,
   getAllHistory,
@@ -201,18 +201,34 @@ export default function App() {
     setIsLoading(true);
     try {
       const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
-      const response = await fetch('/api/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: trimmed, apiKey: customKey, server: serverMode })
-      });
+      let meta: MediaMetadata | null = null;
 
-      const result = await response.json();
-      if (!response.ok || !result.success || !result.data) {
-        throw new Error(result.error || 'Gagal mengekstrak media dari link yang diberikan.');
+      try {
+        const response = await fetch('/api/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: trimmed, apiKey: customKey, server: serverMode })
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result && result.success && result.data) {
+            meta = result.data;
+          }
+        }
+      } catch (backendErr) {
+        console.warn('Backend extract notice, falling back to direct client extractor:', backendErr);
       }
 
-      const meta: MediaMetadata = result.data;
+      // Standalone APK / Offline fallback: extract directly in client
+      if (!meta) {
+        meta = await extractMedia(trimmed, customKey, serverMode);
+      }
+
+      if (!meta) {
+        throw new Error('Gagal mengekstrak media dari link yang diberikan.');
+      }
+
       setMediaData(meta);
       setSelectedPlatform(meta.platform);
       if (meta.platform === 'spotify') {
@@ -307,6 +323,24 @@ export default function App() {
             }
           }
         }
+        // TikTok direct client fallback if start-job not resolved
+        if (!finalUrl && (mediaData.platform === 'tiktok' || detectPlatform(mediaData.url) === 'tiktok')) {
+          try {
+            const resolved = await resolveTikTokDownload(
+              mediaData.url,
+              targetFormat.id || 'tt-1080',
+              targetFormat.resolution || '1080p',
+              targetFormat.type || 'video',
+              serverMode,
+              customKey
+            );
+            if (resolved && resolved.downloadUrl) {
+              finalUrl = resolved.downloadUrl;
+            }
+          } catch (ttErr) {
+            console.warn('Direct TikTok resolution notice:', ttErr);
+          }
+        }
       }
 
       // Direct fallback to best available format from metadata if still missing
@@ -332,45 +366,54 @@ export default function App() {
         downloadHref += `&title=${encodeURIComponent(mediaData.title || '')}&artist=${encodeURIComponent(mediaData.author || '')}&album=${encodeURIComponent(mediaData.album || '')}&genre=${encodeURIComponent(mediaData.genre || 'Pop')}&year=${encodeURIComponent(mediaData.releaseDate || '')}&cover=${encodeURIComponent(mediaData.thumbnail || '')}&apiKey=${encodeURIComponent(customKey)}`;
       }
 
-      // Fetch the binary media stream and verify it is not an HTML/JSON error
-      const dlResponse = await fetch(downloadHref);
-      if (!dlResponse.ok) {
-        const errText = await dlResponse.text();
-        let errMsg = 'Gagal mengunduh media dari server sumber.';
-        try {
-          const parsed = JSON.parse(errText);
-          if (parsed.error) errMsg = parsed.error;
-        } catch {}
-        throw new Error(errMsg);
-      }
-
-      const contentType = dlResponse.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const parsed = await dlResponse.json();
-        throw new Error(parsed.error || 'Server sumber gagal menyediakan stream media.');
+      let mediaBlob: Blob | null = null;
+      try {
+        const dlResponse = await fetch(downloadHref);
+        if (dlResponse.ok) {
+          const contentType = dlResponse.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) {
+            const blob = await dlResponse.blob();
+            if (blob.size >= 120 || !blob.type.includes('text')) {
+              mediaBlob = blob;
+            }
+          }
+        }
+      } catch (dlErr) {
+        console.warn('Proxy download notice, falling back to direct download:', dlErr);
       }
 
       setDownloadProgress(80);
       setDownloadStatusText('Menyimpan berkas ke perangkat...');
 
-      const mediaBlob = await dlResponse.blob();
-      if (mediaBlob.size < 120 && mediaBlob.type.includes('text')) {
-        throw new Error('Berkas media yang diterima tidak valid.');
+      if (mediaBlob) {
+        // Trigger instant automatic browser download from in-memory verified blob
+        const blobUrl = URL.createObjectURL(mediaBlob);
+        const dlLink = document.createElement('a');
+        dlLink.href = blobUrl;
+        dlLink.download = filename;
+        document.body.appendChild(dlLink);
+        dlLink.click();
+        setTimeout(() => {
+          try {
+            document.body.removeChild(dlLink);
+            URL.revokeObjectURL(blobUrl);
+          } catch {}
+        }, 30000);
+      } else {
+        // Direct browser / Android DownloadManager fallback
+        const dlLink = document.createElement('a');
+        dlLink.href = finalUrl;
+        dlLink.target = '_blank';
+        dlLink.rel = 'noreferrer noopener';
+        dlLink.download = filename;
+        document.body.appendChild(dlLink);
+        dlLink.click();
+        setTimeout(() => {
+          try {
+            document.body.removeChild(dlLink);
+          } catch {}
+        }, 5000);
       }
-
-      // Trigger instant automatic browser download from in-memory verified blob
-      const blobUrl = URL.createObjectURL(mediaBlob);
-      const dlLink = document.createElement('a');
-      dlLink.href = blobUrl;
-      dlLink.download = filename;
-      document.body.appendChild(dlLink);
-      dlLink.click();
-      setTimeout(() => {
-        try {
-          document.body.removeChild(dlLink);
-          URL.revokeObjectURL(blobUrl);
-        } catch {}
-      }, 30000);
 
       // Save to lightweight IndexedDB history with duration, thumbnail, and streamable URL
       try {
@@ -393,10 +436,10 @@ export default function App() {
           mediaType: targetFormat.type,
           extension: ext as any,
           filename: filename,
-          filesize: targetFormat.filesize || formatBytes(mediaBlob.size),
-          filesizeBytes: mediaBlob.size,
+          filesize: targetFormat.filesize || (mediaBlob ? formatBytes(mediaBlob.size) : ''),
+          filesizeBytes: mediaBlob ? mediaBlob.size : (targetFormat.filesizeBytes || 0),
           downloadUrl: finalUrl,
-          blob: mediaBlob
+          blob: mediaBlob || undefined
         });
         await loadHistory();
       } catch (histErr) {

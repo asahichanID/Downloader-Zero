@@ -5,6 +5,7 @@ import JSZip from 'jszip';
 
 console.log('[DZ Packager] Starting official Android APK build & sign...');
 
+// 1. Generate release key and certificate
 const certDir = '/tmp/dz_apk_cert';
 if (!fs.existsSync(certDir)) fs.mkdirSync(certDir, { recursive: true });
 
@@ -24,9 +25,10 @@ if (!fs.existsSync(keyPk8Path)) {
   execSync(`openssl pkcs8 -topk8 -outform DER -in "${keyPemPath}" -out "${keyPk8Path}" -nocrypt`);
 }
 
-// 2. Load Android WebView base APK
+// 2. Load Android base APK
 const sampleApkPath = '/tmp/sample.apk';
 if (!fs.existsSync(sampleApkPath)) {
+  console.log('[DZ Packager] Downloading base APK...');
   execSync(`curl -L -o "${sampleApkPath}" https://github.com/mikespub-archive/android-webview/releases/download/v1.28/app-release.apk`);
 }
 
@@ -56,15 +58,31 @@ function replaceExact(buffer, targetStr, replacementStr) {
   return count;
 }
 
-replaceExact(arscBuf, 'res/BW.xml', 'res/dz.png');
-replaceExact(arscBuf, 'res/0K.xml', 'res/dz.png');
+// 4a. Point ic_launcher_foreground (@drawable/ic_launcher_foreground entry 93) directly to res/dz.png!
+// In sample.apk, ic_launcher_foreground was mapped to res/Qr.xml (length 10).
+// 'res/dz.png' has exact length 10.
+// Keeping res/BW.xml and res/0K.xml as valid <adaptive-icon> XMLs guarantees all Android 8-15 launchers display the DZ logo!
+const fgCount = replaceExact(arscBuf, 'res/Qr.xml', 'res/dz.png');
+console.log(`[DZ Packager] Replaced res/Qr.xml with res/dz.png in ARSC (${fgCount} occurrences)`);
+
+// 4b. Update adaptive icon background color from teal (0xff008577) to obsidian cyber navy (#050B18: 0xff050b18)
+const tealBytes = Buffer.from([0x77, 0x85, 0x00, 0xff]);
+const cyberNavyBytes = Buffer.from([0x18, 0x0b, 0x05, 0xff]);
+let colorPos = 0;
+let colorCount = 0;
+while ((colorPos = arscBuf.indexOf(tealBytes, colorPos)) !== -1) {
+  cyberNavyBytes.copy(arscBuf, colorPos);
+  colorPos += 4;
+  colorCount++;
+}
+console.log(`[DZ Packager] Updated ic_launcher_background color (${colorCount} occurrences) to #050B18`);
+
+// 4c. Set application label to 'Downloader'
 replaceExact(arscBuf, 'My WebView', 'Downloader');
 
 // 5. Patch binary AndroidManifest.xml: Set minSdkVersion to 21 (Android 5.0+)
-// This guarantees that any Android device (Infinix, Samsung, Xiaomi, Vivo, Oppo) can install without "Gagal mengurai paket"
 let manifestBuf = await baseZip.file('AndroidManifest.xml').async('nodebuffer');
 const manifestBytes = Buffer.from(manifestBuf);
-// Locate uses-sdk dataType 0x10 and value 0x1f (31)
 let patchedMinSdk = false;
 for (let i = 0; i < manifestBytes.length - 8; i++) {
   if (
@@ -87,19 +105,31 @@ if (!patchedMinSdk) {
   console.warn('[DZ Packager] Warning: Could not locate minSdkVersion pattern in AXML, retaining default.');
 }
 
-// 6. App Settings
-const appUrl = 'https://ais-pre-cpdsqjncmnuhyqe6kicb3s-698964539797.asia-southeast1.run.app';
+// 6. Ensure dist/ is fresh
+console.log('[DZ Packager] Checking dist assets...');
+if (!fs.existsSync(path.resolve(process.cwd(), 'dist/index.html'))) {
+  console.log('[DZ Packager] Running vite build...');
+  execSync('npm run build', { stdio: 'inherit' });
+}
+
+// 7. App Settings - Boot directly to local fast assets via WebViewAssetLoader!
+// This eliminates white screen freeze, 404s, and "tidak menanggapi" (ANR).
+const localStartUrl = 'https://appassets.androidplatform.net/assets/index.html';
 const settingsJson = JSON.stringify(
   {
     sites: [
       {
-        url: appUrl,
+        url: localStartUrl,
         title: "DownloaderZero (DZ)"
       }
     ],
-    other: appUrl,
+    other: localStartUrl,
     match: [
+      ["host", "equals", "appassets.androidplatform.net"],
       ["host", "endsWith", "run.app"],
+      ["host", "contains", "neoxr.eu"],
+      ["host", "contains", "loader.to"],
+      ["host", "contains", "tikwm.com"],
       ["host", "contains", "google"],
       ["host", "contains", "youtube.com"],
       ["host", "contains", "tiktok.com"],
@@ -122,35 +152,10 @@ const settingsJson = JSON.stringify(
   2
 );
 
-// 7. Build new clean ZIP
+// 8. Build new clean ZIP
 const newZip = new JSZip();
 
-const iconTargets = new Set([
-  'res/dz.png',
-  'res/pu.png',
-  'res/8h.png',
-  'res/j4.png',
-  'res/pk.png',
-  'res/tG.png',
-  'res/0Z.png',
-  'res/7m.png',
-  'res/Ag.png',
-  'res/Ck.png',
-  'res/MD.png',
-  'res/p8.png',
-  'res/zz.png',
-  'res/5P.png',
-  'res/Pb.png',
-  'res/6d.png',
-  'res/Th.png',
-  'res/d3.png',
-  'res/iO.png',
-  'res/o_.png',
-  'res/aU.png',
-  'res/kp.png',
-  'res/nf.png'
-]);
-
+// Copy base files, keeping all original drawables intact
 for (const [filename, fileEntry] of Object.entries(baseZip.files)) {
   // Strip ALL old signatures and META-INF so apksigner generates a clean cryptographic envelope
   if (filename.startsWith('META-INF/')) {
@@ -164,15 +169,37 @@ for (const [filename, fileEntry] of Object.entries(baseZip.files)) {
     newZip.file(filename, arscBuf, { compression: 'STORE' });
   } else if (filename === 'assets/settings.json') {
     newZip.file(filename, settingsJson);
-  } else if (iconTargets.has(filename)) {
-    newZip.file(filename, logoDzBuf);
   } else {
     const content = await fileEntry.async('nodebuffer');
     newZip.file(filename, content);
   }
 }
 
+// Add the official DZ logo into res/dz.png for the adaptive icon foreground & direct icon
 newZip.file('res/dz.png', logoDzBuf);
+
+// Bundle all dist/ web assets directly into the APK assets/ directory
+const distDir = path.resolve(process.cwd(), 'dist');
+function addFolderToZip(folderPath, zipPrefix) {
+  const items = fs.readdirSync(folderPath);
+  for (const item of items) {
+    const fullPath = path.join(folderPath, item);
+    const zipPath = `${zipPrefix}/${item}`.replace(/\/+/g, '/');
+    const stat = fs.statSync(fullPath);
+    if (stat.isDirectory()) {
+      addFolderToZip(fullPath, zipPath);
+    } else {
+      newZip.file(zipPath, fs.readFileSync(fullPath));
+    }
+  }
+}
+
+console.log('[DZ Packager] Bundling dist assets into APK assets/...');
+addFolderToZip(distDir, 'assets');
+// Also provide under assets/web/ in case subpath is accessed
+if (fs.existsSync(path.join(distDir, 'index.html'))) {
+  newZip.file('assets/web/index.html', fs.readFileSync(path.join(distDir, 'index.html')));
+}
 
 // Generate unsigned ZIP
 console.log('[DZ Packager] Packaging unsigned archive...');
@@ -188,11 +215,11 @@ const finalApkPath = path.resolve(process.cwd(), 'public/DownloaderZero.apk');
 
 fs.writeFileSync(unsignedApkPath, rawZipBuf);
 
-// 8. Run official zipalign (4-byte boundary alignment)
+// 9. Run official zipalign (4-byte boundary alignment)
 console.log('[DZ Packager] Running zipalign (4-byte alignment)...');
 execSync(`zipalign -f -p 4 "${unsignedApkPath}" "${alignedApkPath}"`, { stdio: 'inherit' });
 
-// 9. Sign with official Android apksigner (v1, v2, v3)
+// 10. Sign with official Android apksigner (v1, v2, v3)
 console.log('[DZ Packager] Signing with apksigner (v1, v2, v3)...');
 execSync(
   `apksigner sign --key "${keyPk8Path}" --cert "${certPemPath}" --min-sdk-version 21 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "${finalApkPath}" "${alignedApkPath}"`,
@@ -200,20 +227,14 @@ execSync(
 );
 
 // Mirror to dist if dist exists
-const distDir = path.resolve(process.cwd(), 'dist');
 if (fs.existsSync(distDir)) {
   fs.copyFileSync(finalApkPath, path.join(distDir, 'DownloaderZero.apk'));
 }
 
-// 10. Verify with apksigner verify -v
+// 11. Verify with apksigner verify -v
 console.log('[DZ Packager] Verifying final APK integrity with apksigner...');
 const verifyOutput = execSync(`apksigner verify -v --print-certs "${finalApkPath}"`, { encoding: 'utf8' });
 console.log(verifyOutput);
-
-// 11. Print aapt badging info
-console.log('[DZ Packager] Verifying APK badging with aapt...');
-const badgingOutput = execSync(`aapt dump badging "${finalApkPath}" | grep -E "package|sdkVersion|application-label|icon"`, { encoding: 'utf8' });
-console.log(badgingOutput);
 
 const stat = fs.statSync(finalApkPath);
 console.log(`[DZ Packager] ✅ Successfully generated official DownloaderZero.apk!`);
