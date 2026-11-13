@@ -6,21 +6,25 @@ export const BannerDZ: React.FC = () => {
   const [showVideo, setShowVideo] = useState<boolean>(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Smoothly alternate image and video without jarring jumps
+  // Smoothly alternate image and video without jarring jumps (full video duration)
   useEffect(() => {
-    const duration = showVideo ? 6000 : 4000;
+    if (showVideo) return;
     const timer = setTimeout(() => {
-      setShowVideo((prev) => !prev);
-    }, duration);
+      setShowVideo(true);
+    }, 4000);
     return () => clearTimeout(timer);
   }, [showVideo]);
 
   useEffect(() => {
-    if (showVideo && videoRef.current) {
-      videoRef.current.currentTime = 0;
-      videoRef.current.play().catch(() => {});
-    } else if (!showVideo && videoRef.current) {
-      videoRef.current.pause();
+    const video = videoRef.current;
+    if (!video) return;
+    if (showVideo) {
+      video.currentTime = 0;
+      video.play().catch(() => {
+        setShowVideo(false);
+      });
+    } else {
+      video.pause();
     }
   }, [showVideo]);
 
@@ -46,14 +50,15 @@ export const BannerDZ: React.FC = () => {
             loading="eager"
           />
 
-          {/* Banner MP4 Video (Smooth background transition) */}
+          {/* Banner MP4 Video (Smooth background transition, full duration) */}
           <video
             ref={videoRef}
-            src="/banner_zero.mp4"
+            src="/banner_eksperimen.mp4"
             muted
             playsInline
-            loop
             preload="auto"
+            onEnded={() => setShowVideo(false)}
+            onError={() => setShowVideo(false)}
             className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center transition-opacity duration-700 ease-in-out ${
               showVideo ? 'opacity-100' : 'opacity-0'
             }`}

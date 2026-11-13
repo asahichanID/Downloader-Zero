@@ -772,8 +772,17 @@ async function startServer() {
     }
   });
 
+  const staticVideoCacheOptions = {
+    setHeaders: (res: Response, filePath: string) => {
+      if (filePath.endsWith('.mp4')) {
+        // Cache banner videos in browser disk cache for 30 days (2592000s)
+        res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+      }
+    }
+  };
+
   // Serve public static assets (videos, images, icons)
-  app.use(express.static(path.resolve(__dirname, 'public')));
+  app.use(express.static(path.resolve(__dirname, 'public'), staticVideoCacheOptions));
 
   // 5. Mount Vite in dev, or serve dist in production
   if (!isProduction) {
@@ -788,7 +797,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+    app.use(express.static(path.resolve(__dirname, 'dist'), staticVideoCacheOptions));
     app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
