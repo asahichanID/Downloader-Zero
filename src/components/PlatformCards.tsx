@@ -106,7 +106,7 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-1.5 h-5 bg-blue-500 rounded-full" />
-          <h2 className="text-base font-bold text-white tracking-tight">
+          <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
             Platform yang didukung
           </h2>
         </div>
@@ -115,7 +115,7 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
           <button
             type="button"
             onClick={onViewAll}
-            className="text-xs font-semibold text-blue-400 hover:text-cyan-300 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+            className="text-xs font-semibold text-sky-600 dark:text-blue-400 hover:text-sky-700 dark:hover:text-cyan-300 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
           >
             <span>Lihat semua</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -134,15 +134,15 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
               onClick={() => onSelectPlatform(p.id)}
               className={`relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl border text-center transition-all duration-150 active:scale-95 cursor-pointer select-none ${
                 isActive
-                  ? 'border-cyan-400 ring-2 ring-cyan-400/40 bg-[#122452] shadow-md shadow-cyan-500/20'
-                  : 'border-blue-500/20 bg-[#0c1836]/90 hover:border-blue-400/50 hover:bg-[#0f2048]'
+                  ? 'border-sky-500 dark:border-cyan-400 ring-2 ring-sky-500/30 dark:ring-cyan-400/40 bg-sky-50 dark:bg-[#122452] shadow-md shadow-sky-500/15 dark:shadow-cyan-500/20'
+                  : 'border-slate-200 dark:border-blue-500/20 bg-white dark:bg-[#0c1836]/90 hover:border-sky-400 dark:hover:border-blue-400/50 hover:bg-slate-50 dark:hover:bg-[#0f2048] shadow-xs shadow-slate-900/5 dark:shadow-none'
               }`}
             >
               <div className="mb-1.5">
                 {p.icon}
               </div>
               <span className={`text-[11px] font-bold tracking-tight truncate w-full block ${
-                isActive ? 'text-cyan-300' : 'text-slate-200'
+                isActive ? 'text-sky-700 dark:text-cyan-300' : 'text-slate-700 dark:text-slate-200'
               }`}>
                 {p.name}
               </span>

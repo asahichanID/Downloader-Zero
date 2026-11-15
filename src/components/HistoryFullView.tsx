@@ -51,14 +51,14 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
           <button
             type="button"
             onClick={onBackToHome}
-            className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center border border-white/10 active:scale-90 transition-all cursor-pointer"
+            className="w-8 h-8 rounded-full bg-white dark:bg-slate-900/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white flex items-center justify-center border border-slate-200 dark:border-white/10 active:scale-90 transition-all cursor-pointer"
             aria-label="Kembali ke Beranda"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="flex items-center gap-2">
-            <History className="w-5 h-5 text-cyan-400" />
-            <h1 className="text-lg font-bold text-white">Semua Riwayat Unduhan</h1>
+            <History className="w-5 h-5 text-sky-600 dark:text-cyan-400" />
+            <h1 className="text-lg font-bold text-slate-900 dark:text-white">Semua Riwayat Unduhan</h1>
           </div>
         </div>
 
@@ -66,7 +66,7 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
           <button
             type="button"
             onClick={() => setShowClearConfirm(true)}
-            className="text-xs font-semibold text-red-400 hover:text-red-300 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-950/40 border border-red-800/40 active:scale-95 transition-all cursor-pointer"
+            className="text-xs font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/40 active:scale-95 transition-all cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Hapus Semua</span>
@@ -75,8 +75,8 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
       </div>
 
       {/* Expiration Note Card */}
-      <div className="p-3 rounded-2xl bg-[#091a3c] border border-blue-500/20 flex items-center gap-2.5 text-xs text-blue-200/80">
-        <Clock className="w-4 h-4 text-cyan-400 shrink-0" />
+      <div className="p-3 rounded-2xl bg-sky-50 dark:bg-[#091a3c] border border-sky-200 dark:border-blue-500/20 flex items-center gap-2.5 text-xs text-sky-900 dark:text-blue-200/80">
+        <Clock className="w-4 h-4 text-sky-600 dark:text-cyan-400 shrink-0" />
         <p className="leading-snug">
           Riwayat tersimpan di browser Anda dan otomatis kadaluarsa setelah 24 jam.
         </p>
@@ -91,7 +91,7 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Cari judul atau platform..."
-            className="w-full h-11 pl-10 pr-4 bg-[#0a183d]/90 border border-blue-500/25 rounded-2xl text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/40"
+            className="w-full h-11 pl-10 pr-4 bg-white dark:bg-[#0a183d]/90 border border-slate-300 dark:border-blue-500/25 rounded-2xl text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-sky-500 dark:focus:border-cyan-400 focus:ring-1 focus:ring-sky-500/30 dark:focus:ring-cyan-400/40"
           />
         </div>
       )}
@@ -107,7 +107,7 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
               className={`py-1.5 px-3 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                 selectedFilter === p.id
                   ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-[#0c1836] border border-blue-500/20 text-slate-300 hover:text-white'
+                  : 'bg-white dark:bg-[#0c1836] border border-slate-200 dark:border-blue-500/20 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               {p.label}
@@ -118,9 +118,9 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
 
       {/* History Items List */}
       {filteredItems.length === 0 ? (
-        <div className="p-8 rounded-2xl bg-[#0c1836]/60 border border-blue-500/15 text-center flex flex-col items-center justify-center">
-          <Clock className="w-8 h-8 text-slate-500 mb-2" />
-          <p className="text-sm font-bold text-slate-300">
+        <div className="p-8 rounded-2xl bg-white dark:bg-[#0c1836]/60 border border-slate-200 dark:border-blue-500/15 shadow-xs shadow-slate-900/5 dark:shadow-none text-center flex flex-col items-center justify-center">
+          <Clock className="w-8 h-8 text-slate-400 dark:text-slate-500 mb-2" />
+          <p className="text-sm font-bold text-slate-800 dark:text-slate-300">
             {searchQuery ? 'Tidak ada hasil pencarian' : 'Belum ada riwayat'}
           </p>
           <p className="text-xs text-slate-500 mt-1 max-w-xs">
@@ -146,25 +146,25 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
       {/* Confirmation Dialog for Clear All */}
       {showClearConfirm && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
           onClick={() => setShowClearConfirm(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-3xl bg-[#081530] border border-red-500/40 p-5 shadow-2xl text-white text-center space-y-3"
+            className="w-full max-w-sm rounded-3xl bg-white dark:bg-[#081530] border border-red-300 dark:border-red-500/40 p-5 shadow-2xl text-slate-900 dark:text-white text-center space-y-3"
           >
-            <div className="w-12 h-12 rounded-full bg-red-950/80 border border-red-500/30 text-red-400 flex items-center justify-center mx-auto">
+            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/80 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
               <Trash2 className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-bold text-white">Hapus Semua Riwayat?</h3>
-            <p className="text-xs text-slate-300">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Hapus Semua Riwayat?</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
               Semua daftar unduhan di perangkat ini akan dibersihkan secara permanen.
             </p>
             <div className="flex items-center gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setShowClearConfirm(false)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
+                className="flex-1 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold cursor-pointer"
               >
                 Batal
               </button>

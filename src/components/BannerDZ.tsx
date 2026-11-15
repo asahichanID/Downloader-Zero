@@ -29,7 +29,7 @@ export const BannerDZ: React.FC = () => {
   }, [showVideo]);
 
   return (
-    <div className="relative w-full overflow-hidden select-none bg-[#050B18]">
+    <div className="relative w-full overflow-hidden select-none bg-[#f0f4fa] dark:bg-[#050B18]">
       {/* Background Media Container (Full-width edge-to-edge) */}
       <div className="relative w-full h-[270px] sm:h-[320px] md:h-[360px] lg:h-[400px] overflow-hidden">
         {/* Banner Media Layer with 5% bottom transparency fade mask */}
@@ -69,14 +69,14 @@ export const BannerDZ: React.FC = () => {
         <div className="absolute inset-0 bg-gradient-to-r from-[#050B18]/90 via-[#050B18]/45 to-transparent pointer-events-none" />
         <div className="absolute inset-0 bg-blue-950/20 mix-blend-color pointer-events-none" />
 
-        {/* Bottom 5% Gradient Fade: Fades down smoothly to background black (#050B18) at the very bottom edge */}
+        {/* Bottom 5% Gradient Fade: Fades down smoothly to active theme background */}
         <div
-          className="absolute inset-x-0 -bottom-[1px] h-[6%] min-h-[16px] max-h-[22px] bg-gradient-to-b from-transparent via-[#050B18]/75 to-[#050B18] pointer-events-none"
+          className="absolute inset-x-0 -bottom-[1px] h-[6%] min-h-[16px] max-h-[22px] bg-gradient-to-b from-transparent via-[#f0f4fa]/75 to-[#f0f4fa] dark:via-[#050B18]/75 dark:to-[#050B18] pointer-events-none"
           aria-hidden="true"
         />
         {/* 1.5px subpixel seam-eliminator ensuring zero border/line in production */}
         <div
-          className="absolute inset-x-0 -bottom-[1px] h-[1.5px] bg-[#050B18] pointer-events-none"
+          className="absolute inset-x-0 -bottom-[1px] h-[1.5px] bg-[#f0f4fa] dark:bg-[#050B18] pointer-events-none"
           aria-hidden="true"
         />
 

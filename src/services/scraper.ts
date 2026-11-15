@@ -1,4 +1,4 @@
-import type { PlatformType, ServerMode, MediaFormat, MediaMetadata, AudioTrack } from '../types/index.ts';
+import type { PlatformType, ServerMode, MediaFormat, MediaMetadata, AudioTrack, TeraboxFile } from '../types/index.ts';
 import * as cheerio from 'cheerio';
 import { extractTikTokPreview, resolveTikTokDownload } from './previewEngines/tiktokPreview.ts';
 import { scrapeTikTokServer2, resolveTikTokServer2 } from './server2/tiktok-s2.ts';
@@ -54,6 +54,34 @@ export function formatBytes(bytes?: number): string {
     idx++;
   }
   return `${val.toFixed(1)} ${units[idx]}`;
+}
+
+export function formatCount(val?: number | string | null): string {
+  if (val === undefined || val === null || val === '') return '—';
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return '—';
+    const numericOnly = Number(trimmed.replace(/[,.\s]/g, ''));
+    if (!isNaN(numericOnly) && /^\d[\d,.\s]*$/.test(trimmed)) {
+      val = numericOnly;
+    } else {
+      return trimmed;
+    }
+  }
+  const num = Number(val);
+  if (isNaN(num) || num < 0) return '—';
+  if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
+  if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (num >= 1_000) return `${(num / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  return num.toLocaleString('id-ID');
+}
+
+function detectTeraboxFileType(filename: string): 'video' | 'audio' | 'photos' | 'file' {
+  const lower = filename.toLowerCase();
+  if (/\.(mp4|mkv|webm|mov|avi|flv|m4v|3gp|ts)$/i.test(lower)) return 'video';
+  if (/\.(mp3|m4a|aac|wav|ogg|flac|opus)$/i.test(lower)) return 'audio';
+  if (/\.(jpg|jpeg|png|webp|gif|bmp|heic)$/i.test(lower)) return 'photos';
+  return 'file';
 }
 
 // ----------------- SHORT LINK REDIRECT RESOLVER -----------------
@@ -194,11 +222,14 @@ async function scrapeFacebookServer1(target: string, apiKey?: string): Promise<M
     id: `fb-${Date.now()}`,
     url: target,
     platform: 'facebook',
-    title: 'Facebook Video',
-    author: 'Facebook Creator',
-    thumbnail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800',
+    title: neoJson.title || neoJson.data[0]?.title || 'Facebook Video',
+    author: neoJson.author || neoJson.data[0]?.author || 'Facebook Creator',
+    thumbnail: neoJson.thumbnail || neoJson.data[0]?.thumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800',
     duration: 60,
     durationFormatted: '01:00',
+    views: neoJson.views ?? neoJson.view ?? neoJson.data[0]?.views,
+    likes: neoJson.likes ?? neoJson.like ?? neoJson.data[0]?.likes,
+    comments: neoJson.comments ?? neoJson.comment ?? neoJson.data[0]?.comments,
     formats,
     source: 'Server 1 Engine',
     createdAt: new Date().toISOString()
@@ -258,10 +289,13 @@ async function scrapeFacebookServer2(target: string): Promise<MediaMetadata> {
     url: target,
     platform: 'facebook',
     title,
-    author: 'Facebook Creator',
+    author: data.author || 'Facebook Creator',
     thumbnail: thumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800',
     duration: 60,
     durationFormatted: '01:00',
+    views: data.views ?? data.view,
+    likes: data.likes ?? data.like,
+    comments: data.comments ?? data.comment,
     formats,
     source: 'Server 2 Engine',
     createdAt: new Date().toISOString()
@@ -295,6 +329,9 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
   let authorUrl = '';
   let duration = 0;
   let durationFormatted = '';
+  let views: number | string | undefined = undefined;
+  let likes: number | string | undefined = undefined;
+  let comments: number | string | undefined = undefined;
 
   // Extract video ID
   const vMatch = target.match(/(?:youtube\.com\/(?:watch\?[^#]*v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
@@ -359,6 +396,9 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
           if (j.duration && typeof j.duration === 'string') {
             durationFormatted = j.duration;
           }
+          if (j.views !== undefined) views = j.views;
+          if (j.likes !== undefined) likes = j.likes;
+          if (j.comments !== undefined) comments = j.comments;
         }
       }
 
@@ -394,8 +434,8 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
   }
 
 
-  // Step 3: Fallback YouTube watch page HTML duration extraction if not detected yet
-  if (!duration && videoId) {
+  // Step 3: YouTube watch page HTML extraction for duration, views, likes, comments
+  if (videoId && (!duration || views === undefined || likes === undefined || comments === undefined)) {
     try {
       const ytWatchRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
         headers: {
@@ -406,17 +446,44 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
       });
       if (ytWatchRes.ok) {
         const html = await ytWatchRes.text();
-        const lenMatch = html.match(/"lengthSeconds":"(\d+)"/) || html.match(/"approxDurationMs":"(\d+)"/);
-        if (lenMatch && lenMatch[1]) {
-          const rawSecs = lenMatch[0].includes('approxDurationMs') ? Math.round(Number(lenMatch[1]) / 1000) : Number(lenMatch[1]);
-          if (rawSecs > 0) {
-            duration = rawSecs;
-            durationFormatted = formatDuration(rawSecs);
+        if (!duration) {
+          const lenMatch = html.match(/"lengthSeconds":"(\d+)"/) || html.match(/"approxDurationMs":"(\d+)"/);
+          if (lenMatch && lenMatch[1]) {
+            const rawSecs = lenMatch[0].includes('approxDurationMs') ? Math.round(Number(lenMatch[1]) / 1000) : Number(lenMatch[1]);
+            if (rawSecs > 0) {
+              duration = rawSecs;
+              durationFormatted = formatDuration(rawSecs);
+            }
+          }
+        }
+        if (views === undefined) {
+          const vMatchCount =
+            html.match(/"viewCount":"(\d+)"/) ||
+            html.match(/"viewCount":\{"simpleText":"([\d,.\sKMB]+)/i);
+          if (vMatchCount?.[1]) {
+            views = vMatchCount[1].trim();
+          }
+        }
+        if (likes === undefined) {
+          const lMatch =
+            html.match(/"accessibilityText":"like this video along with ([\d,\.]+) other people"/i) ||
+            html.match(/"factoidRenderer":\{"value":\{"simpleText":"([^"]+)"\},"label":\{"simpleText":"Likes"\}/i) ||
+            html.match(/"likeCount":(\d+)/);
+          if (lMatch?.[1]) {
+            likes = lMatch[1].trim();
+          }
+        }
+        if (comments === undefined) {
+          const cMatch =
+            html.match(/"commentCount":\{"simpleText":"([^"]+)"\}/) ||
+            html.match(/"commentsEntryPointHeaderRenderer":\{.*?"commentCount":\{"simpleText":"([^"]+)"\}/);
+          if (cMatch?.[1]) {
+            comments = cMatch[1].trim();
           }
         }
       }
     } catch (ytErr) {
-      console.warn('[YouTube] HTML duration extraction notice:', ytErr);
+      console.warn('[YouTube] HTML metadata extraction notice:', ytErr);
     }
   }
 
@@ -486,8 +553,11 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
     thumbnail: thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
     duration,
     durationFormatted,
+    views,
+    likes,
+    comments,
     formats,
-    source: direct720Url ? 'Neoxr High-Speed YouTube Engine' : 'DownloaderZero Cloud Stream Engine',
+    source: direct720Url ? 'Server 1 YouTube Engine' : 'DownloaderZero Cloud Stream Engine',
     createdAt: new Date().toISOString()
   };
 }
@@ -572,15 +642,22 @@ async function scrapeInstagramServer1(target: string, apiKey?: string): Promise<
     });
   }
 
+  const rawMeta = Array.isArray(rawData) ? rawData[0] : rawData;
+  const igTitle = neoJson.caption || rawMeta?.caption || rawMeta?.title || title;
+  const igAuthor = neoJson.author || rawMeta?.username || rawMeta?.author || 'Instagram Creator';
+
   return {
     id: `ig-${Date.now()}`,
     url: target,
     platform: 'instagram',
-    title,
-    author: 'Instagram Creator',
+    title: igTitle,
+    author: igAuthor,
     thumbnail: thumbnail || (images[0] || 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=800'),
     duration: 30,
     durationFormatted: '00:30',
+    views: neoJson.views ?? rawMeta?.play_count ?? rawMeta?.video_view_count ?? rawMeta?.views,
+    likes: neoJson.likes ?? rawMeta?.like_count ?? rawMeta?.likes,
+    comments: neoJson.comments ?? rawMeta?.comment_count ?? rawMeta?.comments,
     formats,
     images: images.length > 0 ? images : undefined,
     isPhotoSlide: images.length > 1,
@@ -591,7 +668,11 @@ async function scrapeInstagramServer1(target: string, apiKey?: string): Promise<
 
 async function scrapeInstagramServer2(target: string, shortcode: string): Promise<MediaMetadata> {
   let title = 'Instagram Reel / Post';
+  let author = 'Instagram Creator';
   let thumbnail = '';
+  let likes: number | string | undefined = undefined;
+  let comments: number | string | undefined = undefined;
+  let views: number | string | undefined = undefined;
   const formats: MediaFormat[] = [];
   let images: string[] = [];
 
@@ -609,6 +690,18 @@ async function scrapeInstagramServer2(target: string, shortcode: string): Promis
 
       if (embedRes.ok) {
         const html = await embedRes.text();
+        const $ = cheerio.load(html);
+        const userText = $('.UsernameText').first().text().trim();
+        if (userText) author = userText;
+        const captionText = $('.Caption').first().text().trim();
+        if (captionText) title = captionText.slice(0, 120);
+        const likesMatch = html.match(/([\d,\.KMB]+)\s+likes/i) || html.match(/"edge_media_preview_like":\{"count":(\d+)/);
+        if (likesMatch?.[1]) likes = likesMatch[1];
+        const commentsMatch = html.match(/([\d,\.KMB]+)\s+comments/i) || html.match(/"edge_media_to_comment":\{"count":(\d+)/);
+        if (commentsMatch?.[1]) comments = commentsMatch[1];
+        const viewsMatch = html.match(/"video_view_count":(\d+)/);
+        if (viewsMatch?.[1]) views = viewsMatch[1];
+
         const cdnMatches = [...html.matchAll(/https:\/\/[^"'\s\\]*(?:cdninstagram\.com|fbcdn\.net)\/[^"'\s\\]+/gi)]
           .map((m) => m[0].replace(/\\u0026/g, '&').replace(/\\/g, ''))
           .filter((u) => !u.includes('rsrc.php'));
@@ -714,10 +807,13 @@ async function scrapeInstagramServer2(target: string, shortcode: string): Promis
     url: target,
     platform: 'instagram',
     title: title || 'Instagram Reel',
-    author: 'Instagram Creator',
+    author,
     thumbnail: thumbnail || (images[0] || 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=800'),
     duration: 30,
     durationFormatted: '00:30',
+    views,
+    likes,
+    comments,
     formats,
     images: images.length > 0 ? images : undefined,
     isPhotoSlide: images.length > 1,
@@ -826,6 +922,9 @@ async function scrapePinterestServer1(url: string, apiKey?: string): Promise<Med
     thumbnail: thumbnail || (images[0] || ''),
     duration: 15,
     durationFormatted: '00:15',
+    views: d.views ?? d.view_count,
+    likes: d.likes ?? d.like_count ?? d.reaction_counts,
+    comments: d.comments ?? d.comment_count,
     formats,
     images: images.length > 0 ? images : undefined,
     isPhotoSlide: images.length > 1,
@@ -909,6 +1008,9 @@ async function scrapePinterestServer2(url: string): Promise<MediaMetadata> {
     throw new Error('Server 2 tidak dapat menemukan media Pinterest.');
   }
 
+  const pinLikesMatch = html.match(/"reaction_counts":\{"1":(\d+)/) || html.match(/"repin_count":(\d+)/);
+  const pinCommentsMatch = html.match(/"comment_count":(\d+)/);
+
   return {
     id: `pin-${Date.now()}`,
     url,
@@ -918,6 +1020,8 @@ async function scrapePinterestServer2(url: string): Promise<MediaMetadata> {
     thumbnail: thumbnail || (images[0] || ''),
     duration: 15,
     durationFormatted: '00:15',
+    likes: pinLikesMatch?.[1],
+    comments: pinCommentsMatch?.[1],
     formats,
     images: images.length > 0 ? images : undefined,
     isPhotoSlide: images.length > 1,
@@ -1235,14 +1339,14 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
 
   formats.push({
     id: 'sp-neo-mp3-320',
-    quality: '320 kbps (Neo MP3 • Metadata & Cover Tertanam)',
+    quality: '320 kbps (MP3 • Metadata & Cover Tertanam)',
     resolution: '320 kbps',
     type: 'audio',
     extension: 'mp3',
     url: directMp3Url,
     isDirect: true,
     filesize: '~ 8.5 MB',
-    note: `Audio MP3 Asli Neo dengan ID3 Cover & Genre ${genre}`
+    note: `Audio MP3 Asli dengan ID3 Cover & Genre ${genre}`
   });
 
   formats.push({
@@ -1273,7 +1377,7 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
     formats,
     tracks,
     isAudioPlaylist: isPlaylist && tracks.length > 1,
-    source: neoSucceeded ? 'Neoxr Spotify Engine' : 'Spotify Official Web Engine',
+    source: neoSucceeded ? 'Server 1 Spotify Engine' : 'Spotify Official Web Engine',
     createdAt: new Date().toISOString()
   };
 }
@@ -1285,9 +1389,9 @@ async function scrapeTerabox(url: string, apiKey?: string, _serverMode: ServerMo
   const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const key = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
 
-  let fileItem: any = null;
+  let rawItems: any[] = [];
 
-  // Attempt 1: Neoxr /api/terabox
+  // Attempt 1: Server 1 /api/terabox
   try {
     const endpoint = `${NEOXR_BASE_URL}/terabox?url=${encodeURIComponent(target)}&apikey=${encodeURIComponent(key)}`;
     const response = await fetch(endpoint, {
@@ -1301,18 +1405,24 @@ async function scrapeTerabox(url: string, apiKey?: string, _serverMode: ServerMo
     if (response.ok) {
       const json = await response.json();
       if (json && (json.status || json.data)) {
-        const rawItems = Array.isArray(json.data) ? json.data : (json.data && Array.isArray(json.data.data) ? json.data.data : [json.data]);
-        if (rawItems[0] && (rawItems[0].dlink || rawItems[0].url || rawItems[0].download)) {
-          fileItem = rawItems[0];
-        }
+        const candidates = Array.isArray(json.data)
+          ? json.data
+          : Array.isArray(json.data?.data)
+            ? json.data.data
+            : Array.isArray(json.data?.list)
+              ? json.data.list
+              : Array.isArray(json.data?.files)
+                ? json.data.files
+                : [json.data];
+        rawItems = candidates.filter((it: any) => it && (it.dlink || it.url || it.download));
       }
     }
   } catch (neoErr) {
-    console.warn('[TeraBox] Neoxr attempt skipped:', neoErr);
+    console.warn('[TeraBox] Server 1 attempt skipped:', neoErr);
   }
 
   // Attempt 2: TeraBox Cloud public share list API
-  if (!fileItem) {
+  if (rawItems.length === 0) {
     try {
       const surlMatch = target.match(/(?:surl=|\/s\/1?)([a-zA-Z0-9_-]+)/i);
       const surl = surlMatch ? surlMatch[1] : '';
@@ -1325,8 +1435,8 @@ async function scrapeTerabox(url: string, apiKey?: string, _serverMode: ServerMo
         });
         if (cloudRes.ok) {
           const cJson = await cloudRes.json();
-          if (cJson.errno === 0 && Array.isArray(cJson.list) && cJson.list[0]) {
-            fileItem = cJson.list[0];
+          if (cJson.errno === 0 && Array.isArray(cJson.list)) {
+            rawItems = cJson.list.filter((it: any) => it && (it.dlink || it.url || it.download) && it.isdir !== 1 && it.isdir !== '1');
           }
         }
       }
@@ -1335,44 +1445,62 @@ async function scrapeTerabox(url: string, apiKey?: string, _serverMode: ServerMo
     }
   }
 
-  if (!fileItem) {
+  if (rawItems.length === 0) {
     throw new Error('Gagal mengekstrak berkas dari link TeraBox. Pastikan tautan masih aktif dan tidak diberi proteksi kata sandi.');
   }
 
-  const filename = fileItem.server_filename || fileItem.filename || fileItem.path?.replace(/^\//, '') || 'TeraBox_File.mp4';
-  const ext = (filename.split('.').pop() || 'mp4').toLowerCase();
-  const directDownloadUrl = fileItem.dlink || fileItem.url || fileItem.download;
+  const files: TeraboxFile[] = rawItems.map((item: any, idx: number) => {
+    const filename = item.server_filename || item.filename || item.name || item.path?.replace(/^\//, '') || `TeraBox_File_${idx + 1}.mp4`;
+    const ext = (filename.split('.').pop() || 'mp4').toLowerCase();
+    const directUrl = item.dlink || item.url || item.download;
+    const thumb = item.thumbs?.url3 || item.thumbs?.url2 || item.thumbs?.url1 || item.thumbs?.icon || item.thumbnail || '';
+    const dur = typeof item.duration === 'number' ? item.duration : undefined;
+    const sizeBytes = item.bytes ? Number(item.bytes) : (typeof item.size === 'number' ? item.size : undefined);
+    const sizeLabel = typeof item.size === 'string' ? item.size : (sizeBytes ? formatBytes(sizeBytes) : undefined);
 
-  if (!directDownloadUrl) {
+    return {
+      id: String(item.fs_id || `tb-file-${idx}-${Date.now()}`),
+      filename,
+      size: sizeLabel,
+      sizeBytes,
+      extension: ext,
+      thumbnail: thumb,
+      duration: dur,
+      durationFormatted: dur ? formatDuration(dur) : undefined,
+      url: directUrl,
+      mediaType: detectTeraboxFileType(filename)
+    };
+  }).filter((f) => Boolean(f.url));
+
+  if (files.length === 0) {
     throw new Error('Link download langsung dari TeraBox tidak tersedia.');
   }
 
-  const thumb = fileItem.thumbs?.url3 || fileItem.thumbs?.url2 || fileItem.thumbs?.url1 || fileItem.thumbs?.icon || fileItem.thumbnail || '';
-  const formats: MediaFormat[] = [
-    {
-      id: `tb-${fileItem.fs_id || Date.now()}`,
-      quality: fileItem.size ? `Original (${fileItem.size})` : 'Download Langsung',
-      resolution: fileItem.width && fileItem.height ? `${fileItem.width}x${fileItem.height}` : undefined,
-      type: 'video',
-      extension: (ext as any) || 'mp4',
-      filesize: fileItem.size,
-      filesizeBytes: fileItem.bytes ? Number(fileItem.bytes) : undefined,
-      url: directDownloadUrl,
-      isDirect: true,
-      note: 'Unduh Langsung TeraBox (Direct Cloud)'
-    }
-  ];
+  const primaryFile = files[0];
+  const formats: MediaFormat[] = files.map((file) => ({
+    id: `tb-${file.id}`,
+    quality: file.size ? `${file.filename} (${file.size})` : file.filename,
+    resolution: file.extension.toUpperCase(),
+    type: file.mediaType === 'audio' ? 'audio' : file.mediaType === 'photos' ? 'photos' : 'video',
+    extension: (file.extension as any) || 'mp4',
+    filesize: file.size,
+    filesizeBytes: file.sizeBytes,
+    url: file.url,
+    isDirect: true,
+    note: 'Unduh Langsung TeraBox (Direct Cloud)'
+  }));
 
   return {
-    id: `tb_${fileItem.fs_id || Date.now()}`,
+    id: `tb_${primaryFile.id}`,
     url: target,
     platform: 'terabox',
-    title: filename,
+    title: primaryFile.filename,
     author: 'TeraBox Cloud',
-    thumbnail: thumb,
-    duration: typeof fileItem.duration === 'number' ? fileItem.duration : undefined,
-    durationFormatted: typeof fileItem.duration === 'number' ? formatDuration(fileItem.duration) : undefined,
+    thumbnail: primaryFile.thumbnail || '',
+    duration: primaryFile.duration,
+    durationFormatted: primaryFile.durationFormatted,
     formats,
+    files,
     source: 'TeraBox Cloud Engine',
     createdAt: new Date().toISOString()
   };
@@ -1448,18 +1576,18 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
           json = parsed;
           break;
         } else {
-          lastErr = parsed?.msg || parsed?.message || 'Status respons Neoxr tidak valid';
+          lastErr = parsed?.msg || parsed?.message || 'Status respons Server 1 tidak valid';
         }
       } catch (parseErr: any) {
         lastErr = `JSON parse error: ${parseErr.message}`;
       }
     } catch (err: any) {
-      lastErr = err.message || 'Gagal menghubungi server Neoxr';
+      lastErr = err.message || 'Gagal menghubungi Server 1';
     }
   }
 
   if (!json || !json.data) {
-    throw new Error(json?.msg || json?.message || lastErr || 'Gagal mengekstrak dari Neoxr API.');
+    throw new Error(json?.msg || json?.message || lastErr || 'Gagal mengekstrak dari Server 1.');
   }
 
   const rawData = json.data;
@@ -1486,7 +1614,7 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
         filesize: data.size || data.filesize || undefined,
         url: vidUrl,
         isDirect: true,
-        note: 'Streaming langsung Neoxr tanpa antrean'
+        note: 'Streaming langsung Server 1 tanpa antrean'
       });
     }
 
@@ -1509,7 +1637,7 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
             filesize: aData?.size || undefined,
             url: aUrl,
             isDirect: true,
-            note: 'Audio MP3 Neoxr langsung tanpa antrean'
+            note: 'Audio MP3 Server 1 langsung tanpa antrean'
           });
         }
       }
@@ -1820,7 +1948,7 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
           extension: 'mp4',
           url: vUrl,
           isDirect: true,
-          note: 'Media stream Neoxr'
+          note: 'Media stream Server 1'
         });
       });
     }
@@ -1834,7 +1962,7 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
           extension: 'mp3',
           url: aUrl,
           isDirect: true,
-          note: 'Audio stream Neoxr'
+          note: 'Audio stream Server 1'
         });
       });
     }
@@ -1855,11 +1983,11 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
   }
 
   if (formats.length === 0) {
-    throw new Error('Neoxr API tidak menghasilkan format unduhan yang valid.');
+    throw new Error('Server 1 tidak menghasilkan format unduhan yang valid.');
   }
 
   return {
-    id: `neoxr-${Date.now()}`,
+    id: `server1-${Date.now()}`,
     url: targetUrl,
     platform,
     title,
@@ -1872,7 +2000,7 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
     isPhotoSlide,
     tracks,
     isAudioPlaylist,
-    source: 'Neoxr API Engine',
+    source: 'Server 1 Engine',
     createdAt: new Date().toISOString()
   };
 }

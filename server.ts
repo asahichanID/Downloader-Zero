@@ -52,7 +52,7 @@ for (let i = 0; i < cliArgs.length; i++) {
   }
 }
 const HOST = cliHost || (process.env.HOST ? process.env.HOST : '0.0.0.0');
-const PORT = cliPort || (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
+const PORT = cliPort || 3000;
 
 async function startServer() {
   const app = express();
@@ -106,27 +106,6 @@ async function startServer() {
       version: '2026.1',
       platforms: ['youtube', 'tiktok', 'facebook', 'instagram', 'pinterest', 'spotify', 'terabox']
     });
-  });
-
-  // 1b. Direct APK Download Endpoint (Android Package Archive with instant streaming & no-cache)
-  app.get(['/api/download-apk', '/download-apk', '/DownloaderZero.apk'], (_req: Request, res: Response) => {
-    let apkFilePath = path.resolve(__dirname, 'public', 'DownloaderZero.apk');
-    if (!fs.existsSync(apkFilePath)) {
-      apkFilePath = path.resolve(__dirname, 'dist', 'DownloaderZero.apk');
-    }
-    if (fs.existsSync(apkFilePath)) {
-      const stat = fs.statSync(apkFilePath);
-      res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-      res.setHeader('Content-Disposition', 'attachment; filename="DownloaderZero.apk"');
-      res.setHeader('Content-Length', stat.size);
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-      const stream = fs.createReadStream(apkFilePath);
-      stream.pipe(res);
-    } else {
-      res.status(404).json({ success: false, error: 'Berkas DownloaderZero.apk tidak ditemukan.' });
-    }
   });
 
   // 2. Extract media metadata and formats (with anti-SSRF & rate limiter)
@@ -391,7 +370,7 @@ async function startServer() {
       const urlParamIdx = rawReqUrl.indexOf('url=');
       if (urlParamIdx !== -1) {
         let extracted = rawReqUrl.slice(urlParamIdx + 4);
-        const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey)=/);
+        const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|inline)=/);
         if (nextParamMatch && nextParamMatch.index !== undefined) {
           extracted = extracted.slice(0, nextParamMatch.index);
         }
@@ -453,6 +432,8 @@ async function startServer() {
       const sanitizedFilename = sanitizeFilename(rawFilename, 'DownloaderZero_Media.mp4');
       const platform = ((req.query.platform as string) || '').toLowerCase();
       const sourceUrl = (req.query.sourceUrl as string) || '';
+      const isInline = req.query.inline === '1' || req.query.inline === 'true';
+      const rangeHeader = typeof req.headers.range === 'string' ? req.headers.range : undefined;
 
       if (sourceUrl && !isSafePublicUrl(sourceUrl).safe) {
         res.status(400).send('Source URL tidak valid atau diblokir.');
@@ -565,15 +546,43 @@ async function startServer() {
         spotifyProcessCache.set(processKey, { buffer: finalMp3Buffer, timestamp: Date.now() });
 
         res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Content-Length', finalMp3Buffer.length);
-        res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`);
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader(
+          'Content-Disposition',
+          isInline
+            ? `inline; filename="${sanitizedFilename}"`
+            : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
+        );
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, X-Process-Id, X-Cache-Lifetime');
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges, X-Process-Id, X-Cache-Lifetime');
+        res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
         res.setHeader('X-Process-Id', processKey);
         res.setHeader('X-Cache-Lifetime', '15s');
 
-        res.send(finalMp3Buffer);
+        if (rangeHeader) {
+          const totalLen = finalMp3Buffer.length;
+          const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+          if (match) {
+            const start = match[1] ? parseInt(match[1], 10) : 0;
+            const end = match[2] ? Math.min(parseInt(match[2], 10), totalLen - 1) : totalLen - 1;
+            if (!isNaN(start) && !isNaN(end) && start <= end && start < totalLen) {
+              const sliced = finalMp3Buffer.subarray(start, end + 1);
+              res.status(206);
+              res.setHeader('Content-Range', `bytes ${start}-${end}/${totalLen}`);
+              res.setHeader('Content-Length', sliced.length);
+              res.send(sliced);
+            } else {
+              res.setHeader('Content-Length', totalLen);
+              res.send(finalMp3Buffer);
+            }
+          } else {
+            res.setHeader('Content-Length', totalLen);
+            res.send(finalMp3Buffer);
+          }
+        } else {
+          res.setHeader('Content-Length', finalMp3Buffer.length);
+          res.send(finalMp3Buffer);
+        }
 
         // Hapus cache proses 15 detik setelah selesai
         setTimeout(() => {
@@ -642,8 +651,12 @@ async function startServer() {
 
       for (const cfg of fetchCandidateConfigs) {
         try {
+          const reqHeaders: Record<string, string> = { ...cfg.headers };
+          if (rangeHeader) {
+            reqHeaders['Range'] = rangeHeader;
+          }
           const resCandidate = await fetch(targetUrl, {
-            headers: cfg.headers,
+            headers: reqHeaders,
             redirect: 'follow',
             signal: AbortSignal.timeout(15000)
           });
@@ -669,8 +682,12 @@ async function startServer() {
               targetUrl = bestFormat.url;
               for (const cfg of fetchCandidateConfigs) {
                 try {
+                  const reqHeaders: Record<string, string> = { ...cfg.headers };
+                  if (rangeHeader) {
+                    reqHeaders['Range'] = rangeHeader;
+                  }
                   const resCandidate = await fetch(targetUrl, {
-                    headers: cfg.headers,
+                    headers: reqHeaders,
                     redirect: 'follow',
                     signal: AbortSignal.timeout(15000)
                   });
@@ -734,11 +751,25 @@ async function startServer() {
       else if (sanitizedFilename.endsWith('.zip')) mimeType = 'application/zip';
       else if (rawContentType && !rawContentType.includes('text/')) mimeType = rawContentType;
 
+      if (response.status === 206) {
+        res.status(206);
+        const contentRange = response.headers.get('content-range');
+        if (contentRange) {
+          res.setHeader('Content-Range', contentRange);
+        }
+      }
+
       res.setHeader('Content-Type', mimeType);
-      res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader(
+        'Content-Disposition',
+        isInline
+          ? `inline; filename="${sanitizedFilename}"`
+          : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
+      );
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type');
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges');
+      res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
       res.setHeader('X-Content-Type-Options', 'nosniff');
 
       const contentLength = response.headers.get('content-length');

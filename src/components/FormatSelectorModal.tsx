@@ -158,23 +158,23 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
           exit={{ opacity: 0, scale: 0.94 }}
           transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-md sm:max-w-lg rounded-3xl bg-[#081530] border border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-black/95 text-white max-h-[85vh] flex flex-col overflow-hidden my-auto"
+          className="relative w-full max-w-md sm:max-w-lg rounded-3xl bg-white dark:bg-[#081530] border border-slate-200 dark:border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-slate-900/20 dark:shadow-black/95 text-slate-900 dark:text-white max-h-[85vh] flex flex-col overflow-hidden my-auto"
         >
           {/* Header */}
-          <div className="flex items-center justify-between pb-3.5 border-b border-blue-900/60">
+          <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-blue-900/60">
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-cyan-400" />
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-sky-600 dark:text-cyan-400" />
                 <span>Pilih Format & Kualitas</span>
               </h2>
-              <p className="text-xs text-blue-200/70 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-blue-200/70 mt-0.5">
                 Sesuaikan resolusi video atau bitrate audio yang ingin disimpan
               </p>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center border border-white/10 active:scale-90 transition-all cursor-pointer"
+              className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-900/80 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center border border-slate-200 dark:border-white/10 active:scale-90 transition-all cursor-pointer"
               aria-label="Tutup pemilihan format"
             >
               <X className="w-4 h-4" />
@@ -184,8 +184,8 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
           {/* Scrollable Content */}
           <div className="overflow-y-auto space-y-4 py-3.5 pr-1">
             {/* Media Preview Card */}
-            <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#0c1e42] border border-blue-500/25">
-              <div className="relative w-20 h-14 rounded-xl overflow-hidden bg-slate-900 shrink-0 border border-white/10">
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-[#0c1e42] border border-slate-200 dark:border-blue-500/25">
+              <div className="relative w-20 h-14 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-900 shrink-0 border border-slate-200 dark:border-white/10">
                 {isSpotify && (!resolvedThumbnail || resolvedThumbnail.includes('favicon')) ? (
                   <div className="w-full h-full flex items-center justify-center bg-black">
                     <div className="w-8 h-8 rounded-full bg-[#1DB954] flex items-center justify-center shadow-md">
@@ -221,13 +221,13 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 block">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-sky-600 dark:text-cyan-400 block">
                   {media.platform}
                 </span>
-                <p className="text-xs sm:text-sm font-semibold text-white truncate">
+                <p className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate">
                   {media.title || 'Tautan Media'}
                 </p>
-                <p className="text-[11px] text-blue-200/60 truncate mt-0.5">
+                <p className="text-[11px] text-slate-500 dark:text-blue-200/60 truncate mt-0.5">
                   {media.author || 'Konten Siap Unduh'}
                 </p>
               </div>
@@ -235,17 +235,17 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
 
             {/* Segmented Type Switcher: Video vs Audio */}
             <div>
-              <label className="text-xs font-semibold text-slate-300 mb-2 block">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 block">
                 Tipe Unduhan
               </label>
-              <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-[#050e24] border border-blue-900/60">
+              <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-100 dark:bg-[#050e24] border border-slate-200 dark:border-blue-900/60">
                 <button
                   type="button"
                   onClick={() => onChangeType('video')}
                   className={`py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                     selectedType === 'video'
                       ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-1 ring-cyan-400'
-                      : 'text-slate-400 hover:text-white'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   <Video className="w-4 h-4" />
@@ -257,7 +257,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                   className={`py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                     selectedType === 'audio'
                       ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-1 ring-emerald-400'
-                      : 'text-slate-400 hover:text-white'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
                   <Music className="w-4 h-4" />
@@ -269,7 +269,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
             {/* Quality Options Grid */}
             {selectedType === 'video' ? (
               <div>
-                <label className="text-xs font-semibold text-slate-300 mb-2 block">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 block">
                   Pilih Resolusi Video
                 </label>
                 <div className="grid grid-cols-2 gap-2">
@@ -282,21 +282,21 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                         onClick={() => onSelectVideoRes(preset.resolution)}
                         className={`p-3 rounded-2xl border text-left transition-all active:scale-[0.98] cursor-pointer relative ${
                           isSelected
-                            ? 'bg-[#102450] border-cyan-400 ring-1 ring-cyan-400/50 shadow-md shadow-cyan-500/20'
-                            : 'bg-[#0c1a3a]/70 border-blue-900/60 hover:border-blue-600/60 hover:bg-[#0c1e42]'
+                            ? 'bg-sky-50 dark:bg-[#102450] border-sky-500 dark:border-cyan-400 ring-1 ring-sky-500/40 dark:ring-cyan-400/50 shadow-md shadow-sky-500/15 dark:shadow-cyan-500/20'
+                            : 'bg-slate-50 dark:bg-[#0c1a3a]/70 border-slate-200 dark:border-blue-900/60 hover:border-sky-400 dark:hover:border-blue-600/60 hover:bg-slate-100 dark:hover:bg-[#0c1e42]'
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-xs sm:text-sm font-bold text-white">
+                          <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
                             {preset.resolution}
                           </span>
                           {isSelected && (
-                            <div className="w-4 h-4 rounded-full bg-cyan-400 text-black flex items-center justify-center">
+                            <div className="w-4 h-4 rounded-full bg-sky-600 dark:bg-cyan-400 text-white dark:text-black flex items-center justify-center">
                               <Check className="w-2.5 h-2.5 stroke-[3]" />
                             </div>
                           )}
                         </div>
-                        <span className="text-[11px] text-blue-200/70 block mt-1">
+                        <span className="text-[11px] text-slate-500 dark:text-blue-200/70 block mt-1">
                           {preset.badge}
                         </span>
                       </button>
@@ -306,7 +306,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
               </div>
             ) : (
               <div>
-                <label className="text-xs font-semibold text-slate-300 mb-2 block">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 block">
                   Pilih Bitrate Audio
                 </label>
                 <div className="space-y-2">
@@ -319,25 +319,25 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                         onClick={() => onSelectAudioQuality(preset.id)}
                         className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all active:scale-[0.98] cursor-pointer ${
                           isSelected
-                            ? 'bg-[#0f2d2b] border-emerald-400 ring-1 ring-emerald-400/50 shadow-md shadow-emerald-500/20'
-                            : 'bg-[#0c1a3a]/70 border-blue-900/60 hover:border-emerald-600/60 hover:bg-[#0c1e42]'
+                            ? 'bg-emerald-50 dark:bg-[#0f2d2b] border-emerald-500 dark:border-emerald-400 ring-1 ring-emerald-500/40 dark:ring-emerald-400/50 shadow-md shadow-emerald-500/15 dark:shadow-emerald-500/20'
+                            : 'bg-slate-50 dark:bg-[#0c1a3a]/70 border-slate-200 dark:border-blue-900/60 hover:border-emerald-400 dark:hover:border-emerald-600/60 hover:bg-slate-100 dark:hover:bg-[#0c1e42]'
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${isSelected ? 'bg-emerald-500 text-black' : 'bg-slate-800 text-slate-300'}`}>
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${isSelected ? 'bg-emerald-500 text-white dark:text-black' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'}`}>
                             <Disc className="w-4 h-4" />
                           </div>
                           <div>
-                            <span className="text-xs sm:text-sm font-bold text-white block">
+                            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white block">
                               {preset.label}
                             </span>
-                            <span className="text-[11px] text-emerald-400/90 block">
+                            <span className="text-[11px] text-emerald-600 dark:text-emerald-400/90 block">
                               {preset.badge}
                             </span>
                           </div>
                         </div>
                         {isSelected && (
-                          <div className="w-5 h-5 rounded-full bg-emerald-400 text-black flex items-center justify-center">
+                          <div className="w-5 h-5 rounded-full bg-emerald-500 dark:bg-emerald-400 text-white dark:text-black flex items-center justify-center">
                             <Check className="w-3 h-3 stroke-[3]" />
                           </div>
                         )}
@@ -350,7 +350,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
           </div>
 
           {/* Confirm Button */}
-          <div className="pt-3 border-t border-blue-900/60">
+          <div className="pt-3 border-t border-slate-200 dark:border-blue-900/60">
             <button
               type="button"
               disabled={isDownloading}

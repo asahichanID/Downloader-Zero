@@ -75,6 +75,10 @@ export interface TikWMData {
     duration?: number;
   };
   images?: string[];
+  play_count?: number;
+  digg_count?: number;
+  comment_count?: number;
+  share_count?: number;
   author?: {
     id: string;
     unique_id: string;
@@ -614,6 +618,9 @@ export async function scrapeTikTokServer2(rawUrl: string): Promise<MediaMetadata
     thumbnail,
     duration: durationSec,
     durationFormatted,
+    views: data.play_count,
+    likes: data.digg_count,
+    comments: data.comment_count,
     formats,
     images: rawImages.length > 0 ? rawImages : undefined,
     isPhotoSlide,

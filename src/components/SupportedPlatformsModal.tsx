@@ -82,20 +82,20 @@ export const SupportedPlatformsModal: React.FC<SupportedPlatformsModalProps> = (
           exit={{ opacity: 0, scale: 0.94, y: 16 }}
           transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-lg rounded-3xl bg-[#081530] border border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-black/95 text-white max-h-[85vh] flex flex-col overflow-hidden"
+          className="relative w-full max-w-lg rounded-3xl bg-white dark:bg-[#081530] border border-slate-200 dark:border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-slate-900/20 dark:shadow-black/95 text-slate-900 dark:text-white max-h-[85vh] flex flex-col overflow-hidden"
         >
           {/* Header */}
-          <div className="flex items-center justify-between pb-3.5 border-b border-blue-900/60">
+          <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-blue-900/60">
             <div className="flex items-center gap-2">
               <div className="w-1.5 h-5 bg-blue-500 rounded-full" />
-              <h2 className="text-base sm:text-lg font-bold text-white">
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
                 Platform yang Didukung
               </h2>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center border border-white/10 active:scale-90 transition-all cursor-pointer"
+              className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-900/80 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center border border-slate-200 dark:border-white/10 active:scale-90 transition-all cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -110,22 +110,22 @@ export const SupportedPlatformsModal: React.FC<SupportedPlatformsModalProps> = (
                   onSelectPlatform(p.id);
                   onClose();
                 }}
-                className="p-3.5 rounded-2xl bg-[#0c1a3a]/80 hover:bg-[#102450] border border-blue-500/20 hover:border-cyan-400/50 flex items-start gap-3.5 transition-all cursor-pointer active:scale-[0.99]"
+                className="p-3.5 rounded-2xl bg-slate-50 dark:bg-[#0c1a3a]/80 hover:bg-sky-50 dark:hover:bg-[#102450] border border-slate-200 dark:border-blue-500/20 hover:border-sky-400 dark:hover:border-cyan-400/50 flex items-start gap-3.5 transition-all cursor-pointer active:scale-[0.99]"
               >
                 <div className={`w-10 h-10 rounded-xl ${p.color} flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-md`}>
                   {p.name.charAt(0)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-sm text-white">{p.name}</h3>
-                    <span className="text-[10px] text-cyan-400 font-semibold bg-cyan-950/60 border border-cyan-800/40 px-2 py-0.5 rounded-full">
+                    <h3 className="font-bold text-sm text-slate-900 dark:text-white">{p.name}</h3>
+                    <span className="text-[10px] text-sky-700 dark:text-cyan-400 font-semibold bg-sky-100 dark:bg-cyan-950/60 border border-sky-200 dark:border-cyan-800/40 px-2 py-0.5 rounded-full">
                       Didukung
                     </span>
                   </div>
-                  <p className="text-xs text-blue-200/70 mt-1 leading-relaxed">
+                  <p className="text-xs text-slate-600 dark:text-blue-200/70 mt-1 leading-relaxed">
                     {p.desc}
                   </p>
-                  <p className="text-[11px] font-mono text-slate-400 mt-1">
+                  <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 mt-1">
                     Format: {p.formats}
                   </p>
                 </div>
@@ -134,8 +134,8 @@ export const SupportedPlatformsModal: React.FC<SupportedPlatformsModalProps> = (
           </div>
 
           {/* Footer Note */}
-          <div className="pt-3 border-t border-blue-900/60 flex items-center justify-between text-xs text-slate-400">
-            <span className="flex items-center gap-1.5 text-cyan-400 font-medium">
+          <div className="pt-3 border-t border-slate-200 dark:border-blue-900/60 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+            <span className="flex items-center gap-1.5 text-sky-600 dark:text-cyan-400 font-medium">
               <ShieldCheck className="w-4 h-4" />
               <span>Otomatis terdeteksi saat link ditempel</span>
             </span>

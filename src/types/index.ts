@@ -35,6 +35,19 @@ export interface MediaFormat {
   note?: string; // e.g., 'No Watermark', 'Original Audio', 'Lossless'
 }
 
+export interface TeraboxFile {
+  id: string;
+  filename: string;
+  size?: string;
+  sizeBytes?: number;
+  extension: string;
+  thumbnail?: string;
+  duration?: number;
+  durationFormatted?: string;
+  url: string;
+  mediaType: 'video' | 'audio' | 'photos' | 'file';
+}
+
 export interface MediaMetadata {
   id: string;
   url: string;
@@ -49,11 +62,15 @@ export interface MediaMetadata {
   previewUrl?: string;
   duration?: number; // in seconds
   durationFormatted?: string; // '03:45'
+  views?: number | string;
+  likes?: number | string;
+  comments?: number | string;
   formats: MediaFormat[];
   images?: string[];
   isPhotoSlide?: boolean;
   tracks?: AudioTrack[];
   isAudioPlaylist?: boolean;
+  files?: TeraboxFile[];
   source: string;
   createdAt: string;
 }

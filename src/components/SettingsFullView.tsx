@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Moon, Sun, Key, Trash2, FileText, Shield, Info, ArrowLeft, Check, Sparkles, Server, Cpu, CheckCircle2 } from 'lucide-react';
-import { ApkDownloadCard } from './ApkDownloadCard.tsx';
+import {
+  Settings,
+  Moon,
+  Sun,
+  Key,
+  Trash2,
+  FileText,
+  Shield,
+  ArrowLeft,
+  Check,
+  Server,
+  ChevronRight
+} from 'lucide-react';
 import type { ServerMode } from '../types/index.ts';
 
 interface SettingsFullViewProps {
@@ -42,6 +53,8 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
     }
   });
   const [isSaved, setIsSaved] = useState<boolean>(false);
+  const [showApiInfo, setShowApiInfo] = useState<boolean>(false);
+  const [historyCleared, setHistoryCleared] = useState<boolean>(false);
 
   useEffect(() => {
     if (serverMode && serverMode !== currentMode) {
@@ -51,6 +64,9 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
 
   const handleSelectMode = (mode: ServerMode) => {
     setCurrentMode(mode);
+    if (mode !== 'server1') {
+      setShowApiInfo(false);
+    }
     try {
       localStorage.setItem('dz_server_mode', mode);
       window.dispatchEvent(new CustomEvent('dz_server_mode_changed', { detail: mode }));
@@ -62,269 +78,300 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
 
   const handleSaveApiKey = () => {
     try {
-      localStorage.setItem('dz_neoxr_api_key', apiKey.trim());
+      const trimmed = apiKey.trim();
+      if (trimmed) {
+        localStorage.setItem('dz_neoxr_api_key', trimmed);
+      } else {
+        localStorage.removeItem('dz_neoxr_api_key');
+      }
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 2000);
     } catch {}
   };
 
+  const handleClear = () => {
+    onClearHistory();
+    setHistoryCleared(true);
+    setTimeout(() => setHistoryCleared(false), 2000);
+  };
+
+  const serverOptions: Array<{
+    id: ServerMode;
+    label: string;
+    badge: string;
+    desc: string;
+  }> = [
+    {
+      id: 'auto',
+      label: 'Otomatis',
+      badge: 'Rekomendasi',
+      desc: 'Prioritas S1, cadangan S2'
+    },
+    {
+      id: 'server1',
+      label: 'Server 1',
+      badge: 'Utama',
+      desc: 'API utama terkunci'
+    },
+    {
+      id: 'server2',
+      label: 'Server 2',
+      badge: 'Alternatif',
+      desc: 'API kedua terkunci'
+    }
+  ];
+
   return (
     <div className="w-full space-y-4 pb-24">
-      {/* View Header */}
-      <div className="flex items-center gap-2">
+      {/* Header */}
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={onBackToHome}
-          className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center border border-white/10 active:scale-90 transition-all cursor-pointer"
+          className="w-9 h-9 rounded-full bg-white dark:bg-slate-900/90 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white flex items-center justify-center border border-slate-200 dark:border-white/10 active:scale-95 transition-transform cursor-pointer shrink-0"
           aria-label="Kembali ke Beranda"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <div className="flex items-center gap-2">
-          <Settings className="w-5 h-5 text-cyan-400" />
-          <h1 className="text-lg font-bold text-white">Pengaturan & Konfigurasi</h1>
+        <div>
+          <h1 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 leading-tight">
+            <Settings className="w-4 h-4 text-sky-600 dark:text-cyan-400" />
+            <span>Pengaturan</span>
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Atur server unduhan, tampilan, dan cache lokal
+          </p>
         </div>
       </div>
 
-      {/* 0. PREMIUM ANDROID APK DOWNLOAD CARD (Paling Atas) */}
-      <ApkDownloadCard />
-
-      {/* 1. Server API Engine Selection (Server 1 & Server 2) */}
-      <div className="p-4 rounded-2xl bg-[#0c1836]/90 border border-blue-500/20 space-y-3.5 shadow-lg shadow-black/40">
-        <div className="flex items-center justify-between">
+      {/* 1. Pemilihan Server Unduhan (Horizontal / Menyamping) */}
+      <div className="dz-card rounded-2xl p-4 space-y-3.5">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-400 shrink-0">
-              <Server className="w-4 h-4 stroke-[2.2]" />
+            <div className="w-8 h-8 rounded-xl bg-sky-100 dark:bg-cyan-500/15 border border-sky-200 dark:border-cyan-400/30 flex items-center justify-center text-sky-600 dark:text-cyan-400 shrink-0">
+              <Server className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="font-bold text-sm text-white">Pilihan Server Unduhan</h2>
-              <p className="text-[11px] text-slate-400">Pilih penggunaan API utama atau API kedua</p>
+              <h2 className="font-bold text-sm text-slate-900 dark:text-white leading-tight">
+                Pilihan Server Unduhan
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Langsung aktif tanpa tombol konfirmasi
+              </p>
             </div>
           </div>
 
-          <span className="text-[10px] font-bold text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-700/60 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-cyan-400" />
-            Fleksibel
+          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 shrink-0">
+            {currentMode === 'auto' ? 'Otomatis' : currentMode === 'server1' ? 'Server 1' : 'Server 2'}
           </span>
         </div>
 
-        {/* Server Cards: Instant toggle without confirm button */}
-        <div className="grid grid-cols-1 gap-2.5 pt-1">
-          {/* Option A: Otomatis (Default) */}
-          <button
-            type="button"
-            onClick={() => handleSelectMode('auto')}
-            className={`w-full p-3.5 rounded-xl text-left transition-all duration-200 cursor-pointer flex items-start gap-3 border ${
-              currentMode === 'auto'
-                ? 'bg-gradient-to-r from-blue-950/80 to-cyan-950/70 border-cyan-400 shadow-md shadow-cyan-500/10'
-                : 'bg-[#060e22]/80 hover:bg-[#0a1738]/80 border-slate-800 hover:border-slate-700'
-            }`}
-          >
-            <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-              currentMode === 'auto' ? 'border-cyan-400 bg-cyan-500 text-slate-950' : 'border-slate-600 bg-slate-900/60'
-            }`}>
-              {currentMode === 'auto' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-            </div>
+        {/* 3 Pilihan Server Menyamping */}
+        <div className="grid grid-cols-3 gap-2">
+          {serverOptions.map((opt) => {
+            const isSelected = currentMode === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => handleSelectMode(opt.id)}
+                className={`p-2.5 sm:p-3 rounded-xl text-left border cursor-pointer flex flex-col justify-between gap-1.5 min-w-0 transition-colors ${
+                  isSelected
+                    ? 'bg-sky-50 dark:bg-cyan-950/60 border-sky-500 dark:border-cyan-400 text-slate-900 dark:text-white'
+                    : 'bg-slate-50 dark:bg-[#060e22]/90 hover:bg-slate-100 dark:hover:bg-[#0a1738] border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className={`text-xs sm:text-sm font-bold truncate ${
+                    isSelected ? 'text-sky-700 dark:text-cyan-300' : 'text-slate-900 dark:text-white'
+                  }`}>
+                    {opt.label}
+                  </span>
+                  <span className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                    isSelected
+                      ? 'border-sky-600 dark:border-cyan-400 bg-sky-600 dark:bg-cyan-400 text-white dark:text-slate-950'
+                      : 'border-slate-300 dark:border-slate-600'
+                  }`}>
+                    {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                  </span>
+                </div>
 
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-xs font-bold ${currentMode === 'auto' ? 'text-cyan-300' : 'text-white'}`}>
-                  Otomatis (Default)
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.2 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Rekomendasi
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                Prioritas Server 1, dan otomatis beralih ke Server 2 jika terjadi gangguan pada server pertama.
-              </p>
-            </div>
-          </button>
-
-          {/* Option B: Server 1 */}
-          <button
-            type="button"
-            onClick={() => handleSelectMode('server1')}
-            className={`w-full p-3.5 rounded-xl text-left transition-all duration-200 cursor-pointer flex items-start gap-3 border ${
-              currentMode === 'server1'
-                ? 'bg-gradient-to-r from-blue-950/80 to-blue-900/50 border-blue-400 shadow-md shadow-blue-500/10'
-                : 'bg-[#060e22]/80 hover:bg-[#0a1738]/80 border-slate-800 hover:border-slate-700'
-            }`}
-          >
-            <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-              currentMode === 'server1' ? 'border-blue-400 bg-blue-500 text-white' : 'border-slate-600 bg-slate-900/60'
-            }`}>
-              {currentMode === 'server1' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-xs font-bold ${currentMode === 'server1' ? 'text-blue-300' : 'text-white'}`}>
-                  Server 1
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.2 rounded-md bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                  Utama
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                Koneksi terkunci hanya pada Server 1 tanpa pengalihan otomatis (1 API utama).
-              </p>
-            </div>
-          </button>
-
-          {/* Option C: Server 2 */}
-          <button
-            type="button"
-            onClick={() => handleSelectMode('server2')}
-            className={`w-full p-3.5 rounded-xl text-left transition-all duration-200 cursor-pointer flex items-start gap-3 border ${
-              currentMode === 'server2'
-                ? 'bg-gradient-to-r from-purple-950/80 to-cyan-950/60 border-cyan-400 shadow-md shadow-cyan-500/10'
-                : 'bg-[#060e22]/80 hover:bg-[#0a1738]/80 border-slate-800 hover:border-slate-700'
-            }`}
-          >
-            <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-              currentMode === 'server2' ? 'border-cyan-400 bg-cyan-500 text-slate-950' : 'border-slate-600 bg-slate-900/60'
-            }`}>
-              {currentMode === 'server2' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-xs font-bold ${currentMode === 'server2' ? 'text-cyan-300' : 'text-white'}`}>
-                  Server 2
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.2 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  Alternatif
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                Koneksi terkunci hanya pada Server 2 (API generasi baru tanpa pengalihan otomatis).
-              </p>
-            </div>
-          </button>
+                <div className="space-y-1">
+                  <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                    opt.id === 'auto'
+                      ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                      : opt.id === 'server1'
+                      ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
+                      : 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300'
+                  }`}>
+                    {opt.badge}
+                  </span>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-snug line-clamp-2">
+                    {opt.desc}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
-        <div className="flex items-center gap-2 pt-1 text-[11px] text-slate-400">
-          <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-          <span>Pengaturan langsung diterapkan tanpa perlu menekan tombol konfirmasi.</span>
-        </div>
+        {/* Input API Key Server 1: Muncul tepat di bawah pilihan server saat Server 1 dipilih */}
+        {currentMode === 'server1' && (
+          <div className="pt-3 border-t border-slate-200 dark:border-blue-500/20 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Key className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
+                <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                  API Key Server 1
+                </span>
+                <span className="text-sm sm:text-base font-extrabold text-amber-600 dark:text-amber-400">
+                  (Opsional)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowApiInfo((prev) => !prev)}
+                  aria-label="Penjelasan API Key Server 1"
+                  aria-expanded={showApiInfo}
+                  className={`w-6 h-6 rounded-full border flex items-center justify-center text-xs font-bold cursor-pointer shrink-0 ${
+                    showApiInfo
+                      ? 'border-sky-600 dark:border-cyan-400 bg-sky-100 dark:bg-cyan-950 text-sky-700 dark:text-cyan-300'
+                      : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-sky-500 dark:hover:border-cyan-400'
+                  }`}
+                >
+                  ?
+                </button>
+              </div>
+            </div>
+
+            {/* Penjelasan ringan & ringkas (tanpa efek berat, tidak selayar) */}
+            {showApiInfo && (
+              <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-[#050e24] border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                API Key ini bersifat opsional. Server 1 tetap dapat digunakan tanpa mengisinya, namun Anda bisa menambahkan API Key pribadi untuk memakai kuota sendiri. Untuk mendapatkan API Key klik{' '}
+                <a
+                  href="https://api.neoxr.eu"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-bold text-sky-600 dark:text-cyan-400 underline underline-offset-2 hover:text-sky-700 dark:hover:text-cyan-300"
+                >
+                  disini
+                </a>
+                .
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Masukkan API Key..."
+                className="flex-1 min-w-0 h-10 px-3 bg-white dark:bg-[#050e24] border border-slate-300 dark:border-blue-900/80 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 font-mono focus:outline-none focus:border-sky-500 dark:focus:border-cyan-400"
+              />
+              <button
+                type="button"
+                onClick={handleSaveApiKey}
+                className="h-10 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition-transform shrink-0"
+              >
+                {isSaved && <Check className="w-4 h-4 text-emerald-300" />}
+                <span>{isSaved ? 'Tersimpan' : 'Simpan'}</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 2. Theme Settings Card */}
-      <div className="p-4 rounded-2xl bg-[#0c1836]/90 border border-blue-500/20 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-cyan-400">
-              {isDark ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+      {/* 2. Grid 2 Kolom: Tema Tampilan & Pembersihan Cache */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Tema Tampilan */}
+        <div className="dz-card rounded-2xl p-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-blue-600/20 border border-sky-200 dark:border-blue-500/30 flex items-center justify-center text-sky-600 dark:text-cyan-400 shrink-0">
+              {isDark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             </div>
-            <div>
-              <h3 className="font-bold text-sm text-white">Tema Tampilan</h3>
-              <p className="text-xs text-slate-400">Pilih mode gelap atau terang</p>
+            <div className="min-w-0">
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                Tema Tampilan
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                {isDark ? 'Mode Gelap' : 'Mode Terang'}
+              </p>
             </div>
           </div>
 
           <button
             type="button"
             onClick={onToggleTheme}
-            className="px-3.5 py-2 rounded-xl bg-blue-600/30 hover:bg-blue-600/50 border border-blue-400/40 text-cyan-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+            className="px-3 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 dark:bg-blue-600/25 dark:hover:bg-blue-600/40 border border-sky-200 dark:border-blue-400/40 text-sky-700 dark:text-cyan-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition-transform shrink-0"
           >
-            {isDark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            <span>{isDark ? 'Mode Gelap' : 'Mode Terang'}</span>
+            {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            <span>{isDark ? 'Terang' : 'Gelap'}</span>
           </button>
         </div>
-      </div>
 
-      {/* 3. Custom Server 1 API Key Card (Clean naming - No Neo text) */}
-      <div className="p-4 rounded-2xl bg-[#0c1836]/90 border border-blue-500/20 space-y-3">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
-            <Key className="w-5 h-5" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-bold text-sm text-white">Kunci API Server 1 (Opsional)</h3>
-            <p className="text-xs text-slate-400 leading-relaxed mt-0.5">
-              Gunakan API Key Server 1 pribadi Anda jika memiliki kuota tersendiri. Jika kosong, sistem otomatis memakai konfigurasi bawaan server.
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              <input
-                type="text"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Masukkan API Key Server 1 jika ada..."
-                className="flex-1 h-10 px-3 bg-[#050e24] border border-blue-900/80 rounded-xl text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-cyan-400"
-              />
-              <button
-                type="button"
-                onClick={handleSaveApiKey}
-                className="h-10 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
-              >
-                {isSaved ? <Check className="w-4 h-4 text-emerald-300" /> : null}
-                <span>{isSaved ? 'Tersimpan' : 'Simpan'}</span>
-              </button>
+        {/* Bersihkan Riwayat */}
+        <div className="dz-card rounded-2xl p-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-red-100 dark:bg-red-600/20 border border-red-200 dark:border-red-500/30 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0">
+              <Trash2 className="w-4 h-4" />
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Cache & Data Management */}
-      <div className="p-4 rounded-2xl bg-[#0c1836]/90 border border-blue-500/20 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-600/20 border border-red-500/30 flex items-center justify-center text-red-400">
-              <Trash2 className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-sm text-white">Bersihkan Riwayat Unduhan</h3>
-              <p className="text-xs text-slate-400">Hapus cache lokal IndexedDB secara manual</p>
+            <div className="min-w-0">
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                Riwayat Unduhan
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                Hapus cache lokal
+              </p>
             </div>
           </div>
 
           <button
             type="button"
-            onClick={onClearHistory}
-            className="px-3.5 py-2 rounded-xl bg-red-950/60 hover:bg-red-900/60 border border-red-700/50 text-red-300 font-semibold text-xs cursor-pointer active:scale-95 transition-all"
+            onClick={handleClear}
+            className="px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/60 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-700/50 text-red-600 dark:text-red-300 font-semibold text-xs cursor-pointer active:scale-95 transition-transform shrink-0"
           >
-            Bersihkan
+            {historyCleared ? 'Bersih!' : 'Bersihkan'}
           </button>
         </div>
       </div>
 
-      {/* 5. Legal & Policy Links */}
-      <div className="p-4 rounded-2xl bg-[#0c1836]/90 border border-blue-500/20 space-y-2">
-        <h3 className="font-bold text-xs text-slate-400 uppercase tracking-wider mb-1">
-          Kebijakan & Informasi
-        </h3>
+      {/* 3. Kebijakan & Informasi */}
+      <div className="dz-card rounded-2xl overflow-hidden divide-y divide-slate-200 dark:divide-blue-500/15">
+        <div className="px-4 py-2.5">
+          <h3 className="font-bold text-[11px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+            Kebijakan & Informasi
+          </h3>
+        </div>
+
         <button
           type="button"
           onClick={() => onOpenTerms('terms')}
-          className="w-full p-2.5 rounded-xl hover:bg-white/5 flex items-center justify-between text-left cursor-pointer transition-colors"
+          className="w-full px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/5 flex items-center justify-between text-left cursor-pointer transition-colors"
         >
-          <span className="text-xs sm:text-sm font-semibold text-slate-200 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-cyan-400" />
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2.5">
+            <FileText className="w-4 h-4 text-sky-600 dark:text-cyan-400" />
             <span>Ketentuan Layanan (Terms of Service)</span>
           </span>
-          <span className="text-xs text-slate-500">Lihat</span>
+          <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>
 
         <button
           type="button"
           onClick={() => onOpenTerms('privacy')}
-          className="w-full p-2.5 rounded-xl hover:bg-white/5 flex items-center justify-between text-left cursor-pointer transition-colors"
+          className="w-full px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/5 flex items-center justify-between text-left cursor-pointer transition-colors"
         >
-          <span className="text-xs sm:text-sm font-semibold text-slate-200 flex items-center gap-2">
-            <Shield className="w-4 h-4 text-cyan-400" />
+          <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2.5">
+            <Shield className="w-4 h-4 text-sky-600 dark:text-cyan-400" />
             <span>Kebijakan Privasi (Privacy Policy)</span>
           </span>
-          <span className="text-xs text-slate-500">Lihat</span>
+          <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>
       </div>
 
-      {/* About Box */}
-      <div className="p-4 rounded-2xl bg-[#07132e] border border-blue-500/15 text-center text-xs text-slate-400 space-y-1">
-        <p className="font-bold text-slate-300">DownloaderZero (DZ)</p>
-        <p className="text-[11px] text-slate-500">
-          Media Engine v2026.1 • YouTube, TikTok, Spotify, Instagram, Facebook, Pinterest, TeraBox
-        </p>
+      {/* 4. Info Versi Ringkas */}
+      <div className="px-4 py-3 rounded-2xl bg-white/70 dark:bg-[#07132e] border border-slate-200 dark:border-blue-500/15 text-center text-xs text-slate-500 dark:text-slate-400">
+        <span className="font-bold text-slate-700 dark:text-slate-300">DownloaderZero (DZ)</span>
+        <span className="mx-1.5">•</span>
+        <span>Media Engine v2026.1</span>
       </div>
     </div>
   );

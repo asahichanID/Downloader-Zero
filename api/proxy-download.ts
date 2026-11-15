@@ -24,7 +24,7 @@ export default async function handler(req: any, res: any) {
     const urlParamIdx = rawReqUrl.indexOf('url=');
     if (urlParamIdx !== -1) {
       let extracted = rawReqUrl.slice(urlParamIdx + 4);
-      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey)=/);
+      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|inline)=/);
       if (nextParamMatch && nextParamMatch.index !== undefined) {
         extracted = extracted.slice(0, nextParamMatch.index);
       }
@@ -74,6 +74,8 @@ export default async function handler(req: any, res: any) {
     const sanitizedFilename = rawFilename.replace(/[^a-zA-Z0-9_.-]/g, '_');
     const platform = ((query.platform || req.query?.platform || '') as string).toLowerCase();
     const sourceUrl = (query.sourceUrl || req.query?.sourceUrl || '') as string;
+    const isInline = query.inline === '1' || req.query?.inline === '1' || query.inline === 'true';
+    const rangeHeader = typeof req.headers?.range === 'string' ? req.headers.range : undefined;
 
     if (!targetUrl || typeof targetUrl !== 'string' || !/^https?:\/\//i.test(targetUrl)) {
       res.status(400).send('Target URL tidak valid.');
@@ -184,15 +186,43 @@ export default async function handler(req: any, res: any) {
       spotifyProcessCache.set(processKey, { buffer: finalMp3Buffer, timestamp: Date.now() });
 
       res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Content-Length', finalMp3Buffer.length);
-      res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader(
+        'Content-Disposition',
+        isInline
+          ? `inline; filename="${sanitizedFilename}"`
+          : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
+      );
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, X-Process-Id, X-Cache-Lifetime');
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges, X-Process-Id, X-Cache-Lifetime');
+      res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
       res.setHeader('X-Process-Id', processKey);
       res.setHeader('X-Cache-Lifetime', '15s');
 
-      res.send(finalMp3Buffer);
+      if (rangeHeader) {
+        const totalLen = finalMp3Buffer.length;
+        const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+        if (match) {
+          const start = match[1] ? parseInt(match[1], 10) : 0;
+          const end = match[2] ? Math.min(parseInt(match[2], 10), totalLen - 1) : totalLen - 1;
+          if (!isNaN(start) && !isNaN(end) && start <= end && start < totalLen) {
+            const sliced = finalMp3Buffer.subarray(start, end + 1);
+            res.status(206);
+            res.setHeader('Content-Range', `bytes ${start}-${end}/${totalLen}`);
+            res.setHeader('Content-Length', sliced.length);
+            res.send(sliced);
+          } else {
+            res.setHeader('Content-Length', totalLen);
+            res.send(finalMp3Buffer);
+          }
+        } else {
+          res.setHeader('Content-Length', totalLen);
+          res.send(finalMp3Buffer);
+        }
+      } else {
+        res.setHeader('Content-Length', finalMp3Buffer.length);
+        res.send(finalMp3Buffer);
+      }
 
       // Hapus cache proses 15 detik setelah selesai
       setTimeout(() => {
@@ -260,8 +290,12 @@ export default async function handler(req: any, res: any) {
 
     for (const cfg of fetchCandidateConfigs) {
       try {
+        const reqHeaders: Record<string, string> = { ...cfg.headers };
+        if (rangeHeader) {
+          reqHeaders['Range'] = rangeHeader;
+        }
         const resCandidate = await fetch(targetUrl, {
-          headers: cfg.headers,
+          headers: reqHeaders,
           redirect: 'follow',
           signal: AbortSignal.timeout(15000)
         });
@@ -287,8 +321,12 @@ export default async function handler(req: any, res: any) {
             targetUrl = bestFormat.url;
             for (const cfg of fetchCandidateConfigs) {
               try {
+                const reqHeaders: Record<string, string> = { ...cfg.headers };
+                if (rangeHeader) {
+                  reqHeaders['Range'] = rangeHeader;
+                }
                 const resCandidate = await fetch(targetUrl, {
-                  headers: cfg.headers,
+                  headers: reqHeaders,
                   redirect: 'follow',
                   signal: AbortSignal.timeout(15000)
                 });
@@ -352,11 +390,25 @@ export default async function handler(req: any, res: any) {
     else if (sanitizedFilename.endsWith('.zip')) mimeType = 'application/zip';
     else if (rawContentType && !rawContentType.includes('text/')) mimeType = rawContentType;
 
+    if (remoteRes.status === 206) {
+      res.status(206);
+      const contentRange = remoteRes.headers.get('content-range');
+      if (contentRange) {
+        res.setHeader('Content-Range', contentRange);
+      }
+    }
+
     res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader(
+      'Content-Disposition',
+      isInline
+        ? `inline; filename="${sanitizedFilename}"`
+        : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
+    );
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type');
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges');
+    res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
     res.setHeader('X-Content-Type-Options', 'nosniff');
 
     const contentLength = remoteRes.headers.get('content-length');

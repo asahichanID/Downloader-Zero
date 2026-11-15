@@ -103,8 +103,23 @@
         }, true);
       })();
     </script>
+    <script>
+      (function() {
+        try {
+          var savedTheme = localStorage.getItem('dz_theme');
+          var root = document.documentElement;
+          if (savedTheme === 'light') {
+            root.classList.remove('dark');
+            root.classList.add('light');
+          } else {
+            root.classList.add('dark');
+            root.classList.remove('light');
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body class="bg-slate-950 text-slate-100 antialiased min-h-screen selection:bg-cyan-500/30 selection:text-cyan-200">
+  <body class="bg-[#f0f4fa] dark:bg-[#050B18] text-slate-900 dark:text-slate-100 antialiased min-h-screen selection:bg-cyan-500/30 selection:text-cyan-800 dark:selection:text-cyan-200">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
