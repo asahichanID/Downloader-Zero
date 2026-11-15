@@ -9,7 +9,7 @@ interface AdminPanelViewProps {
  * Dedicated Administrator Panel View.
  * Structured with modular sections so future admin features can be plugged in directly here.
  */
-export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
+export const AdminPanelView: React.FC<AdminPanelViewProps> = React.memo(({
   onBackToSettings
 }) => {
   return (
@@ -51,4 +51,4 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       </div>
     </div>
   );
-};
+});

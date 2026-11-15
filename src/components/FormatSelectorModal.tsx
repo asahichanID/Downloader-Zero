@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { X, Video, Music, Check, Download, Sparkles, Film, Disc } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import type { MediaMetadata, MediaFormat, MediaType, PlatformType } from '../types/index.ts';
+import type { MediaMetadata, MediaFormat, MediaType } from '../types/index.ts';
 import { formatDuration } from '../services/scraper.ts';
 
 interface FormatSelectorModalProps {
@@ -18,7 +17,7 @@ interface FormatSelectorModalProps {
   isDownloading?: boolean;
 }
 
-export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
+export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.memo(({
   isOpen,
   onClose,
   media,
@@ -189,21 +188,16 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
   const effectiveType: MediaType = isSpotify ? 'audio' : (isTwitter && !hasTwitterAudio) ? 'video' : selectedType;
 
   return (
-    <AnimatePresence>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 overflow-y-auto"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto"
-        onClick={onClose}
-        role="dialog"
-        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-md sm:max-w-lg rounded-3xl bg-white dark:bg-[#081530] border border-slate-200 dark:border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-slate-900/20 dark:shadow-black/95 text-slate-900 dark:text-white max-h-[85vh] flex flex-col overflow-hidden my-auto dz-animate-scale"
       >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.94 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.94 }}
-          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-md sm:max-w-lg rounded-3xl bg-white dark:bg-[#081530] border border-slate-200 dark:border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-slate-900/20 dark:shadow-black/95 text-slate-900 dark:text-white max-h-[85vh] flex flex-col overflow-hidden my-auto"
-        >
           {/* Header */}
           <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-blue-900/60">
             <div>
@@ -234,7 +228,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-900/80 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center border border-slate-200 dark:border-white/10 active:scale-90 transition-all cursor-pointer"
+              className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-900/80 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center border border-slate-200 dark:border-white/10 active:scale-90 transition-transform duration-150 cursor-pointer"
               aria-label="Tutup pemilihan format"
             >
               <X className="w-4 h-4" />
@@ -258,6 +252,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                   <img
                     src={resolvedThumbnail}
                     alt={media.title}
+                    decoding="async"
                     referrerPolicy="no-referrer"
                     crossOrigin="anonymous"
                     className="w-full h-full object-cover"
@@ -303,7 +298,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                   <button
                     type="button"
                     onClick={() => onChangeType('video')}
-                    className={`py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                    className={`py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm font-bold transition-colors duration-150 cursor-pointer ${
                       selectedType === 'video'
                         ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-1 ring-cyan-400'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -315,7 +310,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                   <button
                     type="button"
                     onClick={() => onChangeType('audio')}
-                    className={`py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                    className={`py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm font-bold transition-colors duration-150 cursor-pointer ${
                       selectedType === 'audio'
                         ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-1 ring-emerald-400'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -357,7 +352,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                             key={fmt.id}
                             type="button"
                             onClick={() => onSelectVideoRes(resLabel)}
-                            className={`p-3 rounded-2xl border text-left transition-all active:scale-[0.98] cursor-pointer relative ${
+                            className={`p-3 rounded-2xl border text-left transition-colors duration-150 active:scale-[0.98] cursor-pointer relative ${
                               isSelected
                                 ? 'bg-sky-50 dark:bg-[#102450] border-sky-500 dark:border-cyan-400 ring-1 ring-sky-500/40 dark:ring-cyan-400/50 shadow-md shadow-sky-500/15 dark:shadow-cyan-500/20'
                                 : 'bg-slate-50 dark:bg-[#0c1a3a]/70 border-slate-200 dark:border-blue-900/60 hover:border-sky-400 dark:hover:border-blue-600/60 hover:bg-slate-100 dark:hover:bg-[#0c1e42]'
@@ -386,7 +381,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                             key={preset.id}
                             type="button"
                             onClick={() => onSelectVideoRes(preset.resolution)}
-                            className={`p-3 rounded-2xl border text-left transition-all active:scale-[0.98] cursor-pointer relative ${
+                            className={`p-3 rounded-2xl border text-left transition-colors duration-150 active:scale-[0.98] cursor-pointer relative ${
                               isSelected
                                 ? 'bg-sky-50 dark:bg-[#102450] border-sky-500 dark:border-cyan-400 ring-1 ring-sky-500/40 dark:ring-cyan-400/50 shadow-md shadow-sky-500/15 dark:shadow-cyan-500/20'
                                 : 'bg-slate-50 dark:bg-[#0c1a3a]/70 border-slate-200 dark:border-blue-900/60 hover:border-sky-400 dark:hover:border-blue-600/60 hover:bg-slate-100 dark:hover:bg-[#0c1e42]'
@@ -423,7 +418,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                         key={preset.id}
                         type="button"
                         onClick={() => onSelectAudioQuality(preset.id)}
-                        className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-all active:scale-[0.98] cursor-pointer ${
+                        className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-colors duration-150 active:scale-[0.98] cursor-pointer ${
                           isSelected
                             ? 'bg-emerald-50 dark:bg-[#0f2d2b] border-emerald-500 dark:border-emerald-400 ring-1 ring-emerald-500/40 dark:ring-emerald-400/50 shadow-md shadow-emerald-500/15 dark:shadow-emerald-500/20'
                             : 'bg-slate-50 dark:bg-[#0c1a3a]/70 border-slate-200 dark:border-blue-900/60 hover:border-emerald-400 dark:hover:border-emerald-600/60 hover:bg-slate-100 dark:hover:bg-[#0c1e42]'
@@ -461,14 +456,13 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
               type="button"
               disabled={isDownloading}
               onClick={handleStartDownload}
-              className="w-full py-4 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+              className="w-full py-4 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 active:scale-[0.98] transition-colors duration-150 cursor-pointer disabled:opacity-50"
             >
               <Download className="w-5 h-5 stroke-[2.5]" />
               <span>{isDownloading ? 'Sedang Memproses...' : 'Mulai Download'}</span>
             </button>
           </div>
-        </motion.div>
       </div>
-    </AnimatePresence>
+    </div>
   );
-};
+});

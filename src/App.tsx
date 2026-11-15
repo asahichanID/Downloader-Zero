@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import JSZip from 'jszip';
 import { BannerDZ } from './components/BannerDZ.tsx';
 import { UrlInputCard } from './components/UrlInputCard.tsx';
@@ -171,6 +171,16 @@ export default function App() {
     return () => window.removeEventListener('dz_server_mode_changed', handleServerModeChange);
   }, []);
 
+  // Banner video always-play preference (default: true / aktif)
+  const [bannerAlwaysPlay, setBannerAlwaysPlay] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('dz_banner_always_play');
+      return saved !== null ? saved === '1' : true;
+    } catch {
+      return true;
+    }
+  });
+
   // Auto-return to initial Beranda view 3 seconds after download completes
   useEffect(() => {
     if (berandaStage !== 'completed') return;
@@ -200,7 +210,7 @@ export default function App() {
   }, [berandaStage]);
 
   // Handle URL change with auto platform detection (NO auto-select badge text!)
-  const handleUrlChange = (newUrl: string) => {
+  const handleUrlChange = useCallback((newUrl: string) => {
     setUrl(newUrl);
     setErrorMessage(null);
 
@@ -213,7 +223,7 @@ export default function App() {
         }
       }
     }
-  };
+  }, []);
 
   // Helper to map MediaFormat to loader.to format
   const mapFormatForLoader = (fmt: MediaFormat): string => {
@@ -328,12 +338,11 @@ export default function App() {
     setBerandaStage('preview');
   };
 
-  const handleBackFromPreview = () => {
-    if (berandaStage !== 'preview') return;
-    setBerandaStage('idle');
+  const handleBackFromPreview = useCallback(() => {
+    setBerandaStage((prev) => (prev === 'preview' ? 'idle' : prev));
     setErrorMessage(null);
     setDownloadStatusText('');
-  };
+  }, []);
 
   const openAfterExtraction = (meta: MediaMetadata) => {
     setMediaData(meta);
@@ -579,6 +588,8 @@ export default function App() {
       const reader = dlResponse.body.getReader();
       const chunks: Uint8Array[] = [];
       let received = 0;
+      let lastPct = progressStart;
+      let lastTickAt = 0;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -586,11 +597,22 @@ export default function App() {
         if (value) {
           chunks.push(value);
           received += value.length;
-          if (totalBytes > 0) {
-            const pct = Math.min(progressStart + progressSpan, progressStart + Math.round((received / totalBytes) * progressSpan));
-            setDownloadProgress(pct);
-          } else {
-            setDownloadProgress((prev) => Math.min(progressStart + progressSpan - 5, prev + 2));
+          const now = performance.now();
+          if (now - lastTickAt >= 100) {
+            if (totalBytes > 0) {
+              const pct = Math.min(
+                progressStart + progressSpan,
+                progressStart + Math.round((received / totalBytes) * progressSpan)
+              );
+              if (pct !== lastPct) {
+                lastPct = pct;
+                lastTickAt = now;
+                setDownloadProgress(pct);
+              }
+            } else {
+              lastTickAt = now;
+              setDownloadProgress((prev) => Math.min(progressStart + progressSpan - 5, prev + 2));
+            }
           }
         }
       }
@@ -882,7 +904,7 @@ export default function App() {
   };
 
   // Re-download from history item
-  const handleDownloadAgain = (item: HistoryItem) => {
+  const handleDownloadAgain = useCallback((item: HistoryItem) => {
     const ext = item.extension || 'mp4';
     const filename = item.filename || `DownloaderZero_${item.title.slice(0, 30)}.${ext}`;
     const streamUrl = item.downloadUrl || item.sourceUrl;
@@ -904,48 +926,102 @@ export default function App() {
         document.body.removeChild(a);
       } catch {}
     }, 1500);
-  };
+  }, []);
 
   // Delete history item
-  const handleDeleteHistory = async (id: string) => {
+  const handleDeleteHistory = useCallback(async (id: string) => {
     try {
       await deleteHistoryItem(id);
       await loadHistory();
     } catch (err) {
       console.warn('Delete history item error:', err);
     }
-  };
+  }, []);
 
   // Clear all history
-  const handleClearAllHistory = async () => {
+  const handleClearAllHistory = useCallback(async () => {
     try {
       await clearAllHistory();
       await loadHistory();
     } catch (err) {
       console.warn('Clear history error:', err);
     }
-  };
+  }, []);
 
-  // Play item in floating player (video or Spotify-like audio)
-  const handlePlayItem = (item: HistoryItem) => {
+  // Play item in floating player (video or Spotify-style audio)
+  const handlePlayItem = useCallback((item: HistoryItem) => {
     setPlayingItem(item);
-  };
+  }, []);
 
   // Quick clipboard paste on TipPromoCard tap
-  const handleTipCardTap = async () => {
+  const handleTipCardTap = useCallback(async () => {
     try {
       const text = await navigator.clipboard.readText();
       if (text && text.trim().startsWith('http')) {
         handleUrlChange(text.trim());
       }
     } catch {}
-  };
+  }, [handleUrlChange]);
+
+  const handleClearError = useCallback(() => setErrorMessage(null), []);
+
+  const handleSelectPlatform = useCallback((p: PlatformType) => {
+    setSelectedPlatform(p);
+    if (p === 'spotify') setMediaType('audio');
+  }, []);
+
+  const handleOpenPlatformsModal = useCallback(() => setIsPlatformsModalOpen(true), []);
+  const handleClosePlatformsModal = useCallback(() => setIsPlatformsModalOpen(false), []);
+  const handleGoToHistory = useCallback(() => setActiveTab('riwayat'), []);
+  const handleBackToBeranda = useCallback(() => setActiveTab('beranda'), []);
+  const handleToggleTheme = useCallback(() => setIsDark((prev) => !prev), []);
+  const handleToggleBannerAlwaysPlay = useCallback(() => {
+    setBannerAlwaysPlay((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('dz_banner_always_play', next ? '1' : '0');
+      } catch {}
+      return next;
+    });
+  }, []);
+  const handleOpenTerms = useCallback((tab: 'terms' | 'privacy') => {
+    setTermsDefaultTab(tab);
+    setIsTermsOpen(true);
+  }, []);
+  const handleCloseTerms = useCallback(() => setIsTermsOpen(false), []);
+  const handleCloseFormatModal = useCallback(() => setIsFormatModalOpen(false), []);
+  const handleClosePlayer = useCallback(() => setPlayingItem(null), []);
+  const handleSelectServerMode = useCallback((mode: ServerMode) => setServerMode(mode), []);
+  const handleAdminAccessChange = useCallback((active: boolean, openPanel?: boolean) => {
+    setIsAdmin(active);
+    setIsAdminPanelOpen(Boolean(active && openPanel));
+  }, []);
+  const handleOpenAdmin = useCallback(() => setIsAdminPanelOpen(true), []);
+  const handleBackFromAdmin = useCallback(() => setIsAdminPanelOpen(false), []);
+
+  const isBusy = berandaStage === 'preparing' || berandaStage === 'downloading';
+  const handleChangeTab = useCallback((tab: TabType) => {
+    if (!isBusy) {
+      setIsAdminPanelOpen(false);
+      setActiveTab(tab);
+    }
+  }, [isBusy]);
+
+  const isBannerPaused =
+    !bannerAlwaysPlay && (
+      activeTab !== 'beranda' ||
+      berandaStage !== 'idle' ||
+      isFormatModalOpen ||
+      isPlatformsModalOpen ||
+      isTermsOpen ||
+      Boolean(playingItem)
+    );
 
   return (
     <div className="relative min-h-screen w-full bg-[#f0f4fa] dark:bg-[#050B18] text-slate-900 dark:text-slate-100 flex flex-col items-center overflow-x-hidden transition-colors duration-200">
       {/* Top Banner (Spans 100% full-width across the screen) */}
       <header className="w-full bg-[#f0f4fa] dark:bg-[#050B18]">
-        <BannerDZ />
+        <BannerDZ paused={isBannerPaused} alwaysPlay={bannerAlwaysPlay} />
       </header>
 
       {/* Main Content Area (Spans full width on mobile/Android, gracefully expanding on larger screens) */}
@@ -979,7 +1055,7 @@ export default function App() {
                   setUrl={handleUrlChange}
                   selectedPlatform={selectedPlatform}
                   errorMessage={errorMessage}
-                  onClearError={() => setErrorMessage(null)}
+                  onClearError={handleClearError}
                   onDownloadClick={handleDownloadButtonClick}
                   isLoading={isLoading}
                 />
@@ -989,11 +1065,8 @@ export default function App() {
               <section aria-label="Platform yang didukung">
                 <PlatformCards
                   selectedPlatform={selectedPlatform}
-                  onSelectPlatform={(p) => {
-                    setSelectedPlatform(p);
-                    if (p === 'spotify') setMediaType('audio');
-                  }}
-                  onViewAll={() => setIsPlatformsModalOpen(true)}
+                  onSelectPlatform={handleSelectPlatform}
+                  onViewAll={handleOpenPlatformsModal}
                 />
               </section>
 
@@ -1006,7 +1079,7 @@ export default function App() {
               <section aria-label="Riwayat Unduhan">
                 <HistorySection
                   items={historyItems}
-                  onViewAll={() => setActiveTab('riwayat')}
+                  onViewAll={handleGoToHistory}
                   onPlay={handlePlayItem}
                   onDownloadAgain={handleDownloadAgain}
                   onDelete={handleDeleteHistory}
@@ -1020,7 +1093,7 @@ export default function App() {
         {activeTab === 'riwayat' && (
           <HistoryFullView
             items={historyItems}
-            onBackToHome={() => setActiveTab('beranda')}
+            onBackToHome={handleBackToBeranda}
             onPlay={handlePlayItem}
             onDownloadAgain={handleDownloadAgain}
             onDelete={handleDeleteHistory}
@@ -1032,26 +1105,22 @@ export default function App() {
         {activeTab === 'pengaturan' && (
           isAdmin && isAdminPanelOpen ? (
             <AdminPanelView
-              onBackToSettings={() => setIsAdminPanelOpen(false)}
+              onBackToSettings={handleBackFromAdmin}
             />
           ) : (
             <SettingsFullView
               isDark={isDark}
-              onToggleTheme={() => setIsDark((prev) => !prev)}
-              onBackToHome={() => setActiveTab('beranda')}
-              onOpenTerms={(tab) => {
-                setTermsDefaultTab(tab);
-                setIsTermsOpen(true);
-              }}
+              onToggleTheme={handleToggleTheme}
+              onBackToHome={handleBackToBeranda}
+              onOpenTerms={handleOpenTerms}
               onClearHistory={handleClearAllHistory}
               serverMode={serverMode}
-              onSelectServerMode={(mode) => setServerMode(mode)}
+              onSelectServerMode={handleSelectServerMode}
               isAdmin={isAdmin}
-              onAdminAccessChange={(active, openPanel) => {
-                setIsAdmin(active);
-                setIsAdminPanelOpen(Boolean(active && openPanel));
-              }}
-              onOpenAdmin={() => setIsAdminPanelOpen(true)}
+              onAdminAccessChange={handleAdminAccessChange}
+              onOpenAdmin={handleOpenAdmin}
+              bannerAlwaysPlay={bannerAlwaysPlay}
+              onToggleBannerAlwaysPlay={handleToggleBannerAlwaysPlay}
             />
           )
         )}
@@ -1060,22 +1129,16 @@ export default function App() {
       {/* Floating Bottom Navigation Bar (Locked only while actively preparing or downloading) */}
       <BottomNavbar
         activeTab={activeTab}
-        onChangeTab={(tab) => {
-          const isBusy = berandaStage === 'preparing' || berandaStage === 'downloading';
-          if (!isBusy) {
-            setIsAdminPanelOpen(false);
-            setActiveTab(tab);
-          }
-        }}
+        onChangeTab={handleChangeTab}
         historyCount={historyItems.length}
-        locked={berandaStage === 'preparing' || berandaStage === 'downloading'}
+        locked={isBusy}
       />
 
       {/* MODAL 1: Format & Quality Selector (Triggered when pressing Download) */}
       {mediaData && (
         <FormatSelectorModal
           isOpen={isFormatModalOpen}
-          onClose={() => setIsFormatModalOpen(false)}
+          onClose={handleCloseFormatModal}
           media={mediaData}
           selectedType={mediaType}
           onChangeType={setMediaType}
@@ -1084,7 +1147,7 @@ export default function App() {
           selectedAudioQuality={selectedAudioQuality}
           onSelectAudioQuality={setSelectedAudioQuality}
           onConfirmDownload={handleConfirmDownload}
-          isDownloading={berandaStage === 'preparing' || berandaStage === 'downloading'}
+          isDownloading={isBusy}
         />
       )}
 
@@ -1092,7 +1155,7 @@ export default function App() {
       {playingItem && playingItem.mediaType === 'video' && (
         <FloatingVideoPlayer
           item={playingItem}
-          onClose={() => setPlayingItem(null)}
+          onClose={handleClosePlayer}
           onDownloadAgain={handleDownloadAgain}
         />
       )}
@@ -1101,7 +1164,7 @@ export default function App() {
       {playingItem && playingItem.mediaType === 'audio' && (
         <FloatingSpotifyPlayer
           item={playingItem}
-          onClose={() => setPlayingItem(null)}
+          onClose={handleClosePlayer}
           onDownloadAgain={handleDownloadAgain}
         />
       )}
@@ -1109,17 +1172,14 @@ export default function App() {
       {/* MODAL 4: Supported Platforms Details */}
       <SupportedPlatformsModal
         isOpen={isPlatformsModalOpen}
-        onClose={() => setIsPlatformsModalOpen(false)}
-        onSelectPlatform={(p) => {
-          setSelectedPlatform(p);
-          if (p === 'spotify') setMediaType('audio');
-        }}
+        onClose={handleClosePlatformsModal}
+        onSelectPlatform={handleSelectPlatform}
       />
 
       {/* MODAL 5: Terms of Service & Privacy */}
       <TermsModal
         isOpen={isTermsOpen}
-        onClose={() => setIsTermsOpen(false)}
+        onClose={handleCloseTerms}
         defaultTab={termsDefaultTab}
       />
     </div>

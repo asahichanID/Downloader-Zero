@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { History, Search, Trash2, Clock, Filter, ArrowLeft } from 'lucide-react';
-import type { HistoryItem, PlatformType } from '../types/index.ts';
+import React, { useState, useMemo } from 'react';
+import { History, Search, Trash2, Clock, ArrowLeft } from 'lucide-react';
+import type { HistoryItem } from '../types/index.ts';
 import { HistoryItemRow } from './HistoryItemRow.tsx';
 
 interface HistoryFullViewProps {
@@ -12,7 +12,7 @@ interface HistoryFullViewProps {
   onClearAll: () => void;
 }
 
-export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
+export const HistoryFullView: React.FC<HistoryFullViewProps> = React.memo(({
   items,
   onBackToHome,
   onPlay,
@@ -25,12 +25,15 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
   const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
 
   // Filter items by search query and platform filter
-  const filteredItems = items.filter((item) => {
-    const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.author.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = selectedFilter === 'all' || item.platform === selectedFilter;
-    return matchesSearch && matchesFilter;
-  });
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return items.filter((item) => {
+      const matchesSearch = !q || item.title.toLowerCase().includes(q) ||
+        item.author.toLowerCase().includes(q);
+      const matchesFilter = selectedFilter === 'all' || item.platform === selectedFilter;
+      return matchesSearch && matchesFilter;
+    });
+  }, [items, searchQuery, selectedFilter]);
 
   const platforms = [
     { id: 'all', label: 'Semua' },
@@ -52,7 +55,7 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
           <button
             type="button"
             onClick={onBackToHome}
-            className="w-8 h-8 rounded-full bg-white dark:bg-slate-900/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white flex items-center justify-center border border-slate-200 dark:border-white/10 active:scale-90 transition-all cursor-pointer"
+            className="w-8 h-8 rounded-full bg-white dark:bg-slate-900/80 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white flex items-center justify-center border border-slate-200 dark:border-white/10 active:scale-90 transition-transform duration-150 cursor-pointer"
             aria-label="Kembali ke Beranda"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -67,7 +70,7 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
           <button
             type="button"
             onClick={() => setShowClearConfirm(true)}
-            className="text-xs font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/40 active:scale-95 transition-all cursor-pointer"
+            className="text-xs font-semibold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/40 active:scale-95 transition-colors duration-150 cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Hapus Semua</span>
@@ -105,7 +108,7 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
               key={p.id}
               type="button"
               onClick={() => setSelectedFilter(p.id)}
-              className={`py-1.5 px-3 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+              className={`py-1.5 px-3 rounded-full text-xs font-semibold whitespace-nowrap transition-colors duration-150 cursor-pointer ${
                 selectedFilter === p.id
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'bg-white dark:bg-[#0c1836] border border-slate-200 dark:border-blue-500/20 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -147,12 +150,12 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
       {/* Confirmation Dialog for Clear All */}
       {showClearConfirm && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75"
           onClick={() => setShowClearConfirm(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-3xl bg-white dark:bg-[#081530] border border-red-300 dark:border-red-500/40 p-5 shadow-2xl text-slate-900 dark:text-white text-center space-y-3"
+            className="w-full max-w-sm rounded-3xl bg-white dark:bg-[#081530] border border-red-300 dark:border-red-500/40 p-5 shadow-2xl text-slate-900 dark:text-white text-center space-y-3 dz-animate-scale"
           >
             <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-950/80 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
               <Trash2 className="w-6 h-6" />
@@ -185,4 +188,4 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
       )}
     </div>
   );
-};
+});

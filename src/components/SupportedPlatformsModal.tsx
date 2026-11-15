@@ -140,7 +140,7 @@ const PLATFORM_CATALOG: PlatformCatalogItem[] = [
   }
 ];
 
-export const SupportedPlatformsModal: React.FC<SupportedPlatformsModalProps> = ({
+export const SupportedPlatformsModal: React.FC<SupportedPlatformsModalProps> = React.memo(({
   isOpen,
   onClose,
   onSelectPlatform
@@ -166,21 +166,16 @@ export const SupportedPlatformsModal: React.FC<SupportedPlatformsModalProps> = (
   };
 
   return (
-    <AnimatePresence>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70"
-        onClick={onClose}
-        role="dialog"
-        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-lg rounded-3xl bg-white dark:bg-[#081530] border border-slate-200 dark:border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-slate-900/20 dark:shadow-black/90 text-slate-900 dark:text-white max-h-[85vh] flex flex-col overflow-hidden dz-animate-scale"
       >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 10 }}
-          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-lg rounded-3xl bg-white dark:bg-[#081530] border border-slate-200 dark:border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-slate-900/20 dark:shadow-black/90 text-slate-900 dark:text-white max-h-[85vh] flex flex-col overflow-hidden"
-        >
           {/* Header */}
           <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-blue-900/60 shrink-0">
             <div className="flex items-center gap-2">
@@ -337,8 +332,7 @@ export const SupportedPlatformsModal: React.FC<SupportedPlatformsModalProps> = (
               Selesai
             </button>
           </div>
-        </motion.div>
+        </div>
       </div>
-    </AnimatePresence>
   );
-};
+});

@@ -5,7 +5,7 @@ interface TipPromoCardProps {
   onTap?: () => void;
 }
 
-export const TipPromoCard: React.FC<TipPromoCardProps> = ({ onTap }) => {
+export const TipPromoCard: React.FC<TipPromoCardProps> = React.memo(({ onTap }) => {
   return (
     <div
       onClick={onTap}
@@ -17,14 +17,11 @@ export const TipPromoCard: React.FC<TipPromoCardProps> = ({ onTap }) => {
           onTap?.();
         }
       }}
-      className="relative w-full rounded-2xl bg-gradient-to-r from-sky-50 via-white to-blue-50 dark:from-[#0c2354] dark:via-[#091b40] dark:to-[#0b275e] border border-sky-200 dark:border-blue-500/30 p-3.5 sm:p-4 shadow-md shadow-slate-900/5 dark:shadow-lg dark:shadow-black/40 flex items-center justify-between gap-3 overflow-hidden cursor-pointer hover:border-sky-400 dark:hover:border-cyan-400/50 active:scale-[0.99] transition-all group select-none"
+      className="relative w-full rounded-2xl bg-gradient-to-r from-sky-50 via-white to-blue-50 dark:from-[#0c2354] dark:via-[#091b40] dark:to-[#0b275e] border border-sky-200 dark:border-blue-500/30 p-3.5 sm:p-4 shadow-md shadow-slate-900/5 dark:shadow-lg dark:shadow-black/35 flex items-center justify-between gap-3 overflow-hidden cursor-pointer hover:border-sky-400 dark:hover:border-cyan-400/50 active:scale-[0.99] transition-[border-color,transform] duration-150 group select-none dz-contain-card"
     >
-      {/* Glossy light shard effect */}
-      <div className="pointer-events-none absolute -right-6 -top-6 w-36 h-36 bg-cyan-400/10 rounded-full blur-2xl group-hover:bg-cyan-400/20 transition-colors" />
-
-      {/* Left Icon: Glowing lightning bolt */}
-      <div className="relative flex items-center justify-center w-11 h-11 rounded-2xl bg-sky-100 dark:bg-gradient-to-br dark:from-blue-500/30 dark:to-cyan-500/20 border border-sky-300 dark:border-cyan-400/40 shadow-inner shrink-0">
-        <Zap className="w-5 h-5 text-amber-500 dark:text-amber-400 fill-amber-500 dark:fill-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
+      {/* Left Icon */}
+      <div className="relative flex items-center justify-center w-11 h-11 rounded-2xl bg-sky-100 dark:bg-gradient-to-br dark:from-blue-500/30 dark:to-cyan-500/20 border border-sky-300 dark:border-cyan-400/40 shrink-0">
+        <Zap className="w-5 h-5 text-amber-500 dark:text-amber-400 fill-amber-500 dark:fill-amber-400" />
       </div>
 
       {/* Text Content */}
@@ -38,9 +35,9 @@ export const TipPromoCard: React.FC<TipPromoCardProps> = ({ onTap }) => {
       </div>
 
       {/* Right Action: Chevron */}
-      <div className="shrink-0 text-sky-600 dark:text-blue-300/80 group-hover:text-sky-700 dark:group-hover:text-cyan-300 group-hover:translate-x-0.5 transition-all">
+      <div className="shrink-0 text-sky-600 dark:text-blue-300/80 group-hover:text-sky-700 dark:group-hover:text-cyan-300 group-hover:translate-x-0.5 transition-transform duration-150">
         <ChevronRight className="w-5 h-5" />
       </div>
     </div>
   );
-};
+});

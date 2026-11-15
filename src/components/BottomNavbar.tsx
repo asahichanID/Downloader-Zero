@@ -1,6 +1,5 @@
 import React from 'react';
 import { Home, History, Settings } from 'lucide-react';
-import { motion } from 'motion/react';
 
 export type TabType = 'beranda' | 'riwayat' | 'pengaturan';
 
@@ -11,7 +10,7 @@ interface BottomNavbarProps {
   locked?: boolean;
 }
 
-export const BottomNavbar: React.FC<BottomNavbarProps> = ({
+export const BottomNavbar: React.FC<BottomNavbarProps> = React.memo(({
   activeTab,
   onChangeTab,
   historyCount = 0,
@@ -41,7 +40,7 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
       aria-label="Navigasi Utama"
       className="fixed bottom-3 sm:bottom-4 inset-x-3 sm:inset-x-6 max-w-xl md:max-w-2xl mx-auto z-40 select-none"
     >
-      <div className="relative rounded-full bg-white/92 dark:bg-[#081530]/92 backdrop-blur-xl border border-slate-200 dark:border-blue-500/25 shadow-xl shadow-slate-900/15 dark:shadow-2xl dark:shadow-black/80 px-2 py-1.5 flex items-center justify-around">
+      <div className="relative rounded-full bg-white/97 dark:bg-[#081530]/97 border border-slate-200 dark:border-blue-500/25 shadow-xl shadow-slate-900/15 dark:shadow-2xl dark:shadow-black/75 px-2 py-1.5 flex items-center justify-around">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           const Icon = tab.icon;
@@ -55,30 +54,21 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
               onClick={() => {
                 if (!locked) onChangeTab(tab.id);
               }}
-              className={`relative flex-1 py-2 px-3 flex flex-col items-center justify-center rounded-full transition-colors duration-150 touch-manipulation ${
+              className={`relative flex-1 py-2 px-3 flex flex-col items-center justify-center rounded-full border transition-colors duration-150 touch-manipulation ${
+                isActive
+                  ? 'bg-sky-100 dark:bg-blue-600/30 border-sky-400/60 dark:border-cyan-400/50'
+                  : 'border-transparent hover:bg-slate-100/70 dark:hover:bg-white/5'
+              } ${
                 isDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
               }`}
             >
-              {/* Animated sliding background pill for active tab */}
-              {isActive && (
-                <motion.div
-                  layoutId="bottomNavIndicator"
-                  className="absolute inset-0 rounded-full bg-sky-100 dark:bg-blue-600/30 border border-sky-400/60 dark:border-cyan-400/50 shadow-inner"
-                  transition={{
-                    type: 'spring',
-                    stiffness: 400,
-                    damping: 32
-                  }}
-                />
-              )}
-
               {/* Icon & Label */}
               <div className="relative z-10 flex flex-col items-center gap-0.5">
                 <div className="relative">
                   <Icon
                     className={`w-5 h-5 transition-transform duration-150 ${
                       isActive
-                        ? 'text-sky-600 dark:text-cyan-400 scale-110 dark:drop-shadow-[0_0_8px_rgba(34,211,238,0.6)]'
+                        ? 'text-sky-600 dark:text-cyan-400 scale-110'
                         : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                     }`}
                   />
@@ -102,4 +92,4 @@ export const BottomNavbar: React.FC<BottomNavbarProps> = ({
       </div>
     </nav>
   );
-};
+});

@@ -2,34 +2,79 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
 import bannerImage from '../assets/images/banner_dz.png';
 
-export const BannerDZ: React.FC = () => {
+interface BannerDZProps {
+  paused?: boolean;
+  alwaysPlay?: boolean;
+}
+
+export const BannerDZ: React.FC<BannerDZProps> = React.memo(({ paused = false, alwaysPlay = true }) => {
   const [showVideo, setShowVideo] = useState<boolean>(false);
+  const [isInView, setIsInView] = useState<boolean>(true);
+  const [isTabVisible, setIsTabVisible] = useState<boolean>(() =>
+    typeof document !== 'undefined' ? !document.hidden : true
+  );
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Smoothly alternate image and video without jarring jumps (full video duration)
+  const isActive = alwaysPlay ? true : (!paused && isInView && isTabVisible);
+
   useEffect(() => {
-    if (showVideo) return;
+    const handleVisibility = () => {
+      setIsTabVisible(!document.hidden);
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]) {
+          setIsInView(entries[0].isIntersecting);
+        }
+      },
+      { threshold: 0.05 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Immediately stop video & switch back to crisp image when inactive/offscreen
+  useEffect(() => {
+    if (!isActive) {
+      setShowVideo(false);
+    }
+  }, [isActive]);
+
+  // Smoothly alternate image and video only when visible and active
+  useEffect(() => {
+    if (!isActive || showVideo) return;
     const timer = setTimeout(() => {
       setShowVideo(true);
     }, 4000);
     return () => clearTimeout(timer);
-  }, [showVideo]);
+  }, [isActive, showVideo]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (showVideo) {
+    if (isActive && showVideo) {
       video.currentTime = 0;
       video.play().catch(() => {
         setShowVideo(false);
       });
-    } else {
+    } else if (!video.paused) {
       video.pause();
     }
-  }, [showVideo]);
+  }, [isActive, showVideo]);
 
   return (
-    <div className="relative w-full overflow-hidden select-none bg-[#f0f4fa] dark:bg-[#050B18]">
+    <div
+      ref={containerRef}
+      className="relative w-full overflow-hidden select-none bg-[#f0f4fa] dark:bg-[#050B18] dz-contain-card"
+    >
       {/* Background Media Container (Full-width edge-to-edge) */}
       <div className="relative w-full h-[270px] sm:h-[320px] md:h-[360px] lg:h-[400px] overflow-hidden">
         {/* Banner Media Layer with 5% bottom transparency fade mask */}
@@ -44,30 +89,30 @@ export const BannerDZ: React.FC = () => {
           <img
             src={bannerImage}
             alt="DownloaderZero Banner"
-            className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center transition-opacity duration-700 ease-in-out ${
+            decoding="async"
+            className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center will-change-[opacity] transition-opacity duration-500 ease-in-out ${
               showVideo ? 'opacity-0' : 'opacity-100'
             }`}
             loading="eager"
           />
 
-          {/* Banner MP4 Video (Smooth background transition, full duration) */}
+          {/* Banner MP4 Video (Paused cleanly whenever scrolled out, hidden, or in modal/other tabs) */}
           <video
             ref={videoRef}
             src="/banner_eksperimen.mp4"
             muted
             playsInline
-            preload="auto"
+            preload="metadata"
             onEnded={() => setShowVideo(false)}
             onError={() => setShowVideo(false)}
-            className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center transition-opacity duration-700 ease-in-out ${
+            className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center will-change-[opacity] transition-opacity duration-500 ease-in-out ${
               showVideo ? 'opacity-100' : 'opacity-0'
             }`}
           />
         </div>
 
-        {/* Ambient Dark-Blue & Shimmer Overlays */}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#050B18]/90 via-[#050B18]/45 to-transparent pointer-events-none" />
-        <div className="absolute inset-0 bg-blue-950/20 mix-blend-color pointer-events-none" />
+        {/* Ambient Dark-Blue Gradient Overlay (Zero blend-mode readback cost) */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#050B18]/90 via-[#050B18]/45 to-blue-950/15 pointer-events-none" />
 
         {/* Bottom 5% Gradient Fade: Fades down smoothly to active theme background */}
         <div
@@ -84,8 +129,8 @@ export const BannerDZ: React.FC = () => {
         <div className="absolute inset-0 max-w-4xl mx-auto px-4 sm:px-6 pointer-events-none flex flex-col justify-start">
           <div className="pt-7 sm:pt-10 max-w-[280px] sm:max-w-sm pointer-events-auto">
             {/* Blue Download Icon Badge */}
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 p-0.5 shadow-lg shadow-blue-500/40 mb-3 flex items-center justify-center">
-              <div className="w-full h-full rounded-[14px] bg-[#0c245c]/70 backdrop-blur-xs flex items-center justify-center">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 p-0.5 shadow-lg shadow-blue-500/35 mb-3 flex items-center justify-center">
+              <div className="w-full h-full rounded-[14px] bg-[#0c245c]/90 flex items-center justify-center">
                 <Download className="w-6 h-6 text-white stroke-[2.5]" />
               </div>
             </div>
@@ -96,7 +141,7 @@ export const BannerDZ: React.FC = () => {
             </h1>
 
             {/* Subtitle */}
-            <p className="text-xs sm:text-sm font-medium text-blue-100/90 mt-1 leading-snug drop-shadow-xs">
+            <p className="text-xs sm:text-sm font-medium text-blue-100/90 mt-1 leading-snug">
               Download Video & Audio <br className="hidden sm:inline" />
               dari berbagai platform
             </p>
@@ -105,4 +150,4 @@ export const BannerDZ: React.FC = () => {
       </div>
     </div>
   );
-};
+});

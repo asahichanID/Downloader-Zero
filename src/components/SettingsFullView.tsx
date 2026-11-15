@@ -11,7 +11,8 @@ import {
   Check,
   Server,
   ChevronRight,
-  ShieldCheck
+  ShieldCheck,
+  Film
 } from 'lucide-react';
 import type { ServerMode } from '../types/index.ts';
 
@@ -29,9 +30,11 @@ interface SettingsFullViewProps {
   isAdmin?: boolean;
   onAdminAccessChange?: (active: boolean, openPanel?: boolean) => void;
   onOpenAdmin?: () => void;
+  bannerAlwaysPlay?: boolean;
+  onToggleBannerAlwaysPlay?: () => void;
 }
 
-export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
+export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
   isDark,
   onToggleTheme,
   onBackToHome,
@@ -41,7 +44,9 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
   onSelectServerMode,
   isAdmin = false,
   onAdminAccessChange,
-  onOpenAdmin
+  onOpenAdmin,
+  bannerAlwaysPlay = true,
+  onToggleBannerAlwaysPlay
 }) => {
   const [currentMode, setCurrentMode] = useState<ServerMode>(() => {
     try {
@@ -310,10 +315,10 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
         )}
       </div>
 
-      {/* 2. Grid 2 Kolom: Tema Tampilan & Pembersihan Cache */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* 2. Tampilan (Tema Tampilan & Banner Selalu Jalan tepat di bawahnya) */}
+      <div className="dz-card rounded-2xl overflow-hidden divide-y divide-slate-200 dark:divide-blue-500/15">
         {/* Tema Tampilan */}
-        <div className="dz-card rounded-2xl p-4 flex items-center justify-between gap-3">
+        <div className="p-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-blue-600/20 border border-sky-200 dark:border-blue-500/30 flex items-center justify-center text-sky-600 dark:text-cyan-400 shrink-0">
               {isDark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
@@ -338,30 +343,68 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
           </button>
         </div>
 
-        {/* Bersihkan Riwayat */}
-        <div className="dz-card rounded-2xl p-4 flex items-center justify-between gap-3">
+        {/* Banner Selalu Jalan (On/Off Toggle tepat di bawah Tema Tampilan) */}
+        <div className="p-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-red-100 dark:bg-red-600/20 border border-red-200 dark:border-red-500/30 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0">
-              <Trash2 className="w-4 h-4" />
+            <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-cyan-500/15 border border-sky-200 dark:border-cyan-400/30 flex items-center justify-center text-sky-600 dark:text-cyan-400 shrink-0">
+              <Film className="w-4 h-4" />
             </div>
             <div className="min-w-0">
               <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
-                Riwayat Unduhan
+                Banner Selalu Jalan
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                Hapus cache lokal
+                {bannerAlwaysPlay
+                  ? 'Aktif • Video banner terus diputar'
+                  : 'Nonaktif • Video jeda saat tidak terlihat'}
               </p>
             </div>
           </div>
 
           <button
             type="button"
-            onClick={handleClear}
-            className="px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/60 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-700/50 text-red-600 dark:text-red-300 font-semibold text-xs cursor-pointer active:scale-95 transition-transform shrink-0"
+            role="switch"
+            aria-checked={bannerAlwaysPlay}
+            aria-label="Banner Selalu Jalan"
+            onClick={onToggleBannerAlwaysPlay}
+            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors duration-150 cursor-pointer ${
+              bannerAlwaysPlay
+                ? 'bg-sky-600 dark:bg-cyan-500 border-sky-500 dark:border-cyan-400'
+                : 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700'
+            }`}
           >
-            {historyCleared ? 'Bersih!' : 'Bersihkan'}
+            <span
+              className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                bannerAlwaysPlay ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
           </button>
         </div>
+      </div>
+
+      {/* 3. Bersihkan Riwayat */}
+      <div className="dz-card rounded-2xl p-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-red-100 dark:bg-red-600/20 border border-red-200 dark:border-red-500/30 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0">
+            <Trash2 className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+              Riwayat Unduhan
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+              Hapus cache lokal
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleClear}
+          className="px-3 py-2 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/60 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-700/50 text-red-600 dark:text-red-300 font-semibold text-xs cursor-pointer active:scale-95 transition-transform shrink-0"
+        >
+          {historyCleared ? 'Bersih!' : 'Bersihkan'}
+        </button>
       </div>
 
       {/* Administrasi (Hanya tampil saat mode admin aktif, sejajar dengan kartu pengaturan lain) */}
@@ -430,4 +473,4 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
       </div>
     </div>
   );
-};
+});

@@ -11,7 +11,7 @@ interface HistorySectionProps {
   onDelete: (id: string) => void;
 }
 
-export const HistorySection: React.FC<HistorySectionProps> = ({
+export const HistorySection: React.FC<HistorySectionProps> = React.memo(({
   items,
   onViewAll,
   onPlay,
@@ -36,7 +36,7 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
           <button
             type="button"
             onClick={onViewAll}
-            className="text-xs font-semibold text-sky-600 dark:text-blue-400 hover:text-sky-700 dark:hover:text-cyan-300 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+            className="text-xs font-semibold text-sky-600 dark:text-blue-400 hover:text-sky-700 dark:hover:text-cyan-300 flex items-center gap-1 active:scale-95 transition-colors duration-150 cursor-pointer"
           >
             <span>Lihat semua</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -78,4 +78,4 @@ export const HistorySection: React.FC<HistorySectionProps> = ({
       )}
     </div>
   );
-};
+});

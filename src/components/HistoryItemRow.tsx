@@ -9,7 +9,7 @@ interface HistoryItemRowProps {
   onDelete: (id: string) => void;
 }
 
-export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
+export const HistoryItemRow: React.FC<HistoryItemRowProps> = React.memo(({
   item,
   onPlay,
   onDownloadAgain,
@@ -73,7 +73,7 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
   return (
     <div
       onClick={() => onPlay(item)}
-      className="group relative w-full p-2 sm:p-2.5 rounded-2xl bg-white dark:bg-[#0c1836]/90 hover:bg-slate-50 dark:hover:bg-[#102450] border border-slate-200 dark:border-blue-500/20 hover:border-sky-400 dark:hover:border-cyan-400/50 shadow-sm shadow-slate-900/5 dark:shadow-md dark:shadow-black/30 flex items-center justify-between gap-3 transition-all duration-150 cursor-pointer select-none"
+      className="group relative w-full p-2 sm:p-2.5 rounded-2xl bg-white dark:bg-[#0c1836]/95 hover:bg-slate-50 dark:hover:bg-[#102450] border border-slate-200 dark:border-blue-500/20 hover:border-sky-400 dark:hover:border-cyan-400/50 shadow-sm shadow-slate-900/5 dark:shadow-md dark:shadow-black/25 flex items-center justify-between gap-3 transition-colors duration-150 cursor-pointer select-none dz-contain-row"
     >
       {/* Left Thumbnail + Duration Badge */}
       <div className="relative w-20 h-13 sm:w-22 sm:h-14 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-900 border border-slate-200 dark:border-white/10 shrink-0">
@@ -89,6 +89,8 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
           <img
             src={resolvedThumbnail}
             alt={item.title}
+            loading="lazy"
+            decoding="async"
             referrerPolicy="no-referrer"
             crossOrigin="anonymous"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
@@ -219,4 +221,4 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
       </div>
     </div>
   );
-};
+});

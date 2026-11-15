@@ -24,7 +24,6 @@ import {
   AlertCircle,
   Disc3
 } from 'lucide-react';
-import { motion } from 'motion/react';
 import type { MediaMetadata, MediaFormat, TeraboxFile, AudioTrack } from '../types/index.ts';
 import { formatCount } from '../services/scraper.ts';
 
@@ -53,7 +52,193 @@ interface BerandaResultViewProps {
   onBackToHome: () => void;
 }
 
-export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
+const formatSecs = (s: number) => {
+  if (!s || isNaN(s) || s < 0) return '00:00';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+};
+
+interface AudioPreviewCardProps {
+  audioUrl: string;
+  title?: string;
+  author?: string;
+  genre?: string;
+  thumbnail?: string;
+  fallbackDuration?: number;
+}
+
+const AudioPreviewCard: React.FC<AudioPreviewCardProps> = React.memo(({
+  audioUrl,
+  title,
+  author,
+  genre,
+  thumbnail,
+  fallbackDuration
+}) => {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastTickRef = useRef<number>(0);
+  const [isAudioPlaying, setIsAudioPlaying] = useState<boolean>(false);
+  const [audioCurrentTime, setAudioCurrentTime] = useState<number>(0);
+  const [audioDuration, setAudioDuration] = useState<number>(fallbackDuration || 30);
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
+  const [isAudioLoading, setIsAudioLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setIsAudioPlaying(false);
+    setAudioCurrentTime(0);
+
+    if (!audioUrl) return;
+
+    const audio = new Audio();
+    audio.src = audioUrl;
+    audio.preload = 'metadata';
+
+    audio.onloadedmetadata = () => {
+      if (audio.duration && !isNaN(audio.duration)) {
+        setAudioDuration(audio.duration);
+      } else {
+        setAudioDuration(fallbackDuration || 30);
+      }
+    };
+    audio.ontimeupdate = () => {
+      const now = performance.now();
+      if (now - lastTickRef.current < 240) return;
+      lastTickRef.current = now;
+      setAudioCurrentTime(audio.currentTime);
+    };
+    audio.onwaiting = () => setIsAudioLoading(true);
+    audio.onplaying = () => {
+      setIsAudioLoading(false);
+      setIsAudioPlaying(true);
+    };
+    audio.onpause = () => setIsAudioPlaying(false);
+    audio.onended = () => {
+      setIsAudioPlaying(false);
+      setAudioCurrentTime(0);
+    };
+    audio.onerror = () => {
+      setIsAudioLoading(false);
+      setIsAudioPlaying(false);
+    };
+
+    audioRef.current = audio;
+
+    return () => {
+      audio.pause();
+      audio.src = '';
+      audioRef.current = null;
+    };
+  }, [audioUrl, fallbackDuration]);
+
+  const toggleAudioPlay = () => {
+    if (!audioRef.current) return;
+    if (isAudioPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play().catch(() => {});
+    }
+  };
+
+  const toggleAudioMute = () => {
+    if (!audioRef.current) return;
+    audioRef.current.muted = !isAudioMuted;
+    setIsAudioMuted(!isAudioMuted);
+  };
+
+  const handleAudioSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = Number(e.target.value);
+    setAudioCurrentTime(val);
+    if (audioRef.current) {
+      audioRef.current.currentTime = val;
+    }
+  };
+
+  return (
+    <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-white dark:bg-[#091738] border border-slate-200 dark:border-blue-500/25 shadow-xl shadow-slate-900/10 dark:shadow-black/60 dz-contain-card">
+      <div className="relative z-10 p-4 sm:p-6 bg-gradient-to-br from-emerald-50/60 via-white to-sky-50/60 dark:from-[#0b1f48] dark:via-[#091738] dark:to-[#07132e] space-y-5">
+        <div className="flex items-center gap-4">
+          <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-slate-200 dark:bg-slate-900 ring-1 ring-black/10 dark:ring-white/15 shrink-0 shadow-lg">
+            {thumbnail ? (
+              <img
+                src={thumbnail}
+                alt={title || 'Cover audio'}
+                decoding="async"
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-emerald-500 bg-slate-900">
+                <Disc3 className={`w-10 h-10 ${isAudioPlaying ? 'animate-spin' : ''}`} />
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1 min-w-0 space-y-1">
+            <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 truncate">
+              Audio MP3 {genre ? `· ${genre}` : ''}
+            </p>
+            <p className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white truncate">
+              {title}
+            </p>
+            <p className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 truncate">
+              {author}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 pt-1">
+          <button
+            type="button"
+            onClick={toggleAudioPlay}
+            disabled={!audioUrl}
+            className="w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center justify-center shadow-lg shadow-emerald-500/25 shrink-0 cursor-pointer disabled:opacity-50 transition-transform duration-150 active:scale-95"
+            aria-label={isAudioPlaying ? 'Jeda audio' : 'Putar audio'}
+          >
+            {isAudioLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : isAudioPlaying ? (
+              <Pause className="w-5 h-5 fill-current" />
+            ) : (
+              <Play className="w-5 h-5 fill-current ml-0.5" />
+            )}
+          </button>
+
+          <div className="flex-1 space-y-1.5">
+            <input
+              type="range"
+              min={0}
+              max={audioDuration || 30}
+              step={0.2}
+              value={audioCurrentTime}
+              onChange={handleAudioSeek}
+              className="w-full h-1.5 bg-slate-300 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+            />
+            <div className="flex items-center justify-between text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+              <span>{formatSecs(audioCurrentTime)}</span>
+              <span>{formatSecs(audioDuration || fallbackDuration || 30)}</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleAudioMute}
+            className="w-11 h-11 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-900/90 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer transition-colors duration-150"
+            aria-label={isAudioMuted ? 'Batal bisukan' : 'Bisukan'}
+          >
+            {isAudioMuted ? <VolumeX className="w-4 h-4 text-red-500" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
   stage,
   prepared,
   progress,
@@ -73,14 +258,6 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
 
   const [photoIndex, setPhotoIndex] = useState<number>(0);
   const [videoError, setVideoError] = useState<boolean>(false);
-
-  // Audio player state for audio formats / Spotify
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [isAudioPlaying, setIsAudioPlaying] = useState<boolean>(false);
-  const [audioCurrentTime, setAudioCurrentTime] = useState<number>(0);
-  const [audioDuration, setAudioDuration] = useState<number>(0);
-  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
-  const [isAudioLoading, setIsAudioLoading] = useState<boolean>(false);
 
   // Active TeraBox file being previewed (defaults to first selected or first file)
   const teraboxFiles: TeraboxFile[] = media?.files && media.files.length > 0
@@ -196,85 +373,6 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
     return [];
   })();
 
-  // Clean up / load audio element when audio preview URL changes
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    setIsAudioPlaying(false);
-    setAudioCurrentTime(0);
-
-    if (stage !== 'preview' || effectiveMediaType !== 'audio' || !activeAudioUrl) {
-      return;
-    }
-
-    const audio = new Audio();
-    audio.src = activeAudioUrl;
-    audio.preload = 'metadata';
-
-    audio.onloadedmetadata = () => {
-      if (audio.duration && !isNaN(audio.duration)) {
-        setAudioDuration(audio.duration);
-      } else {
-        setAudioDuration(activeSpotifyTrack?.duration || media?.duration || 30);
-      }
-    };
-    audio.ontimeupdate = () => setAudioCurrentTime(audio.currentTime);
-    audio.onwaiting = () => setIsAudioLoading(true);
-    audio.onplaying = () => {
-      setIsAudioLoading(false);
-      setIsAudioPlaying(true);
-    };
-    audio.onpause = () => setIsAudioPlaying(false);
-    audio.onended = () => {
-      setIsAudioPlaying(false);
-      setAudioCurrentTime(0);
-    };
-    audio.onerror = () => {
-      setIsAudioLoading(false);
-      setIsAudioPlaying(false);
-    };
-
-    audioRef.current = audio;
-
-    return () => {
-      audio.pause();
-      audio.src = '';
-      audioRef.current = null;
-    };
-  }, [stage, effectiveMediaType, activeAudioUrl]);
-
-  const toggleAudioPlay = () => {
-    if (!audioRef.current) return;
-    if (isAudioPlaying) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play().catch(() => {});
-    }
-  };
-
-  const toggleAudioMute = () => {
-    if (!audioRef.current) return;
-    audioRef.current.muted = !isAudioMuted;
-    setIsAudioMuted(!isAudioMuted);
-  };
-
-  const handleAudioSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = Number(e.target.value);
-    setAudioCurrentTime(val);
-    if (audioRef.current) {
-      audioRef.current.currentTime = val;
-    }
-  };
-
-  const formatSecs = (s: number) => {
-    if (!s || isNaN(s) || s < 0) return '00:00';
-    const m = Math.floor(s / 60);
-    const sec = Math.floor(s % 60);
-    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-  };
-
   const platformLabel =
     media?.platform === 'twitter'
       ? 'Twitter (X)'
@@ -307,18 +405,14 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
   // ==================== STAGE 1: PREPARING ====================
   if (stage === 'preparing') {
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full py-6 sm:py-10 space-y-6"
-      >
+      <div className="w-full py-6 sm:py-10 space-y-6 dz-animate-enter">
         <div className="flex flex-col items-center text-center space-y-5 max-w-md mx-auto">
           {displayThumbnail ? (
             <div className="relative w-28 h-20 rounded-2xl overflow-hidden shadow-xl ring-1 ring-slate-900/10 dark:ring-white/15">
               <img
                 src={displayThumbnail}
                 alt={displayTitle || 'Media'}
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover opacity-80"
               />
@@ -351,31 +445,27 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
             </div>
             <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800/90 overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 transition-all duration-300 rounded-full"
+                className="h-full bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 transition-[width] duration-200 rounded-full"
                 style={{ width: `${Math.max(8, progress)}%` }}
               />
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
   // ==================== STAGE 3: DOWNLOADING ====================
   if (stage === 'downloading') {
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full py-6 sm:py-10 space-y-6"
-      >
+      <div className="w-full py-6 sm:py-10 space-y-6 dz-animate-enter">
         <div className="flex flex-col items-center text-center space-y-5 max-w-md mx-auto">
           {displayThumbnail ? (
             <div className="relative w-28 h-20 rounded-2xl overflow-hidden shadow-xl ring-1 ring-sky-500/30 dark:ring-cyan-400/30">
               <img
                 src={displayThumbnail}
                 alt={displayTitle || 'Media'}
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover opacity-80"
               />
@@ -408,34 +498,24 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
             </div>
             <div className="w-full h-2.5 rounded-full bg-slate-200 dark:bg-slate-800/90 overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 transition-all duration-200 rounded-full"
+                className="h-full bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-400 transition-[width] duration-150 rounded-full"
                 style={{ width: `${Math.max(5, progress)}%` }}
               />
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
   // ==================== STAGE 4: COMPLETED (CHECKMARK + 3s AUTO RETURN) ====================
   if (stage === 'completed') {
     return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full py-8 sm:py-12"
-      >
+      <div className="w-full py-8 sm:py-12 dz-animate-scale">
         <div className="flex flex-col items-center text-center space-y-4 max-w-md mx-auto">
-          <motion.div
-            initial={{ scale: 0.5, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 20 }}
-            className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-500/20 border-2 border-emerald-500 dark:border-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/20"
-          >
+          <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-500/20 border-2 border-emerald-500 dark:border-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
             <CheckCircle2 className="w-11 h-11 text-emerald-600 dark:text-emerald-400" />
-          </motion.div>
+          </div>
 
           <div className="space-y-1.5">
             <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
@@ -451,7 +531,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
             <span>Kembali ke Beranda dalam {completedCountdown} detik...</span>
           </div>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
@@ -463,18 +543,13 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
     : `${format.resolution || format.quality}${format.filesize ? ` · ${format.filesize}` : ''}`;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-      className="w-full space-y-5 sm:space-y-6"
-    >
+    <div className="w-full space-y-5 sm:space-y-6 dz-animate-enter">
       {/* ZONE 1: Minimal Floating Top Bar (Back Button + Clean Unboxed Metadata) */}
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
           onClick={onBackToHome}
-          className="min-h-[44px] inline-flex items-center gap-2 pr-3 rounded-full text-slate-700 dark:text-slate-200 hover:text-sky-600 dark:hover:text-cyan-400 active:scale-[0.98] transition-all cursor-pointer group"
+          className="min-h-[44px] inline-flex items-center gap-2 pr-3 rounded-full text-slate-700 dark:text-slate-200 hover:text-sky-600 dark:hover:text-cyan-400 active:scale-[0.98] transition-colors duration-150 cursor-pointer group"
           aria-label="Kembali ke Beranda"
         >
           <span className="w-9 h-9 rounded-full bg-white dark:bg-[#0a1838] border border-slate-200 dark:border-blue-500/25 group-hover:border-sky-400 dark:group-hover:border-cyan-400/60 flex items-center justify-center shadow-xs transition-colors">
@@ -522,7 +597,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/20" />
               <div className="relative z-10 flex flex-col items-center gap-2.5 p-5 text-center max-w-xs">
-                <div className="w-12 h-12 rounded-full bg-white/15 backdrop-blur-md border border-white/25 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-full bg-white/15 border border-white/25 flex items-center justify-center">
                   <Film className="w-6 h-6 text-cyan-300" />
                 </div>
                 <p className="text-xs sm:text-sm font-semibold text-white leading-relaxed">
@@ -535,90 +610,14 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
       )}
 
       {effectiveMediaType === 'audio' && (
-        <div className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-white dark:bg-[#091738] border border-slate-200 dark:border-blue-500/25 shadow-xl shadow-slate-900/10 dark:shadow-black/60">
-          {displayThumbnail && (
-            <img
-              src={displayThumbnail}
-              alt=""
-              aria-hidden="true"
-              referrerPolicy="no-referrer"
-              className="absolute inset-0 w-full h-full object-cover opacity-20 dark:opacity-25 blur-2xl scale-110 pointer-events-none"
-            />
-          )}
-          <div className="relative z-10 p-4 sm:p-6 bg-white/75 dark:bg-[#091738]/80 backdrop-blur-md space-y-5">
-            <div className="flex items-center gap-4">
-              <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-slate-200 dark:bg-slate-900 ring-1 ring-black/10 dark:ring-white/15 shrink-0 shadow-lg">
-                {displayThumbnail ? (
-                  <img
-                    src={displayThumbnail}
-                    alt={displayTitle || 'Cover audio'}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-emerald-500 bg-slate-900">
-                    <Disc3 className={`w-10 h-10 ${isAudioPlaying ? 'animate-spin' : ''}`} />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex-1 min-w-0 space-y-1">
-                <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 truncate">
-                  Audio MP3 {media.genre ? `· ${media.genre}` : ''}
-                </p>
-                <p className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white truncate">
-                  {displayTitle}
-                </p>
-                <p className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 truncate">
-                  {displayAuthor}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 pt-1">
-              <button
-                type="button"
-                onClick={toggleAudioPlay}
-                disabled={!activeAudioUrl}
-                className="w-12 h-12 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 flex items-center justify-center shadow-lg shadow-emerald-500/25 shrink-0 cursor-pointer disabled:opacity-50 transition-all active:scale-95"
-                aria-label={isAudioPlaying ? 'Jeda audio' : 'Putar audio'}
-              >
-                {isAudioLoading ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : isAudioPlaying ? (
-                  <Pause className="w-5 h-5 fill-current" />
-                ) : (
-                  <Play className="w-5 h-5 fill-current ml-0.5" />
-                )}
-              </button>
-
-              <div className="flex-1 space-y-1.5">
-                <input
-                  type="range"
-                  min={0}
-                  max={audioDuration || 30}
-                  step={0.1}
-                  value={audioCurrentTime}
-                  onChange={handleAudioSeek}
-                  className="w-full h-1.5 bg-slate-300 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                />
-                <div className="flex items-center justify-between text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
-                  <span>{formatSecs(audioCurrentTime)}</span>
-                  <span>{formatSecs(audioDuration || media.duration || 30)}</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={toggleAudioMute}
-                className="w-11 h-11 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-900/90 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer transition-colors"
-                aria-label={isAudioMuted ? 'Batal bisukan' : 'Bisukan'}
-              >
-                {isAudioMuted ? <VolumeX className="w-4 h-4 text-red-500" /> : <Volume2 className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AudioPreviewCard
+          audioUrl={activeAudioUrl}
+          title={displayTitle}
+          author={displayAuthor}
+          genre={media.genre}
+          thumbnail={displayThumbnail}
+          fallbackDuration={activeSpotifyTrack?.duration || media.duration}
+        />
       )}
 
       {effectiveMediaType === 'photos' && (
@@ -628,6 +627,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
               <img
                 src={activePhotos[photoIndex]}
                 alt={`${displayTitle} (${photoIndex + 1})`}
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-contain"
               />
@@ -642,7 +642,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setPhotoIndex((p) => (p > 0 ? p - 1 : activePhotos.length - 1))}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-sm text-white flex items-center justify-center border border-white/20 cursor-pointer transition-all active:scale-95"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 cursor-pointer transition-transform duration-150 active:scale-95"
                   aria-label="Foto sebelumnya"
                 >
                   <ChevronLeft className="w-5 h-5" />
@@ -650,12 +650,12 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setPhotoIndex((p) => (p < activePhotos.length - 1 ? p + 1 : 0))}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-sm text-white flex items-center justify-center border border-white/20 cursor-pointer transition-all active:scale-95"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-black/75 hover:bg-black/90 text-white flex items-center justify-center border border-white/20 cursor-pointer transition-transform duration-150 active:scale-95"
                   aria-label="Foto berikutnya"
                 >
                   <ChevronRight className="w-5 h-5" />
                 </button>
-                <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-sm text-white text-xs font-mono tabular-nums font-bold">
+                <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-lg bg-black/80 text-white text-xs font-mono tabular-nums font-bold">
                   {photoIndex + 1} / {activePhotos.length}
                 </div>
               </>
@@ -672,7 +672,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
                     key={idx}
                     type="button"
                     onClick={() => setPhotoIndex(idx)}
-                    className={`relative w-14 h-14 rounded-xl overflow-hidden shrink-0 cursor-pointer transition-all ${
+                    className={`relative w-14 h-14 rounded-xl overflow-hidden shrink-0 cursor-pointer transition-opacity duration-150 ${
                       active
                         ? 'ring-2 ring-sky-500 dark:ring-cyan-400 opacity-100 scale-[1.03]'
                         : 'opacity-60 hover:opacity-90 ring-1 ring-slate-300 dark:ring-slate-700'
@@ -682,6 +682,8 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
                     <img
                       src={imgUrl}
                       alt={`Slide ${idx + 1}`}
+                      loading="lazy"
+                      decoding="async"
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover"
                     />
@@ -821,6 +823,8 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
                         <img
                           src={file.thumbnail}
                           alt={file.filename}
+                          loading="lazy"
+                          decoding="async"
                           referrerPolicy="no-referrer"
                           className="w-full h-full object-cover"
                         />
@@ -904,6 +908,8 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
                     <img
                       src={trk.thumbnail || media.thumbnail}
                       alt={trk.title}
+                      loading="lazy"
+                      decoding="async"
                       referrerPolicy="no-referrer"
                       className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-700"
                     />
@@ -947,7 +953,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
           type="button"
           onClick={onClickDownload}
           disabled={isTerabox && selectedTeraboxFileIds.length === 0}
-          className="w-full h-13 sm:h-14 rounded-full bg-gradient-to-r from-[#1864f7] via-[#1d74fe] to-[#00b4d8] hover:from-[#1354d4] hover:to-[#009ec0] active:scale-[0.985] text-white font-bold flex items-center justify-center gap-2.5 shadow-xl shadow-blue-600/25 transition-all text-sm sm:text-base cursor-pointer disabled:opacity-50"
+          className="w-full h-13 sm:h-14 rounded-full bg-gradient-to-r from-[#1864f7] via-[#1d74fe] to-[#00b4d8] hover:from-[#1354d4] hover:to-[#009ec0] active:scale-[0.985] text-white font-bold flex items-center justify-center gap-2.5 shadow-xl shadow-blue-600/25 transition-transform duration-150 text-sm sm:text-base cursor-pointer disabled:opacity-50"
         >
           <Download className="w-5 h-5 stroke-[2.5]" />
           <span className="whitespace-nowrap">
@@ -961,6 +967,6 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
           Siap disimpan · {qualitySummary}
         </p>
       </div>
-    </motion.div>
+    </div>
   );
-};
+});

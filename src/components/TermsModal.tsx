@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { X, ShieldCheck, FileText, Lock, AlertTriangle } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
 
 interface TermsModalProps {
   isOpen: boolean;
@@ -8,7 +7,7 @@ interface TermsModalProps {
   defaultTab?: 'terms' | 'privacy';
 }
 
-export const TermsModal: React.FC<TermsModalProps> = ({
+export const TermsModal: React.FC<TermsModalProps> = React.memo(({
   isOpen,
   onClose,
   defaultTab = 'terms'
@@ -20,8 +19,9 @@ export const TermsModal: React.FC<TermsModalProps> = ({
   }, [defaultTab]);
 
   useEffect(() => {
+    if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape') {
         onClose();
       }
     };
@@ -29,29 +29,19 @@ export const TermsModal: React.FC<TermsModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  if (!isOpen) return null;
+
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <motion.div
-          key="terms-modal-backdrop"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
-          onClick={onClose}
-          role="dialog"
-          aria-modal="true"
-        >
-          <motion.div
-            key="terms-modal-card"
-            initial={{ opacity: 0, scale: 0.96, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 10 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-3xl p-6 sm:p-8 bg-white/95 dark:bg-[#07132e]/95 border border-slate-300 dark:border-slate-700/80 shadow-2xl shadow-slate-900/10 dark:shadow-black/85 text-slate-900 dark:text-white"
-            onClick={(e) => e.stopPropagation()}
-          >
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-3xl p-6 sm:p-8 bg-white dark:bg-[#07132e] border border-slate-300 dark:border-slate-700/80 shadow-2xl shadow-slate-900/15 dark:shadow-black/85 text-slate-900 dark:text-white dz-animate-scale"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800/80">
           <div className="flex items-center gap-2.5">
@@ -83,7 +73,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('terms')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-150 cursor-pointer ${
               activeTab === 'terms'
                 ? 'bg-cyan-500 text-white shadow-sm shadow-black/30'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-900/40'
@@ -96,7 +86,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('privacy')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-colors duration-150 cursor-pointer ${
               activeTab === 'privacy'
                 ? 'bg-cyan-500 text-white shadow-sm shadow-black/30'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-900/40'
@@ -182,14 +172,12 @@ export const TermsModal: React.FC<TermsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl active:scale-[0.96] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer"
+            className="px-5 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl active:scale-[0.96] transition-transform duration-150 cursor-pointer"
           >
             Tutup
           </button>
         </div>
-      </motion.div>
-    </motion.div>
-  )}
-</AnimatePresence>
+      </div>
+    </div>
   );
-};
+});

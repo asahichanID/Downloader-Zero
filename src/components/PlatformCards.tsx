@@ -8,7 +8,7 @@ interface PlatformCardsProps {
   onViewAll?: () => void;
 }
 
-export const PlatformCards: React.FC<PlatformCardsProps> = ({
+export const PlatformCards: React.FC<PlatformCardsProps> = React.memo(({
   selectedPlatform,
   onSelectPlatform,
   onViewAll
@@ -126,7 +126,7 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
           <button
             type="button"
             onClick={onViewAll}
-            className="text-xs font-semibold text-sky-600 dark:text-blue-400 hover:text-sky-700 dark:hover:text-cyan-300 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+            className="text-xs font-semibold text-sky-600 dark:text-blue-400 hover:text-sky-700 dark:hover:text-cyan-300 flex items-center gap-1 active:scale-95 transition-colors duration-150 cursor-pointer"
           >
             <span>Lihat semua</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -143,7 +143,7 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
               key={p.id}
               type="button"
               onClick={() => onSelectPlatform(p.id)}
-              className={`relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl border text-center transition-all duration-150 active:scale-95 cursor-pointer select-none ${
+              className={`relative flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl border text-center transition-[border-color,background-color,transform] duration-150 active:scale-95 cursor-pointer select-none ${
                 isActive
                   ? 'border-sky-500 dark:border-cyan-400 ring-2 ring-sky-500/30 dark:ring-cyan-400/40 bg-sky-50 dark:bg-[#122452] shadow-md shadow-sky-500/15 dark:shadow-cyan-500/20'
                   : 'border-slate-200 dark:border-blue-500/20 bg-white dark:bg-[#0c1836]/90 hover:border-sky-400 dark:hover:border-blue-400/50 hover:bg-slate-50 dark:hover:bg-[#0f2048] shadow-xs shadow-slate-900/5 dark:shadow-none'
@@ -163,4 +163,4 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
       </div>
     </div>
   );
-};
+});
