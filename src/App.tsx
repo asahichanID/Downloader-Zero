@@ -17,6 +17,7 @@ import { FloatingSpotifyPlayer } from './components/FloatingSpotifyPlayer.tsx';
 import { SupportedPlatformsModal } from './components/SupportedPlatformsModal.tsx';
 import { HistoryFullView } from './components/HistoryFullView.tsx';
 import { SettingsFullView } from './components/SettingsFullView.tsx';
+import { AdminPanelView } from './components/AdminPanelView.tsx';
 import { TermsModal } from './components/TermsModal.tsx';
 import {
   BerandaResultView,
@@ -82,6 +83,16 @@ export default function App() {
   const [isPlatformsModalOpen, setIsPlatformsModalOpen] = useState<boolean>(false);
   const [isTermsOpen, setIsTermsOpen] = useState<boolean>(false);
   const [termsDefaultTab, setTermsDefaultTab] = useState<'terms' | 'privacy'>('terms');
+
+  // Admin access mode (unlocked via secret access code in Settings Server 1 input)
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('dz_admin_access') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState<boolean>(false);
 
   // Floating Player state (for video or Spotify-style audio)
   const [playingItem, setPlayingItem] = useState<HistoryItem | null>(null);
@@ -785,7 +796,7 @@ export default function App() {
 
       const ext = targetFormat.extension || (targetFormat.type === 'audio' ? 'mp3' : 'mp4');
       const sanitizedTitle = effectiveTitle.slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const resTag = targetFormat.resolution || targetFormat.quality.split(' ')[0] || '1080p';
+      const resTag = targetFormat.resolution || targetFormat.quality.split(' ')[0] || (targetFormat.type === 'audio' ? 'Audio' : '1080p');
       const filename = `DownloaderZero_${sanitizedTitle}_${resTag}.${ext}`;
 
       const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, selectedTrack);
@@ -820,8 +831,8 @@ export default function App() {
           thumbnail: finalThumbnail,
           duration: effectiveDuration,
           durationFormatted: effectiveDurationFmt,
-          quality: targetFormat.quality || selectedVideoRes,
-          resolution: targetFormat.resolution || selectedVideoRes,
+          quality: targetFormat.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
+          resolution: targetFormat.resolution || (targetFormat.type === 'audio' ? 'Audio' : selectedVideoRes),
           mediaType: targetFormat.type,
           extension: ext as any,
           filename,
@@ -1005,20 +1016,32 @@ export default function App() {
           />
         )}
 
-        {/* TAB 3: PENGATURAN (SETTINGS VIEW) */}
+        {/* TAB 3: PENGATURAN (SETTINGS VIEW OR ADMIN PANEL VIEW) */}
         {activeTab === 'pengaturan' && (
-          <SettingsFullView
-            isDark={isDark}
-            onToggleTheme={() => setIsDark((prev) => !prev)}
-            onBackToHome={() => setActiveTab('beranda')}
-            onOpenTerms={(tab) => {
-              setTermsDefaultTab(tab);
-              setIsTermsOpen(true);
-            }}
-            onClearHistory={handleClearAllHistory}
-            serverMode={serverMode}
-            onSelectServerMode={(mode) => setServerMode(mode)}
-          />
+          isAdmin && isAdminPanelOpen ? (
+            <AdminPanelView
+              onBackToSettings={() => setIsAdminPanelOpen(false)}
+            />
+          ) : (
+            <SettingsFullView
+              isDark={isDark}
+              onToggleTheme={() => setIsDark((prev) => !prev)}
+              onBackToHome={() => setActiveTab('beranda')}
+              onOpenTerms={(tab) => {
+                setTermsDefaultTab(tab);
+                setIsTermsOpen(true);
+              }}
+              onClearHistory={handleClearAllHistory}
+              serverMode={serverMode}
+              onSelectServerMode={(mode) => setServerMode(mode)}
+              isAdmin={isAdmin}
+              onAdminAccessChange={(active, openPanel) => {
+                setIsAdmin(active);
+                setIsAdminPanelOpen(Boolean(active && openPanel));
+              }}
+              onOpenAdmin={() => setIsAdminPanelOpen(true)}
+            />
+          )
         )}
       </main>
 
@@ -1028,6 +1051,7 @@ export default function App() {
         onChangeTab={(tab) => {
           const isBusy = berandaStage === 'preparing' || berandaStage === 'downloading';
           if (!isBusy) {
+            setIsAdminPanelOpen(false);
             setActiveTab(tab);
           }
         }}

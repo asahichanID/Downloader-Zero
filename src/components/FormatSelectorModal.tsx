@@ -54,9 +54,28 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
     { id: '128', label: '128 kbps Standard', quality: '128 kbps', badge: 'Ukuran Ringan' },
   ];
 
+  const isSpotify = media.platform === 'spotify';
+  const isTerabox = media.platform === 'terabox';
+
   // Determine current active format to download
   const handleStartDownload = () => {
-    if (selectedType === 'audio') {
+    if (isTerabox) {
+      const tbFormat: MediaFormat = media.formats[0] || {
+        id: `tb-${media.id}`,
+        quality: media.title || 'File TeraBox',
+        resolution: 'File',
+        type: 'video',
+        extension: 'mp4',
+        url: '',
+        isDirect: true
+      };
+      onConfirmDownload(tbFormat);
+      return;
+    }
+
+    const effectiveType: MediaType = isSpotify ? 'audio' : selectedType;
+
+    if (effectiveType === 'audio') {
       const matchAudio = audioFormats.find((f) => {
         const q = (f.quality || '').toLowerCase();
         const id = (f.id || '').toLowerCase();
@@ -140,9 +159,9 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
     media.durationFormatted ||
     (media.duration && media.duration > 0
       ? formatDuration(media.duration)
-      : (selectedType === 'audio' ? '03:30' : '01:00'));
+      : (isSpotify || selectedType === 'audio' ? '03:30' : '01:00'));
 
-  const isSpotify = media.platform === 'spotify';
+  const effectiveType: MediaType = isSpotify ? 'audio' : selectedType;
 
   return (
     <AnimatePresence>
@@ -165,10 +184,20 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
             <div>
               <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-sky-600 dark:text-cyan-400" />
-                <span>Pilih Format & Kualitas</span>
+                <span>
+                  {isTerabox
+                    ? 'Siap Unduh File'
+                    : isSpotify
+                      ? 'Pilih Kualitas Audio'
+                      : 'Pilih Format & Kualitas'}
+                </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-blue-200/70 mt-0.5">
-                Sesuaikan resolusi video atau bitrate audio yang ingin disimpan
+                {isTerabox
+                  ? 'File TeraBox akan diunduh sesuai berkas aslinya'
+                  : isSpotify
+                    ? 'Sesuaikan bitrate audio MP3 yang ingin disimpan'
+                    : 'Sesuaikan resolusi video atau bitrate audio yang ingin disimpan'}
               </p>
             </div>
             <button
@@ -233,41 +262,47 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
               </div>
             </div>
 
-            {/* Segmented Type Switcher: Video vs Audio */}
-            <div>
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 block">
-                Tipe Unduhan
-              </label>
-              <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-100 dark:bg-[#050e24] border border-slate-200 dark:border-blue-900/60">
-                <button
-                  type="button"
-                  onClick={() => onChangeType('video')}
-                  className={`py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-                    selectedType === 'video'
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-1 ring-cyan-400'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <Video className="w-4 h-4" />
-                  <span>Video (MP4)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeType('audio')}
-                  className={`py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-                    selectedType === 'audio'
-                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-1 ring-emerald-400'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <Music className="w-4 h-4" />
-                  <span>Audio (MP3)</span>
-                </button>
+            {/* Segmented Type Switcher: Hidden for TeraBox (files only) and Video tab hidden for Spotify (audio only) */}
+            {!isTerabox && !isSpotify && (
+              <div>
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 block">
+                  Tipe Unduhan
+                </label>
+                <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-slate-100 dark:bg-[#050e24] border border-slate-200 dark:border-blue-900/60">
+                  <button
+                    type="button"
+                    onClick={() => onChangeType('video')}
+                    className={`py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                      selectedType === 'video'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-1 ring-cyan-400'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Video className="w-4 h-4" />
+                    <span>Video (MP4)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeType('audio')}
+                    className={`py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                      selectedType === 'audio'
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-1 ring-emerald-400'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Music className="w-4 h-4" />
+                    <span>Audio (MP3)</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Quality Options Grid */}
-            {selectedType === 'video' ? (
+            {/* Quality / File Info Content */}
+            {isTerabox ? (
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-[#0c1a3a]/70 border border-slate-200 dark:border-blue-900/60 text-xs text-slate-600 dark:text-slate-300">
+                TeraBox mengunduh berkas asli langsung dari cloud tanpa opsi pemilihan resolusi.
+              </div>
+            ) : effectiveType === 'video' ? (
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 block">
                   Pilih Resolusi Video

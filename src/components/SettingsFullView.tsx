@@ -10,9 +10,13 @@ import {
   ArrowLeft,
   Check,
   Server,
-  ChevronRight
+  ChevronRight,
+  ShieldCheck
 } from 'lucide-react';
 import type { ServerMode } from '../types/index.ts';
+
+const ADMIN_ENTER_CODE = 'AA56026';
+const ADMIN_EXIT_CODE = 'AC52026';
 
 interface SettingsFullViewProps {
   isDark: boolean;
@@ -22,6 +26,9 @@ interface SettingsFullViewProps {
   onClearHistory: () => void;
   serverMode?: ServerMode;
   onSelectServerMode?: (mode: ServerMode) => void;
+  isAdmin?: boolean;
+  onAdminAccessChange?: (active: boolean, openPanel?: boolean) => void;
+  onOpenAdmin?: () => void;
 }
 
 export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
@@ -31,7 +38,10 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
   onOpenTerms,
   onClearHistory,
   serverMode = 'auto',
-  onSelectServerMode
+  onSelectServerMode,
+  isAdmin = false,
+  onAdminAccessChange,
+  onOpenAdmin
 }) => {
   const [currentMode, setCurrentMode] = useState<ServerMode>(() => {
     try {
@@ -79,6 +89,26 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
   const handleSaveApiKey = () => {
     try {
       const trimmed = apiKey.trim();
+
+      // Kode khusus akses admin (tidak pernah disimpan sebagai API key)
+      if (trimmed === ADMIN_ENTER_CODE) {
+        localStorage.setItem('dz_admin_access', '1');
+        setApiKey(localStorage.getItem('dz_neoxr_api_key') || '');
+        if (onAdminAccessChange) {
+          onAdminAccessChange(true, true);
+        }
+        return;
+      }
+
+      if (trimmed === ADMIN_EXIT_CODE) {
+        localStorage.removeItem('dz_admin_access');
+        setApiKey(localStorage.getItem('dz_neoxr_api_key') || '');
+        if (onAdminAccessChange) {
+          onAdminAccessChange(false, false);
+        }
+        return;
+      }
+
       if (trimmed) {
         localStorage.setItem('dz_neoxr_api_key', trimmed);
       } else {
@@ -333,6 +363,31 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Administrasi (Hanya tampil saat mode admin aktif, sejajar dengan kartu pengaturan lain) */}
+      {isAdmin && (
+        <button
+          type="button"
+          onClick={onOpenAdmin}
+          className="w-full dz-card rounded-2xl p-4 flex items-center justify-between gap-3 text-left cursor-pointer active:scale-[0.99] transition-transform"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-cyan-500/15 border border-sky-200 dark:border-cyan-400/30 flex items-center justify-center text-sky-600 dark:text-cyan-400 shrink-0">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                Administrasi
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                Panel khusus administrator
+              </p>
+            </div>
+          </div>
+
+          <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+        </button>
+      )}
 
       {/* 3. Kebijakan & Informasi */}
       <div className="dz-card rounded-2xl overflow-hidden divide-y divide-slate-200 dark:divide-blue-500/15">
