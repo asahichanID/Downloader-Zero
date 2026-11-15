@@ -36,6 +36,7 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = ({
     { id: 'all', label: 'Semua' },
     { id: 'youtube', label: 'YouTube' },
     { id: 'tiktok', label: 'TikTok' },
+    { id: 'twitter', label: 'Twitter (X)' },
     { id: 'spotify', label: 'Spotify' },
     { id: 'instagram', label: 'Instagram' },
     { id: 'facebook', label: 'Facebook' },

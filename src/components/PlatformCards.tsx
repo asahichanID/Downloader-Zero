@@ -97,6 +97,17 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
           </svg>
         </div>
       )
+    },
+    {
+      id: 'twitter' as PlatformType,
+      name: 'Twitter (X)',
+      icon: (
+        <div className="w-11 h-11 rounded-2xl bg-black flex items-center justify-center border border-slate-700 shadow-md">
+          <svg className="w-5 h-5 text-white fill-current" viewBox="0 0 24 24">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+          </svg>
+        </div>
+      )
     }
   ];
 
@@ -123,8 +134,8 @@ export const PlatformCards: React.FC<PlatformCardsProps> = ({
         )}
       </div>
 
-      {/* Grid of 7 Platforms (4 columns on mobile, 7 columns on tablet/desktop) */}
-      <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 sm:gap-2.5">
+      {/* Grid of 8 Platforms (4 columns on mobile, 8 columns on tablet/desktop) */}
+      <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-2.5">
         {platforms.map((p) => {
           const isActive = selectedPlatform === p.id;
           return (

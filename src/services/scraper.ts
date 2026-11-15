@@ -2,8 +2,9 @@ import type { PlatformType, ServerMode, MediaFormat, MediaMetadata, AudioTrack, 
 import * as cheerio from 'cheerio';
 import { extractTikTokPreview, resolveTikTokDownload } from './previewEngines/tiktokPreview.ts';
 import { scrapeTikTokServer2, resolveTikTokServer2 } from './server2/tiktok-s2.ts';
+import { scrapeTwitterServer2 } from './server2/twitter-s2.ts';
 
-export { resolveTikTokDownload, resolveTikTokServer2, scrapeTikTokServer2 };
+export { resolveTikTokDownload, resolveTikTokServer2, scrapeTikTokServer2, scrapeTwitterServer2 };
 
 
 export function detectPlatform(url: string): PlatformType {
@@ -28,6 +29,9 @@ export function detectPlatform(url: string): PlatformType {
   }
   if (/(?:terabox\.com|1024tera\.com|teraboxapp\.com|terasharelink\.com|freeterabox\.com|4funbox\.com|mirrobox\.com|nephobox\.com|tibibox\.com)/i.test(trimmed)) {
     return 'terabox';
+  }
+  if (/(?:twitter\.com|x\.com|fxtwitter\.com|vxtwitter\.com|fixupx\.com|twittpr\.com|^https?:\/\/(?:www\.)?t\.co\/)/i.test(trimmed)) {
+    return 'twitter';
   }
   return 'unknown';
 }
@@ -86,7 +90,7 @@ function detectTeraboxFileType(filename: string): 'video' | 'audio' | 'photos' |
 
 // ----------------- SHORT LINK REDIRECT RESOLVER -----------------
 export async function resolveRedirectUrl(url: string): Promise<string> {
-  if (/(?:vt\.tiktok\.com|vm\.tiktok\.com|fb\.watch|fb\.com|instagram\.com\/share|youtu\.be|pin\.it|spotify\.link)/i.test(url)) {
+  if (/(?:vt\.tiktok\.com|vm\.tiktok\.com|fb\.watch|fb\.com|instagram\.com\/share|youtu\.be|pin\.it|spotify\.link|^https?:\/\/(?:www\.)?t\.co\/)/i.test(url)) {
     try {
       const headRes = await fetch(url, {
         method: 'HEAD',
@@ -2029,23 +2033,27 @@ export async function extractMedia(
 
   const platform = detectPlatform(url);
   if (platform === 'unknown') {
-    throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Facebook, Instagram, Pinterest, Spotify, dan TeraBox.');
+    throw new Error('Platform tidak didukung. DownloaderZero mendukung YouTube, TikTok, Twitter (X), Facebook, Instagram, Pinterest, Spotify, dan TeraBox.');
   }
 
   const mode: ServerMode = serverMode || 'auto';
 
-  // Platforms without dedicated Server 2 backup (e.g. TeraBox)
-  // Per requirement: "sementara platform tersebut tetep pakai server 1 tapi gada peringatan apapun karena server 2 di platform anu belum ada"
+  // Platforms without dedicated Server 2 backup (e.g. TeraBox) -> silently use Server 1
+  // Twitter (X) uses free keyless Server 2 exclusively (Server 1 ignored for Twitter/X)
   const effectiveMode: ServerMode =
     platform === 'terabox' && mode === 'server2'
       ? 'server1'
-      : mode;
+      : platform === 'twitter'
+        ? 'server2'
+        : mode;
 
   switch (platform) {
     case 'youtube':
       return await scrapeYouTube(url, apiKey, effectiveMode);
     case 'tiktok':
       return await scrapeTikTok(url, apiKey, effectiveMode);
+    case 'twitter':
+      return await scrapeTwitterServer2(url);
     case 'facebook':
       return await scrapeFacebook(url, apiKey, effectiveMode);
     case 'instagram':

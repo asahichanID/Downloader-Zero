@@ -1,4 +1,4 @@
-export type PlatformType = 'youtube' | 'tiktok' | 'facebook' | 'instagram' | 'pinterest' | 'spotify' | 'terabox' | 'unknown';
+export type PlatformType = 'youtube' | 'tiktok' | 'twitter' | 'facebook' | 'instagram' | 'pinterest' | 'spotify' | 'terabox' | 'unknown';
 
 export type ServerMode = 'auto' | 'server1' | 'server2';
 

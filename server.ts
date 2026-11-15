@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import fs from 'fs';
+import os from 'os';
+import { spawn } from 'child_process';
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import path from 'path';
@@ -96,6 +98,8 @@ async function startServer() {
 
   // In-memory process cache for Spotify MP3 files (automatically purged 15 seconds after completion)
   const spotifyProcessCache = new Map<string, { buffer: Buffer; timestamp: number }>();
+  // Short-lived cache for ffmpeg-extracted MP3 audio (preview -> download instant reuse)
+  const mp3TranscodeCache = new Map<string, { buffer: Buffer; timestamp: number }>();
 
   // 1. Health check & Security Shield status
   app.get('/api/health', (_req: Request, res: Response) => {
@@ -104,7 +108,7 @@ async function startServer() {
       securityShield: 'active',
       service: 'DownloaderZero (DZ) Media Engine',
       version: '2026.1',
-      platforms: ['youtube', 'tiktok', 'facebook', 'instagram', 'pinterest', 'spotify', 'terabox']
+      platforms: ['youtube', 'tiktok', 'twitter', 'facebook', 'instagram', 'pinterest', 'spotify', 'terabox']
     });
   });
 
@@ -370,7 +374,7 @@ async function startServer() {
       const urlParamIdx = rawReqUrl.indexOf('url=');
       if (urlParamIdx !== -1) {
         let extracted = rawReqUrl.slice(urlParamIdx + 4);
-        const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|inline)=/);
+        const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|inline|bitrate)=/);
         if (nextParamMatch && nextParamMatch.index !== undefined) {
           extracted = extracted.slice(0, nextParamMatch.index);
         }
@@ -445,7 +449,7 @@ async function startServer() {
         req.query.platform === 'spotify' ||
         targetUrl.includes('spotify.com') ||
         targetUrl.includes('spotify.link') ||
-        (sanitizedFilename.endsWith('.mp3') && (Boolean(req.query.title) || Boolean(req.query.artist)));
+        (!platform && sanitizedFilename.endsWith('.mp3') && (Boolean(req.query.title) || Boolean(req.query.artist)));
 
       // Handle Spotify with Neo audio download + embedded ID3 metadata & cover art
       if (isSpotify) {
@@ -616,6 +620,8 @@ async function startServer() {
         platformReferer = 'https://www.terabox.app/';
       } else if (targetUrl.includes('snapcdn.app')) {
         platformReferer = 'https://dl.snapcdn.app/';
+      } else if (targetUrl.includes('twimg.com') || targetUrl.includes('twitter.com') || targetUrl.includes('x.com')) {
+        platformReferer = 'https://x.com/';
       }
 
       const fetchCandidateConfigs: Array<{ headers: Record<string, string> }> = [
@@ -646,13 +652,62 @@ async function startServer() {
         }
       ];
 
+      const wantsMp3Output = sanitizedFilename.toLowerCase().endsWith('.mp3');
+      const rawBitrateParam = String(req.query.bitrate || '192k').toLowerCase().trim();
+      const allowedBitrateSet = new Set(['320k', '256k', '192k', '128k', '64k']);
+      const resolvedTargetBitrate = allowedBitrateSet.has(rawBitrateParam) ? rawBitrateParam : '192k';
+      const mp3CacheKey = `${targetUrl}::${resolvedTargetBitrate}`;
+
+      const sendMp3BufferResponse = (mp3Buffer: Buffer) => {
+        res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader(
+          'Content-Disposition',
+          isInline
+            ? `inline; filename="${sanitizedFilename}"`
+            : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
+        );
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges');
+        res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+
+        if (rangeHeader) {
+          const totalLen = mp3Buffer.length;
+          const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+          if (match) {
+            const start = match[1] ? parseInt(match[1], 10) : 0;
+            const end = match[2] ? Math.min(parseInt(match[2], 10), totalLen - 1) : totalLen - 1;
+            if (!isNaN(start) && !isNaN(end) && start <= end && start < totalLen) {
+              const sliced = mp3Buffer.subarray(start, end + 1);
+              res.status(206);
+              res.setHeader('Content-Range', `bytes ${start}-${end}/${totalLen}`);
+              res.setHeader('Content-Length', sliced.length);
+              res.send(sliced);
+              return;
+            }
+          }
+        }
+
+        res.setHeader('Content-Length', mp3Buffer.length);
+        res.send(mp3Buffer);
+      };
+
+      if (wantsMp3Output) {
+        const cachedMp3 = mp3TranscodeCache.get(mp3CacheKey)?.buffer;
+        if (cachedMp3) {
+          sendMp3BufferResponse(cachedMp3);
+          return;
+        }
+      }
+
       let response: globalThis.Response | null = null;
       let lastStatus = 0;
 
       for (const cfg of fetchCandidateConfigs) {
         try {
           const reqHeaders: Record<string, string> = { ...cfg.headers };
-          if (rangeHeader) {
+          if (rangeHeader && !wantsMp3Output) {
             reqHeaders['Range'] = rangeHeader;
           }
           const resCandidate = await fetch(targetUrl, {
@@ -683,7 +738,7 @@ async function startServer() {
               for (const cfg of fetchCandidateConfigs) {
                 try {
                   const reqHeaders: Record<string, string> = { ...cfg.headers };
-                  if (rangeHeader) {
+                  if (rangeHeader && !wantsMp3Output) {
                     reqHeaders['Range'] = rangeHeader;
                   }
                   const resCandidate = await fetch(targetUrl, {
@@ -741,6 +796,104 @@ async function startServer() {
       }
 
       const rawContentType = response.headers.get('content-type') || '';
+
+      // If client requested an .mp3 audio extraction from an MP4/video/M4A source stream, transcode genuinely to MP3 via ffmpeg
+      const needsMp3Transcode =
+        wantsMp3Output &&
+        !rawContentType.includes('audio/mpeg') &&
+        !rawContentType.includes('audio/mp3');
+
+      if (needsMp3Transcode) {
+        let mp3Buffer: Buffer | null = mp3TranscodeCache.get(mp3CacheKey)?.buffer || null;
+
+        if (!mp3Buffer) {
+          // Read remaining upstream bytes cleanly into buffer
+          const chunks: Buffer[] = [Buffer.from(firstChunk)];
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) chunks.push(Buffer.from(value));
+          }
+          const inputBuffer = Buffer.concat(chunks);
+
+          const tmpInPath = path.join(os.tmpdir(), `dz_in_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`);
+          try {
+            fs.writeFileSync(tmpInPath, inputBuffer);
+            mp3Buffer = await new Promise<Buffer>((resolve, reject) => {
+              const ff = spawn(
+                'ffmpeg',
+                [
+                  '-y',
+                  '-i', tmpInPath,
+                  '-vn',
+                  '-c:a', 'libmp3lame',
+                  '-b:a', resolvedTargetBitrate,
+                  '-ar', '44100',
+                  '-f', 'mp3',
+                  'pipe:1'
+                ],
+                { stdio: ['ignore', 'pipe', 'pipe'] }
+              );
+              const outChunks: Buffer[] = [];
+              let errText = '';
+              ff.stdout.on('data', (chunk: Buffer) => outChunks.push(chunk));
+              ff.stderr.on('data', (chunk: Buffer) => {
+                if (errText.length < 1000) errText += chunk.toString('utf8');
+              });
+              ff.on('error', (err) => reject(err));
+              ff.on('close', (code) => {
+                const out = Buffer.concat(outChunks);
+                if (code === 0 && out.length > 0) {
+                  resolve(out);
+                } else {
+                  reject(new Error(`ffmpeg exited ${code}: ${errText.slice(-200)}`));
+                }
+              });
+            });
+
+            // Embed ID3 title/artist metadata if provided
+            const metaTitle = typeof req.query.title === 'string' ? req.query.title.trim() : '';
+            const metaArtist = typeof req.query.artist === 'string' ? req.query.artist.trim() : '';
+            if (metaTitle || metaArtist) {
+              try {
+                const tagged = NodeID3.write(
+                  {
+                    title: metaTitle || 'Audio DownloaderZero',
+                    artist: metaArtist || (platform ? platform.toUpperCase() : 'DownloaderZero')
+                  },
+                  mp3Buffer
+                );
+                if (tagged && tagged.length > 0) {
+                  mp3Buffer = tagged;
+                }
+              } catch {}
+            }
+
+            mp3TranscodeCache.set(mp3CacheKey, { buffer: mp3Buffer, timestamp: Date.now() });
+            setTimeout(() => {
+              mp3TranscodeCache.delete(mp3CacheKey);
+            }, 90000);
+          } catch (ffErr: any) {
+            console.warn('[proxy-download] MP3 transcode notice:', ffErr?.message || ffErr);
+            res.status(422).json({
+              success: false,
+              error: 'Media ini tidak memiliki trek audio yang dapat dikonversi ke MP3.'
+            });
+            return;
+          } finally {
+            try {
+              if (fs.existsSync(tmpInPath)) fs.unlinkSync(tmpInPath);
+            } catch {}
+          }
+        } else {
+          try {
+            reader.cancel();
+          } catch {}
+        }
+
+        sendMp3BufferResponse(mp3Buffer);
+        return;
+      }
 
       // Determine proper MIME type instead of generic octet-stream
       let mimeType = 'application/octet-stream';

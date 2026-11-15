@@ -249,7 +249,8 @@ export default function App() {
     filename: string,
     meta: MediaMetadata,
     inline: boolean,
-    trackOverride?: AudioTrack
+    trackOverride?: AudioTrack,
+    formatOverride?: MediaFormat
   ): string => {
     let href = `/api/proxy-download?url=${encodeURIComponent(targetUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(meta.platform)}&sourceUrl=${encodeURIComponent(meta.url)}`;
     if (inline) {
@@ -264,6 +265,10 @@ export default function App() {
       const tYear = trackOverride?.releaseDate || meta.releaseDate || '';
       const tCover = trackOverride?.thumbnail || meta.thumbnail || '';
       href += `&title=${encodeURIComponent(tTitle)}&artist=${encodeURIComponent(tArtist)}&album=${encodeURIComponent(tAlbum)}&genre=${encodeURIComponent(tGenre)}&year=${encodeURIComponent(tYear)}&cover=${encodeURIComponent(tCover)}&apiKey=${encodeURIComponent(customKey)}`;
+    } else if (formatOverride?.type === 'audio' || filename.toLowerCase().endsWith('.mp3')) {
+      const kbpsMatch = `${formatOverride?.resolution || ''} ${formatOverride?.quality || ''} ${selectedAudioQuality}`.match(/(320|256|192|128|64)/);
+      const bitrate = kbpsMatch ? `${kbpsMatch[1]}k` : '192k';
+      href += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(meta.title || '')}&artist=${encodeURIComponent(meta.author || '')}`;
     }
     return href;
   };
@@ -300,7 +305,7 @@ export default function App() {
 
   const enterPreviewStage = (meta: MediaMetadata, fmt: MediaFormat, resolvedUrl: string) => {
     const ext = fmt.extension || (fmt.type === 'audio' ? 'mp3' : 'mp4');
-    const previewProxyUrl = buildProxyHref(resolvedUrl, `preview.${ext}`, meta, true);
+    const previewProxyUrl = buildProxyHref(resolvedUrl, `preview.${ext}`, meta, true, undefined, fmt);
     if (meta.platform === 'terabox') {
       const firstId = meta.files?.[0]?.id || meta.id;
       setSelectedTeraboxFileIds(firstId ? [firstId] : []);
@@ -335,6 +340,12 @@ export default function App() {
     setSelectedPlatform(meta.platform);
     if (meta.platform === 'spotify') {
       setMediaType('audio');
+    } else if (meta.platform === 'twitter') {
+      setMediaType('video');
+      const topTwitterVideo = meta.formats.find((f) => f.type === 'video' && f.resolution);
+      if (topTwitterVideo?.resolution) {
+        setSelectedVideoRes(topTwitterVideo.resolution);
+      }
     }
 
     if (meta.platform === 'terabox' && meta.formats[0]) {
@@ -796,10 +807,11 @@ export default function App() {
 
       const ext = targetFormat.extension || (targetFormat.type === 'audio' ? 'mp3' : 'mp4');
       const sanitizedTitle = effectiveTitle.slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const resTag = targetFormat.resolution || targetFormat.quality.split(' ')[0] || (targetFormat.type === 'audio' ? 'Audio' : '1080p');
+      const rawResTag = targetFormat.resolution || targetFormat.quality.split(' ')[0] || (targetFormat.type === 'audio' ? 'Audio' : '1080p');
+      const resTag = rawResTag.replace(/\s+/g, '');
       const filename = `DownloaderZero_${sanitizedTitle}_${resTag}.${ext}`;
 
-      const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, selectedTrack);
+      const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, selectedTrack, targetFormat);
 
       let mediaBlob: Blob | null = null;
       try {

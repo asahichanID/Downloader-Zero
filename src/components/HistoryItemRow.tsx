@@ -44,9 +44,12 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = ({
     }
   };
 
-  const platformDisplayName = item.platform
-    ? item.platform.charAt(0).toUpperCase() + item.platform.slice(1)
-    : 'Media';
+  const platformDisplayName =
+    item.platform === 'twitter'
+      ? 'Twitter (X)'
+      : item.platform
+        ? item.platform.charAt(0).toUpperCase() + item.platform.slice(1)
+        : 'Media';
 
   const formatTag = item.extension ? item.extension.toUpperCase() : 'MP4';
   const qualityTag = item.resolution || item.quality || '1080p';

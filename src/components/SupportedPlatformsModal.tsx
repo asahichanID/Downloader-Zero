@@ -123,6 +123,20 @@ const PLATFORM_CATALOG: PlatformCatalogItem[] = [
         </svg>
       </div>
     )
+  },
+  {
+    id: 'twitter',
+    name: 'Twitter (X)',
+    fullTitle: 'Twitter (X) Video, Audio & Foto',
+    desc: 'Unduh video dan GIF dari postingan Twitter (X) sesuai resolusi asli yang tersedia, ekstrak audio MP3 (320/256/128 kbps), serta foto resolusi penuh.',
+    formats: 'MP4 Multi-Resolusi Asli, MP3 Audio, Foto HD',
+    renderLogo: (sizeClass, iconClass) => (
+      <div className={`${sizeClass} rounded-2xl bg-black flex items-center justify-center border border-slate-700 shadow-md`}>
+        <svg className={`${iconClass} text-white fill-current`} viewBox="0 0 24 24">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+        </svg>
+      </div>
+    )
   }
 ];
 

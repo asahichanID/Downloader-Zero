@@ -275,9 +275,12 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = ({
     return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   };
 
-  const platformLabel = media?.platform
-    ? media.platform.charAt(0).toUpperCase() + media.platform.slice(1)
-    : 'Media';
+  const platformLabel =
+    media?.platform === 'twitter'
+      ? 'Twitter (X)'
+      : media?.platform
+        ? media.platform.charAt(0).toUpperCase() + media.platform.slice(1)
+        : 'Media';
 
   const displayTitle = isSpotify && activeSpotifyTrack
     ? activeSpotifyTrack.title

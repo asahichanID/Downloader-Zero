@@ -88,7 +88,7 @@ export default async function handler(req: any, res: any) {
       req.query?.platform === 'spotify' ||
       targetUrl.includes('spotify.com') ||
       targetUrl.includes('spotify.link') ||
-      (sanitizedFilename.endsWith('.mp3') && (Boolean(query.title || req.query?.title) || Boolean(query.artist || req.query?.artist)));
+      (!platform && sanitizedFilename.endsWith('.mp3') && (Boolean(query.title || req.query?.title) || Boolean(query.artist || req.query?.artist)));
 
     // Handle Spotify with Neo audio download + embedded ID3 metadata & cover art
     if (isSpotify) {
@@ -255,6 +255,8 @@ export default async function handler(req: any, res: any) {
       platformReferer = 'https://www.terabox.app/';
     } else if (targetUrl.includes('snapcdn.app')) {
       platformReferer = 'https://dl.snapcdn.app/';
+    } else if (targetUrl.includes('twimg.com') || targetUrl.includes('twitter.com') || targetUrl.includes('x.com')) {
+      platformReferer = 'https://x.com/';
     }
 
     const fetchCandidateConfigs: Array<{ headers: Record<string, string> }> = [

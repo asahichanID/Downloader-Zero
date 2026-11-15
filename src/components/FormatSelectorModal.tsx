@@ -56,6 +56,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
 
   const isSpotify = media.platform === 'spotify';
   const isTerabox = media.platform === 'terabox';
+  const isTwitter = media.platform === 'twitter';
 
   // Determine current active format to download
   const handleStartDownload = () => {
@@ -74,6 +75,29 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
     }
 
     const effectiveType: MediaType = isSpotify ? 'audio' : selectedType;
+
+    if (isTwitter) {
+      if (effectiveType === 'audio' && audioFormats.length > 0) {
+        const exactTwitterAudio =
+          audioFormats.find((f) => {
+            const q = (f.quality || '').toLowerCase();
+            const id = (f.id || '').toLowerCase();
+            return q.includes(selectedAudioQuality) || id.includes(selectedAudioQuality);
+          }) || audioFormats[0];
+        if (exactTwitterAudio) {
+          onConfirmDownload(exactTwitterAudio);
+        }
+        return;
+      }
+
+      const exactTwitterFormat =
+        videoFormats.find((f) => (f.resolution || '').toLowerCase() === selectedVideoRes.toLowerCase()) ||
+        videoFormats[0];
+      if (exactTwitterFormat) {
+        onConfirmDownload(exactTwitterFormat);
+      }
+      return;
+    }
 
     if (effectiveType === 'audio') {
       const matchAudio = audioFormats.find((f) => {
@@ -161,7 +185,8 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
       ? formatDuration(media.duration)
       : (isSpotify || selectedType === 'audio' ? '03:30' : '01:00'));
 
-  const effectiveType: MediaType = isSpotify ? 'audio' : selectedType;
+  const hasTwitterAudio = isTwitter && audioFormats.length > 0;
+  const effectiveType: MediaType = isSpotify ? 'audio' : (isTwitter && !hasTwitterAudio) ? 'video' : selectedType;
 
   return (
     <AnimatePresence>
@@ -189,7 +214,9 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                     ? 'Siap Unduh File'
                     : isSpotify
                       ? 'Pilih Kualitas Audio'
-                      : 'Pilih Format & Kualitas'}
+                      : (isTwitter && !hasTwitterAudio)
+                        ? 'Pilih Resolusi Video'
+                        : 'Pilih Format & Kualitas'}
                 </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-blue-200/70 mt-0.5">
@@ -197,7 +224,11 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
                   ? 'File TeraBox akan diunduh sesuai berkas aslinya'
                   : isSpotify
                     ? 'Sesuaikan bitrate audio MP3 yang ingin disimpan'
-                    : 'Sesuaikan resolusi video atau bitrate audio yang ingin disimpan'}
+                    : isTwitter
+                      ? (hasTwitterAudio
+                          ? 'Pilih resolusi video asli atau ekstrak audio MP3 dari postingan X'
+                          : 'Menampilkan resolusi asli yang tersedia dari postingan X')
+                      : 'Sesuaikan resolusi video atau bitrate audio yang ingin disimpan'}
               </p>
             </div>
             <button
@@ -262,8 +293,8 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
               </div>
             </div>
 
-            {/* Segmented Type Switcher: Hidden for TeraBox (files only) and Video tab hidden for Spotify (audio only) */}
-            {!isTerabox && !isSpotify && (
+            {/* Segmented Type Switcher: Hidden for TeraBox (files), Spotify (audio only), and silent Twitter GIFs */}
+            {!isTerabox && !isSpotify && (!isTwitter || hasTwitterAudio) && (
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 block">
                   Tipe Unduhan
@@ -305,38 +336,78 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = ({
             ) : effectiveType === 'video' ? (
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 block">
-                  Pilih Resolusi Video
+                  {isTwitter ? 'Resolusi Asli Tersedia (Server 2)' : 'Pilih Resolusi Video'}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
-                  {videoPresets.map((preset) => {
-                    const isSelected = selectedVideoRes === preset.resolution;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => onSelectVideoRes(preset.resolution)}
-                        className={`p-3 rounded-2xl border text-left transition-all active:scale-[0.98] cursor-pointer relative ${
-                          isSelected
-                            ? 'bg-sky-50 dark:bg-[#102450] border-sky-500 dark:border-cyan-400 ring-1 ring-sky-500/40 dark:ring-cyan-400/50 shadow-md shadow-sky-500/15 dark:shadow-cyan-500/20'
-                            : 'bg-slate-50 dark:bg-[#0c1a3a]/70 border-slate-200 dark:border-blue-900/60 hover:border-sky-400 dark:hover:border-blue-600/60 hover:bg-slate-100 dark:hover:bg-[#0c1e42]'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                            {preset.resolution}
-                          </span>
-                          {isSelected && (
-                            <div className="w-4 h-4 rounded-full bg-sky-600 dark:bg-cyan-400 text-white dark:text-black flex items-center justify-center">
-                              <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  {isTwitter
+                    ? videoFormats.map((fmt) => {
+                        const resLabel = fmt.resolution || 'HD';
+                        const activeRes = videoFormats.some(
+                          (vf) => (vf.resolution || '').toLowerCase() === selectedVideoRes.toLowerCase()
+                        )
+                          ? selectedVideoRes
+                          : (videoFormats[0]?.resolution || '');
+                        const isSelected = resLabel.toLowerCase() === activeRes.toLowerCase();
+                        const dimMatch = fmt.quality.match(/\(([^)]+)\)/);
+                        const detailText = dimMatch
+                          ? `${dimMatch[1]}${fmt.filesize ? ` · ${fmt.filesize}` : ''}`
+                          : (fmt.filesize || 'Stream Asli MP4');
+                        return (
+                          <button
+                            key={fmt.id}
+                            type="button"
+                            onClick={() => onSelectVideoRes(resLabel)}
+                            className={`p-3 rounded-2xl border text-left transition-all active:scale-[0.98] cursor-pointer relative ${
+                              isSelected
+                                ? 'bg-sky-50 dark:bg-[#102450] border-sky-500 dark:border-cyan-400 ring-1 ring-sky-500/40 dark:ring-cyan-400/50 shadow-md shadow-sky-500/15 dark:shadow-cyan-500/20'
+                                : 'bg-slate-50 dark:bg-[#0c1a3a]/70 border-slate-200 dark:border-blue-900/60 hover:border-sky-400 dark:hover:border-blue-600/60 hover:bg-slate-100 dark:hover:bg-[#0c1e42]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                                {resLabel}
+                              </span>
+                              {isSelected && (
+                                <div className="w-4 h-4 rounded-full bg-sky-600 dark:bg-cyan-400 text-white dark:text-black flex items-center justify-center">
+                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-slate-500 dark:text-blue-200/70 block mt-1">
-                          {preset.badge}
-                        </span>
-                      </button>
-                    );
-                  })}
+                            <span className="text-[11px] text-slate-500 dark:text-blue-200/70 block mt-1 truncate">
+                              {detailText}
+                            </span>
+                          </button>
+                        );
+                      })
+                    : videoPresets.map((preset) => {
+                        const isSelected = selectedVideoRes === preset.resolution;
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => onSelectVideoRes(preset.resolution)}
+                            className={`p-3 rounded-2xl border text-left transition-all active:scale-[0.98] cursor-pointer relative ${
+                              isSelected
+                                ? 'bg-sky-50 dark:bg-[#102450] border-sky-500 dark:border-cyan-400 ring-1 ring-sky-500/40 dark:ring-cyan-400/50 shadow-md shadow-sky-500/15 dark:shadow-cyan-500/20'
+                                : 'bg-slate-50 dark:bg-[#0c1a3a]/70 border-slate-200 dark:border-blue-900/60 hover:border-sky-400 dark:hover:border-blue-600/60 hover:bg-slate-100 dark:hover:bg-[#0c1e42]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                                {preset.resolution}
+                              </span>
+                              {isSelected && (
+                                <div className="w-4 h-4 rounded-full bg-sky-600 dark:bg-cyan-400 text-white dark:text-black flex items-center justify-center">
+                                  <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-slate-500 dark:text-blue-200/70 block mt-1">
+                              {preset.badge}
+                            </span>
+                          </button>
+                        );
+                      })}
                 </div>
               </div>
             ) : (
