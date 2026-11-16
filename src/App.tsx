@@ -41,7 +41,7 @@ import {
   purgeExpiredHistoryItems
 } from './services/historyStorage.ts';
 import { registerWebViewOnce, logDownloadActivity } from './services/firebase.ts';
-import { initAutoRefresh } from './services/autoRefresh.ts';
+import { initAutoRefresh, AUTO_REFRESH_PENDING_KEY } from './services/autoRefresh.ts';
 import type {
   PlatformType,
   MediaType,
@@ -52,36 +52,90 @@ import type {
   AudioTrack
 } from './types/index.ts';
 
+const PRESERVED_SESSION_KEY = 'dz_preserved_session_v1';
+
+interface PreservedSessionState {
+  savedAt: number;
+  activeTab: TabType;
+  isAdminPanelOpen: boolean;
+  url: string;
+  selectedPlatform: PlatformType;
+  mediaType: MediaType;
+  selectedVideoRes: string;
+  selectedAudioQuality: string;
+  mediaData: MediaMetadata | null;
+  isFormatModalOpen: boolean;
+  berandaStage: BerandaStage;
+  preparedDownload: PreparedDownloadPayload | null;
+  selectedTeraboxFileIds: string[];
+  selectedSpotifyTrackId: string | null;
+  pendingPreparingFormat?: MediaFormat | null;
+  pendingExtractOnRestore?: boolean;
+}
+
+let cachedInitialSnapshot: PreservedSessionState | null | undefined;
+function getInitialPreservedSession(): PreservedSessionState | null {
+  if (cachedInitialSnapshot !== undefined) return cachedInitialSnapshot;
+  if (typeof window === 'undefined') {
+    cachedInitialSnapshot = null;
+    return null;
+  }
+  try {
+    const pending = sessionStorage.getItem(AUTO_REFRESH_PENDING_KEY);
+    const raw = sessionStorage.getItem(PRESERVED_SESSION_KEY);
+    if (pending === '1' && raw) {
+      const parsed = JSON.parse(raw) as PreservedSessionState;
+      if (parsed && typeof parsed.savedAt === 'number' && Date.now() - parsed.savedAt < 120_000) {
+        cachedInitialSnapshot = parsed;
+        return parsed;
+      }
+    }
+  } catch {}
+  cachedInitialSnapshot = null;
+  return null;
+}
+
 export default function App() {
+  const initialSnap = getInitialPreservedSession();
+
   // Navigation tab: 'beranda' | 'riwayat' | 'pengaturan'
-  const [activeTab, setActiveTab] = useState<TabType>('beranda');
+  const [activeTab, setActiveTab] = useState<TabType>(() => initialSnap?.activeTab || 'beranda');
 
   // Input and Platform states
-  const [url, setUrl] = useState<string>('');
-  const [selectedPlatform, setSelectedPlatform] = useState<PlatformType>('youtube');
-  const [mediaType, setMediaType] = useState<MediaType>('video');
+  const [url, setUrl] = useState<string>(() => initialSnap?.url || '');
+  const [selectedPlatform, setSelectedPlatform] = useState<PlatformType>(() => initialSnap?.selectedPlatform || 'youtube');
+  const [mediaType, setMediaType] = useState<MediaType>(() => initialSnap?.mediaType || 'video');
 
   // Quality selection states
-  const [selectedVideoRes, setSelectedVideoRes] = useState<string>('1080p');
-  const [selectedAudioQuality, setSelectedAudioQuality] = useState<string>('320');
+  const [selectedVideoRes, setSelectedVideoRes] = useState<string>(() => initialSnap?.selectedVideoRes || '1080p');
+  const [selectedAudioQuality, setSelectedAudioQuality] = useState<string>(() => initialSnap?.selectedAudioQuality || '320');
 
   // Processing & Download states
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [berandaStage, setBerandaStage] = useState<BerandaStage>('idle');
-  const [preparedDownload, setPreparedDownload] = useState<PreparedDownloadPayload | null>(null);
-  const [downloadProgress, setDownloadProgress] = useState<number>(0);
+  const [berandaStage, setBerandaStage] = useState<BerandaStage>(() => {
+    if (initialSnap?.berandaStage === 'preview' && initialSnap.preparedDownload) {
+      return 'preview';
+    }
+    return 'idle';
+  });
+  const [preparedDownload, setPreparedDownload] = useState<PreparedDownloadPayload | null>(() =>
+    initialSnap?.berandaStage === 'preview' ? initialSnap.preparedDownload : null
+  );
+  const [downloadProgress, setDownloadProgress] = useState<number>(() =>
+    initialSnap?.berandaStage === 'preview' ? 100 : 0
+  );
   const [downloadStatusText, setDownloadStatusText] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [completedCountdown, setCompletedCountdown] = useState<number>(3);
   const [completedLabel, setCompletedLabel] = useState<string>('');
-  const [selectedTeraboxFileIds, setSelectedTeraboxFileIds] = useState<string[]>([]);
-  const [selectedSpotifyTrackId, setSelectedSpotifyTrackId] = useState<string | null>(null);
+  const [selectedTeraboxFileIds, setSelectedTeraboxFileIds] = useState<string[]>(() => initialSnap?.selectedTeraboxFileIds || []);
+  const [selectedSpotifyTrackId, setSelectedSpotifyTrackId] = useState<string | null>(() => initialSnap?.selectedSpotifyTrackId ?? null);
 
   // Extracted media metadata
-  const [mediaData, setMediaData] = useState<MediaMetadata | null>(null);
+  const [mediaData, setMediaData] = useState<MediaMetadata | null>(() => initialSnap?.mediaData || null);
 
   // Modals state
-  const [isFormatModalOpen, setIsFormatModalOpen] = useState<boolean>(false);
+  const [isFormatModalOpen, setIsFormatModalOpen] = useState<boolean>(() => Boolean(initialSnap?.isFormatModalOpen && initialSnap?.mediaData));
   const [isPlatformsModalOpen, setIsPlatformsModalOpen] = useState<boolean>(false);
   const [isTermsOpen, setIsTermsOpen] = useState<boolean>(false);
   const [termsDefaultTab, setTermsDefaultTab] = useState<'terms' | 'privacy'>('terms');
@@ -94,7 +148,7 @@ export default function App() {
       return false;
     }
   });
-  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState<boolean>(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState<boolean>(() => Boolean(initialSnap?.isAdminPanelOpen));
 
   // Floating Player state (for video or Spotify-style audio)
   const [playingItem, setPlayingItem] = useState<HistoryItem | null>(null);
@@ -116,14 +170,99 @@ export default function App() {
     }
   };
 
-  const isBusyRef = useRef<boolean>(false);
-  useEffect(() => {
-    isBusyRef.current = isLoading || berandaStage === 'preparing' || berandaStage === 'downloading';
-  }, [isLoading, berandaStage]);
+  const pendingPreparingFormatRef = useRef<MediaFormat | null>(null);
+  const latestSessionRef = useRef<PreservedSessionState>({
+    savedAt: Date.now(),
+    activeTab,
+    isAdminPanelOpen,
+    url,
+    selectedPlatform,
+    mediaType,
+    selectedVideoRes,
+    selectedAudioQuality,
+    mediaData,
+    isFormatModalOpen,
+    berandaStage,
+    preparedDownload,
+    selectedTeraboxFileIds,
+    selectedSpotifyTrackId,
+    pendingPreparingFormat: null,
+    pendingExtractOnRestore: false
+  });
 
   useEffect(() => {
+    latestSessionRef.current = {
+      savedAt: Date.now(),
+      activeTab,
+      isAdminPanelOpen,
+      url,
+      selectedPlatform,
+      mediaType,
+      selectedVideoRes,
+      selectedAudioQuality,
+      mediaData,
+      isFormatModalOpen,
+      berandaStage,
+      preparedDownload,
+      selectedTeraboxFileIds,
+      selectedSpotifyTrackId,
+      pendingPreparingFormat: berandaStage === 'preparing' ? pendingPreparingFormatRef.current : null,
+      pendingExtractOnRestore: isLoading
+    };
+  }, [
+    activeTab,
+    isAdminPanelOpen,
+    url,
+    selectedPlatform,
+    mediaType,
+    selectedVideoRes,
+    selectedAudioQuality,
+    mediaData,
+    isFormatModalOpen,
+    berandaStage,
+    preparedDownload,
+    selectedTeraboxFileIds,
+    selectedSpotifyTrackId,
+    isLoading
+  ]);
+
+  const resumeActionsRef = useRef<{
+    resumeExtract: () => void;
+    resumeConfirm: (fmt: MediaFormat) => void;
+  }>({
+    resumeExtract: () => {},
+    resumeConfirm: () => {}
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem(AUTO_REFRESH_PENDING_KEY);
+      sessionStorage.removeItem(PRESERVED_SESSION_KEY);
+    } catch {}
+
     void registerWebViewOnce();
-    const stopAutoRefresh = initAutoRefresh(() => isBusyRef.current);
+    const stopAutoRefresh = initAutoRefresh({
+      isDownloading: () => latestSessionRef.current.berandaStage === 'downloading',
+      onBeforeReload: () => {
+        try {
+          sessionStorage.setItem(
+            PRESERVED_SESSION_KEY,
+            JSON.stringify({
+              ...latestSessionRef.current,
+              savedAt: Date.now()
+            })
+          );
+        } catch {}
+      }
+    });
+
+    if (initialSnap?.pendingPreparingFormat && initialSnap.mediaData) {
+      const fmt = initialSnap.pendingPreparingFormat;
+      window.setTimeout(() => resumeActionsRef.current.resumeConfirm(fmt), 50);
+    } else if (initialSnap?.pendingExtractOnRestore && initialSnap.url) {
+      window.setTimeout(() => resumeActionsRef.current.resumeExtract(), 50);
+    }
+
     const hideUpdateTimer = window.setTimeout(() => {
       setShowEntryUpdateNotice(false);
     }, 5000);
@@ -478,6 +617,7 @@ export default function App() {
       return;
     }
 
+    pendingPreparingFormatRef.current = targetFormat;
     setIsFormatModalOpen(false);
     setErrorMessage(null);
     setBerandaStage('preparing');
@@ -605,6 +745,17 @@ export default function App() {
       setDownloadProgress(0);
       setDownloadStatusText('');
       setErrorMessage(err.message || 'Gagal menyiapkan pratinjau media.');
+    } finally {
+      pendingPreparingFormatRef.current = null;
+    }
+  };
+
+  resumeActionsRef.current = {
+    resumeExtract: () => {
+      void handleDownloadButtonClick();
+    },
+    resumeConfirm: (fmt: MediaFormat) => {
+      void handleConfirmDownload(fmt);
     }
   };
 

@@ -1,23 +1,31 @@
 /**
- * Silent background auto-refresh service for Vercel deployments.
+ * Instant, double-verified background auto-refresh service for Vercel deployments.
  *
- * Behavior:
- * - Checks /version.json every 6 seconds (and immediately on focus, visibility, online, pageshow).
- * - Validates that the new HTML (#root + dz-build-id) and all entry JS/CSS assets return 200 OK.
- * - If any check fails (offline, 5xx, 404, broken HTML), aborts silently and preserves the current app.
- * - Waits 2.5 seconds after confirming the new build is live, primes the root cache with
- *   `cache: 'reload'`, and performs a single guarded reload (never loops).
+ * Security & Speed guarantees:
+ * 1. Runs an immediate check (0ms) as soon as the app loads, plus fast checks on focus,
+ *    visibilitychange, pageshow (bfcache), online, vite:preloadError, and every 5s.
+ * 2. Double Security Verification before any reload:
+ *    - Layer 1: /version.json buildId + fresh HTML shell check (must contain #root & matching dz-build-id).
+ *    - Layer 2: Entry JS/CSS bundle verification (HTTP 200 + strict MIME check: javascript/css,
+ *      rejecting SPA 404->index.html rewrites or partial/broken Vercel deployments).
+ * 3. If ANY verification fails, aborts silently and preserves the currently working app.
+ * 4. Calls `onBeforeReload()` right before reloading so user workflow state (URL, resolution modal,
+ *    preview stage, active tab) is preserved seamlessly across the instant refresh.
  */
 
-const CHECK_INTERVAL_MS = 6_000;
-const INITIAL_CHECK_DELAY_MS = 1_500;
-const MIN_CHECK_GAP_MS = 3_000;
-const POST_SUCCESS_RELOAD_DELAY_MS = 2_500;
-const RELOAD_COOLDOWN_MS = 12_000;
-const FETCH_TIMEOUT_MS = 6_000;
+const CHECK_INTERVAL_MS = 5_000;
+const MIN_CHECK_GAP_MS = 2_000;
+const RELOAD_COOLDOWN_MS = 10_000;
+const FETCH_TIMEOUT_MS = 5_000;
 
 const RELOADED_BUILD_KEY = 'dz_auto_reloaded_build';
 const RELOADED_AT_KEY = 'dz_auto_reloaded_at';
+export const AUTO_REFRESH_PENDING_KEY = 'dz_auto_refresh_pending';
+
+export interface AutoRefreshOptions {
+  isDownloading?: () => boolean;
+  onBeforeReload?: () => void;
+}
 
 function getCurrentBuildId(): string {
   if (typeof document === 'undefined') return '';
@@ -71,15 +79,28 @@ async function fetchWithNoCache(url: string, method: 'GET' | 'HEAD' = 'GET'): Pr
   });
 }
 
+function isExpectedAssetMime(assetUrl: string, contentType: string): boolean {
+  const ct = contentType.toLowerCase();
+  if (!ct) return true;
+  if (ct.includes('text/html')) return false; // Reject SPA fallback index.html rewrites
+  if (assetUrl.endsWith('.js') || assetUrl.endsWith('.mjs')) {
+    return ct.includes('javascript') || ct.includes('ecmascript');
+  }
+  if (assetUrl.endsWith('.css')) {
+    return ct.includes('text/css');
+  }
+  return true;
+}
+
 async function verifyAssetAvailable(assetUrl: string): Promise<boolean> {
   try {
-    const res = await fetchWithNoCache(assetUrl, 'HEAD');
-    if (res.ok) return true;
+    let res = await fetchWithNoCache(assetUrl, 'HEAD');
     if (res.status === 405) {
-      const getRes = await fetchWithNoCache(assetUrl, 'GET');
-      return getRes.ok;
+      res = await fetchWithNoCache(assetUrl, 'GET');
     }
-    return false;
+    if (!res.ok) return false;
+    const ct = res.headers.get('content-type') || '';
+    return isExpectedAssetMime(assetUrl, ct);
   } catch {
     return false;
   }
@@ -91,6 +112,7 @@ async function verifyRemoteBuildReady(
   expectedBuildId?: string
 ): Promise<string | null> {
   try {
+    // Layer 1: Validate fresh HTML document
     const htmlRes = await fetchWithNoCache(`/?_dz_check=${Date.now()}`, 'GET');
     if (!htmlRes.ok) return null;
 
@@ -98,7 +120,6 @@ async function verifyRemoteBuildReady(
     if (!contentType.includes('text/html')) return null;
 
     const html = await htmlRes.text();
-    // Ensure response is a healthy built DownloaderZero shell (not an error/maintenance page)
     if (!html.includes('id="root"') && !html.includes("id='root'")) {
       return null;
     }
@@ -122,7 +143,7 @@ async function verifyRemoteBuildReady(
       return null;
     }
 
-    // Verify every entry JS/CSS bundle resolves cleanly with HTTP 200
+    // Layer 2: Verify every entry JS/CSS bundle exists and serves genuine JS/CSS MIME type
     const checks = await Promise.all(assets.slice(0, 4).map(verifyAssetAvailable));
     if (checks.some((ok) => !ok)) {
       return null;
@@ -146,7 +167,7 @@ function alreadyReloadedRecently(targetBuildId: string): boolean {
   return false;
 }
 
-export function initAutoRefresh(isBusy?: () => boolean): () => void {
+export function initAutoRefresh(options?: AutoRefreshOptions): () => void {
   if (typeof window === 'undefined' || !import.meta.env.PROD) {
     return () => {};
   }
@@ -159,19 +180,19 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
 
   let disposed = false;
   let checking = false;
-  let reloadScheduled = false;
+  let reloading = false;
   let lastCheckAt = 0;
-  let reloadTimer: number | null = null;
-  let initialTimer: number | null = null;
+  let retryTimer: number | null = null;
   let intervalId: number | null = null;
 
-  const performSafeReload = async (targetBuildId: string) => {
-    if (disposed) return;
+  const performInstantReload = async (targetBuildId: string) => {
+    if (disposed || reloading) return;
 
-    if (isBusy && isBusy()) {
-      reloadTimer = window.setTimeout(() => {
-        void performSafeReload(targetBuildId);
-      }, 2000);
+    // Only defer momentarily if bytes are actively streaming to disk right now
+    if (options?.isDownloading && options.isDownloading()) {
+      retryTimer = window.setTimeout(() => {
+        void performInstantReload(targetBuildId);
+      }, 1000);
       return;
     }
 
@@ -179,35 +200,34 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
       return;
     }
 
-    // Prime browser cache for root document before calling reload()
+    reloading = true;
+
+    try {
+      options?.onBeforeReload?.();
+    } catch {}
+
+    // Prime browser cache for root document so reload() paints the new deployment immediately
     try {
       await fetch('/', {
         cache: 'reload',
         headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
-        signal: AbortSignal.timeout(4000)
+        signal: AbortSignal.timeout(3500)
       });
     } catch {}
 
-    if (disposed || alreadyReloadedRecently(targetBuildId)) return;
+    if (disposed) return;
 
     try {
       sessionStorage.setItem(RELOADED_BUILD_KEY, targetBuildId);
       sessionStorage.setItem(RELOADED_AT_KEY, String(Date.now()));
+      sessionStorage.setItem(AUTO_REFRESH_PENDING_KEY, '1');
     } catch {}
 
     window.location.reload();
   };
 
-  const scheduleReloadAfterDelay = (targetBuildId: string) => {
-    if (disposed || reloadScheduled || alreadyReloadedRecently(targetBuildId)) return;
-    reloadScheduled = true;
-    reloadTimer = window.setTimeout(() => {
-      void performSafeReload(targetBuildId);
-    }, POST_SUCCESS_RELOAD_DELAY_MS);
-  };
-
   const checkForUpdate = async (force = false) => {
-    if (disposed || checking || reloadScheduled) return;
+    if (disposed || checking || reloading) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
 
     const now = Date.now();
@@ -219,7 +239,7 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
     try {
       let candidateBuildId = '';
 
-      // 1. Lightweight manifest check first
+      // Fast manifest check first
       try {
         const verRes = await fetchWithNoCache(`/version.json?_dz_v=${Date.now()}`, 'GET');
         const ct = verRes.headers.get('content-type') || '';
@@ -233,10 +253,10 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
           }
         }
       } catch {
-        // Fallback to HTML check below
+        // Fallback directly to HTML + asset verification
       }
 
-      // 2. Verify full HTML & entry JS/CSS assets are healthy before scheduling reload
+      // Double verification (HTML shell + entry JS/CSS MIME check)
       const verifiedBuildId = await verifyRemoteBuildReady(
         currentBuildId,
         currentScripts,
@@ -246,9 +266,9 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
         return;
       }
 
-      scheduleReloadAfterDelay(verifiedBuildId);
+      await performInstantReload(verifiedBuildId);
     } catch {
-      // Network or parse failure: preserve current working app silently
+      // Preserve current working app silently if update check fails
     } finally {
       checking = false;
     }
@@ -274,9 +294,8 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
     void checkForUpdate(true);
   };
 
-  initialTimer = window.setTimeout(() => {
-    void checkForUpdate(true);
-  }, INITIAL_CHECK_DELAY_MS);
+  // Immediate check at 0ms when entering the browser
+  void checkForUpdate(true);
 
   intervalId = window.setInterval(() => {
     if (document.visibilityState === 'visible') {
@@ -292,9 +311,8 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
 
   return () => {
     disposed = true;
-    if (initialTimer !== null) window.clearTimeout(initialTimer);
+    if (retryTimer !== null) window.clearTimeout(retryTimer);
     if (intervalId !== null) window.clearInterval(intervalId);
-    if (reloadTimer !== null) window.clearTimeout(reloadTimer);
     document.removeEventListener('visibilitychange', onVisibilityOrFocus);
     window.removeEventListener('focus', onVisibilityOrFocus);
     window.removeEventListener('pageshow', onPageShow);
