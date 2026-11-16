@@ -2,19 +2,18 @@
  * Silent background auto-refresh service for Vercel deployments.
  *
  * Behavior:
- * - Polls lightweight /version.json (and validates HTML + entry assets) only in production builds.
- * - Never triggers continuous reloads: only acts when a strictly newer, valid buildId is detected.
- * - If a deployment or network check fails (offline, 5xx, missing assets, broken HTML), aborts
- *   silently and keeps the currently working version of the app intact.
- * - Waits 3 seconds after confirming the deployment succeeded before reloading, and defers if a
- *   download/preparation is currently in progress.
+ * - Checks /version.json every 6 seconds (and immediately on focus, visibility, online, pageshow).
+ * - Validates that the new HTML (#root + dz-build-id) and all entry JS/CSS assets return 200 OK.
+ * - If any check fails (offline, 5xx, 404, broken HTML), aborts silently and preserves the current app.
+ * - Waits 2.5 seconds after confirming the new build is live, primes the root cache with
+ *   `cache: 'reload'`, and performs a single guarded reload (never loops).
  */
 
-const CHECK_INTERVAL_MS = 20_000;
-const INITIAL_CHECK_DELAY_MS = 5_000;
-const MIN_CHECK_GAP_MS = 8_000;
-const POST_SUCCESS_RELOAD_DELAY_MS = 3_000;
-const RELOAD_COOLDOWN_MS = 15_000;
+const CHECK_INTERVAL_MS = 6_000;
+const INITIAL_CHECK_DELAY_MS = 1_500;
+const MIN_CHECK_GAP_MS = 3_000;
+const POST_SUCCESS_RELOAD_DELAY_MS = 2_500;
+const RELOAD_COOLDOWN_MS = 12_000;
 const FETCH_TIMEOUT_MS = 6_000;
 
 const RELOADED_BUILD_KEY = 'dz_auto_reloaded_build';
@@ -24,6 +23,14 @@ function getCurrentBuildId(): string {
   if (typeof document === 'undefined') return '';
   const meta = document.querySelector('meta[name="dz-build-id"]');
   return meta?.getAttribute('content')?.trim() || '';
+}
+
+function getCurrentEntryScriptSrcs(): string[] {
+  if (typeof document === 'undefined') return [];
+  const scripts = Array.from(document.querySelectorAll<HTMLScriptElement>('script[type="module"][src]'));
+  return scripts
+    .map((s) => s.getAttribute('src') || '')
+    .filter((src) => src.includes('/assets/'));
 }
 
 function extractRemoteBuildId(html: string): string {
@@ -78,7 +85,11 @@ async function verifyAssetAvailable(assetUrl: string): Promise<boolean> {
   }
 }
 
-async function verifyRemoteBuildReady(expectedBuildId?: string): Promise<string | null> {
+async function verifyRemoteBuildReady(
+  currentBuildId: string,
+  currentScripts: string[],
+  expectedBuildId?: string
+): Promise<string | null> {
   try {
     const htmlRes = await fetchWithNoCache(`/?_dz_check=${Date.now()}`, 'GET');
     if (!htmlRes.ok) return null;
@@ -93,13 +104,23 @@ async function verifyRemoteBuildReady(expectedBuildId?: string): Promise<string 
     }
 
     const remoteBuildId = extractRemoteBuildId(html);
-    if (!remoteBuildId) return null;
-    if (expectedBuildId && remoteBuildId !== expectedBuildId) {
+    const assets = extractEntryAssets(html);
+    if (assets.length === 0) return null;
+
+    const remoteScripts = assets.filter((u) => u.includes('/assets/') && u.endsWith('.js'));
+    const buildIdChanged = Boolean(remoteBuildId && currentBuildId && remoteBuildId !== currentBuildId);
+    const scriptChanged =
+      currentScripts.length > 0 &&
+      remoteScripts.length > 0 &&
+      remoteScripts.some((src) => !currentScripts.includes(src));
+
+    if (!buildIdChanged && !scriptChanged) {
       return null;
     }
 
-    const assets = extractEntryAssets(html);
-    if (assets.length === 0) return null;
+    if (expectedBuildId && remoteBuildId && remoteBuildId !== expectedBuildId) {
+      return null;
+    }
 
     // Verify every entry JS/CSS bundle resolves cleanly with HTTP 200
     const checks = await Promise.all(assets.slice(0, 4).map(verifyAssetAvailable));
@@ -107,7 +128,7 @@ async function verifyRemoteBuildReady(expectedBuildId?: string): Promise<string 
       return null;
     }
 
-    return remoteBuildId;
+    return remoteBuildId || remoteScripts[0] || 'updated';
   } catch {
     return null;
   }
@@ -131,7 +152,8 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
   }
 
   const currentBuildId = getCurrentBuildId();
-  if (!currentBuildId) {
+  const currentScripts = getCurrentEntryScriptSrcs();
+  if (!currentBuildId && currentScripts.length === 0) {
     return () => {};
   }
 
@@ -143,18 +165,30 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
   let initialTimer: number | null = null;
   let intervalId: number | null = null;
 
-  const performSafeReload = (targetBuildId: string) => {
+  const performSafeReload = async (targetBuildId: string) => {
     if (disposed) return;
 
     if (isBusy && isBusy()) {
-      // Wait quietly until active download/preparation finishes
-      reloadTimer = window.setTimeout(() => performSafeReload(targetBuildId), 2000);
+      reloadTimer = window.setTimeout(() => {
+        void performSafeReload(targetBuildId);
+      }, 2000);
       return;
     }
 
     if (alreadyReloadedRecently(targetBuildId)) {
       return;
     }
+
+    // Prime browser cache for root document before calling reload()
+    try {
+      await fetch('/', {
+        cache: 'reload',
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+        signal: AbortSignal.timeout(4000)
+      });
+    } catch {}
+
+    if (disposed || alreadyReloadedRecently(targetBuildId)) return;
 
     try {
       sessionStorage.setItem(RELOADED_BUILD_KEY, targetBuildId);
@@ -168,7 +202,7 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
     if (disposed || reloadScheduled || alreadyReloadedRecently(targetBuildId)) return;
     reloadScheduled = true;
     reloadTimer = window.setTimeout(() => {
-      performSafeReload(targetBuildId);
+      void performSafeReload(targetBuildId);
     }, POST_SUCCESS_RELOAD_DELAY_MS);
   };
 
@@ -192,7 +226,7 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
         if (verRes.ok && ct.includes('application/json')) {
           const json = await verRes.json();
           if (json && typeof json.buildId === 'string') {
-            if (json.buildId === currentBuildId) {
+            if (currentBuildId && json.buildId === currentBuildId) {
               return;
             }
             candidateBuildId = json.buildId.trim();
@@ -203,8 +237,12 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
       }
 
       // 2. Verify full HTML & entry JS/CSS assets are healthy before scheduling reload
-      const verifiedBuildId = await verifyRemoteBuildReady(candidateBuildId || undefined);
-      if (!verifiedBuildId || verifiedBuildId === currentBuildId) {
+      const verifiedBuildId = await verifyRemoteBuildReady(
+        currentBuildId,
+        currentScripts,
+        candidateBuildId || undefined
+      );
+      if (!verifiedBuildId) {
         return;
       }
 
@@ -219,6 +257,12 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
   const onVisibilityOrFocus = () => {
     if (document.visibilityState === 'visible') {
       void checkForUpdate(false);
+    }
+  };
+
+  const onPageShow = (event: PageTransitionEvent) => {
+    if (event.persisted) {
+      void checkForUpdate(true);
     }
   };
 
@@ -242,6 +286,7 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
 
   document.addEventListener('visibilitychange', onVisibilityOrFocus);
   window.addEventListener('focus', onVisibilityOrFocus);
+  window.addEventListener('pageshow', onPageShow);
   window.addEventListener('online', onOnline);
   window.addEventListener('vite:preloadError', onPreloadError);
 
@@ -252,6 +297,7 @@ export function initAutoRefresh(isBusy?: () => boolean): () => void {
     if (reloadTimer !== null) window.clearTimeout(reloadTimer);
     document.removeEventListener('visibilitychange', onVisibilityOrFocus);
     window.removeEventListener('focus', onVisibilityOrFocus);
+    window.removeEventListener('pageshow', onPageShow);
     window.removeEventListener('online', onOnline);
     window.removeEventListener('vite:preloadError', onPreloadError);
   };

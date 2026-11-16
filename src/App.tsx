@@ -102,6 +102,9 @@ export default function App() {
   // History list & count
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
 
+  // Simple floating "update" indicator on entry (auto-hides in 5s)
+  const [showEntryUpdateNotice, setShowEntryUpdateNotice] = useState<boolean>(true);
+
   // Refresh history items
   const loadHistory = async () => {
     try {
@@ -121,10 +124,14 @@ export default function App() {
   useEffect(() => {
     void registerWebViewOnce();
     const stopAutoRefresh = initAutoRefresh(() => isBusyRef.current);
+    const hideUpdateTimer = window.setTimeout(() => {
+      setShowEntryUpdateNotice(false);
+    }, 5000);
     loadHistory();
     const handleUpdate = () => loadHistory();
     window.addEventListener('dz_history_updated', handleUpdate);
     return () => {
+      window.clearTimeout(hideUpdateTimer);
       stopAutoRefresh();
       window.removeEventListener('dz_history_updated', handleUpdate);
     };
@@ -1081,6 +1088,20 @@ export default function App() {
 
   return (
     <div className="relative min-h-screen w-full bg-[#f0f4fa] dark:bg-[#050B18] text-slate-900 dark:text-slate-100 flex flex-col items-center overflow-x-hidden transition-colors duration-200">
+      {/* Simple Floating Entry "update" Panel (Auto-hides in 5 seconds) */}
+      {showEntryUpdateNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] pointer-events-none dz-animate-scale"
+        >
+          <div className="px-4 py-1.5 rounded-full bg-white/95 dark:bg-[#0a1a3a]/95 border border-sky-400/50 dark:border-cyan-400/50 shadow-lg shadow-slate-900/15 dark:shadow-black/60 flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-cyan-300">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-cyan-400 animate-pulse" />
+            <span>update</span>
+          </div>
+        </div>
+      )}
+
       {/* Top Banner (Spans 100% full-width across the screen) */}
       <header className="w-full bg-[#f0f4fa] dark:bg-[#050B18]">
         <BannerDZ paused={isBannerPaused} alwaysPlay={bannerAlwaysPlay} />
