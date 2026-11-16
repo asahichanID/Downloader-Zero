@@ -79,12 +79,24 @@ export const MediaResult: React.FC<MediaResultProps> = ({
 
           setDownloadStatusText(`Memulai antrean konversi ${fmt.quality}...`);
           try {
+            let activeServer = 'auto';
+            let activeKey = '';
+            try {
+              activeServer = localStorage.getItem('dz_server_mode') || 'auto';
+              activeKey = localStorage.getItem('dz_neoxr_api_key') || '';
+            } catch {}
             const startRes = await fetch('/api/start-job', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
+                platform: media.platform,
                 format: loaderFormat,
-                url: media.url
+                formatId: fmt.id,
+                resolution: fmt.resolution,
+                type: fmt.type,
+                url: media.url,
+                server: activeServer,
+                apiKey: activeKey
               })
             });
             if (startRes.ok) {

@@ -156,9 +156,6 @@ export default function App() {
   // History list & count
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
 
-  // Simple floating "update" indicator on entry (auto-hides in 5s)
-  const [showEntryUpdateNotice, setShowEntryUpdateNotice] = useState<boolean>(true);
-
   // Refresh history items
   const loadHistory = async () => {
     try {
@@ -263,14 +260,10 @@ export default function App() {
       window.setTimeout(() => resumeActionsRef.current.resumeExtract(), 50);
     }
 
-    const hideUpdateTimer = window.setTimeout(() => {
-      setShowEntryUpdateNotice(false);
-    }, 5000);
     loadHistory();
     const handleUpdate = () => loadHistory();
     window.addEventListener('dz_history_updated', handleUpdate);
     return () => {
-      window.clearTimeout(hideUpdateTimer);
       stopAutoRefresh();
       window.removeEventListener('dz_history_updated', handleUpdate);
     };
@@ -556,6 +549,7 @@ export default function App() {
     try {
       let meta: MediaMetadata | null = null;
 
+      let backendExplicitError: string | null = null;
       try {
         const response = await fetch('/api/extract', {
           method: 'POST',
@@ -563,17 +557,24 @@ export default function App() {
           body: JSON.stringify({ url: trimmed, apiKey: customKey, server: serverMode })
         });
 
-        if (response.ok) {
+        const ct = response.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
           const result = await response.json();
-          if (result && result.success && result.data) {
+          if (response.ok && result && result.success && result.data) {
             meta = result.data;
+          } else if (result?.error && response.status >= 400 && response.status < 500) {
+            backendExplicitError = result.error;
           }
         }
       } catch (backendErr) {
         console.warn('Backend extract notice, falling back to direct client extractor:', backendErr);
       }
 
-      // Client-side fallback: extract directly in client
+      if (backendExplicitError) {
+        throw new Error(backendExplicitError);
+      }
+
+      // Client-side fallback: extract directly in client only if backend endpoint was unavailable
       if (!meta) {
         meta = await extractMedia(trimmed, customKey, serverMode);
       }
@@ -627,6 +628,7 @@ export default function App() {
     try {
       let finalUrl = targetFormat.url;
       let jobId = targetFormat.jobId;
+      let startJobError = '';
 
       if (!finalUrl || !finalUrl.startsWith('http') || targetFormat.needsResolution) {
         const loaderFormat = mapFormatForLoader(targetFormat);
@@ -647,12 +649,15 @@ export default function App() {
               apiKey: customKey
             })
           });
-          if (startRes.ok) {
+          const ct = startRes.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
             const startData = await startRes.json();
-            if (startData.downloadUrl) {
+            if (startRes.ok && startData.downloadUrl) {
               finalUrl = startData.downloadUrl;
-            } else if (startData.id) {
+            } else if (startRes.ok && startData.id) {
               jobId = startData.id;
+            } else if (startData?.error) {
+              startJobError = startData.error;
             }
           }
         } catch (e: any) {
@@ -719,7 +724,7 @@ export default function App() {
       }
 
       if (!finalUrl || typeof finalUrl !== 'string' || !finalUrl.startsWith('http')) {
-        throw new Error('Tautan media tidak tersedia dari server sumber saat ini.');
+        throw new Error(startJobError || 'Tautan media tidak tersedia dari server sumber saat ini.');
       }
 
       setCachedPrepared(mediaData.url, targetFormat, serverMode, customKey, mediaData, finalUrl);
@@ -1239,20 +1244,6 @@ export default function App() {
 
   return (
     <div className="relative min-h-screen w-full bg-[#f0f4fa] dark:bg-[#050B18] text-slate-900 dark:text-slate-100 flex flex-col items-center overflow-x-hidden transition-colors duration-200">
-      {/* Simple Floating Entry "update" Panel (Auto-hides in 5 seconds) */}
-      {showEntryUpdateNotice && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] pointer-events-none dz-animate-scale"
-        >
-          <div className="px-4 py-1.5 rounded-full bg-white/95 dark:bg-[#0a1a3a]/95 border border-sky-400/50 dark:border-cyan-400/50 shadow-lg shadow-slate-900/15 dark:shadow-black/60 flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-cyan-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-cyan-400 animate-pulse" />
-            <span>update</span>
-          </div>
-        </div>
-      )}
-
       {/* Top Banner (Spans 100% full-width across the screen) */}
       <header className="w-full bg-[#f0f4fa] dark:bg-[#050B18]">
         <BannerDZ paused={isBannerPaused} alwaysPlay={bannerAlwaysPlay} />

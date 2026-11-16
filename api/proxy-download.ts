@@ -24,7 +24,7 @@ export default async function handler(req: any, res: any) {
     const urlParamIdx = rawReqUrl.indexOf('url=');
     if (urlParamIdx !== -1) {
       let extracted = rawReqUrl.slice(urlParamIdx + 4);
-      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|inline)=/);
+      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate)=/);
       if (nextParamMatch && nextParamMatch.index !== undefined) {
         extracted = extracted.slice(0, nextParamMatch.index);
       }
@@ -287,6 +287,23 @@ export default async function handler(req: any, res: any) {
       }
     ];
 
+    const fetchWithHeaderTimeout = async (target: string, headers: Record<string, string>, headerTimeoutMs = 15000) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), headerTimeoutMs);
+      try {
+        const res = await fetch(target, {
+          headers,
+          redirect: 'follow',
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        return res;
+      } catch (err) {
+        clearTimeout(timer);
+        throw err;
+      }
+    };
+
     let remoteRes: globalThis.Response | null = null;
     let lastStatus = 0;
 
@@ -296,11 +313,7 @@ export default async function handler(req: any, res: any) {
         if (rangeHeader) {
           reqHeaders['Range'] = rangeHeader;
         }
-        const resCandidate = await fetch(targetUrl, {
-          headers: reqHeaders,
-          redirect: 'follow',
-          signal: AbortSignal.timeout(15000)
-        });
+        const resCandidate = await fetchWithHeaderTimeout(targetUrl, reqHeaders, 15000);
         if (resCandidate.ok && resCandidate.body) {
           remoteRes = resCandidate;
           break;
@@ -316,7 +329,9 @@ export default async function handler(req: any, res: any) {
     if ((!remoteRes || !remoteRes.ok) && sourceUrl && /^https?:\/\//i.test(sourceUrl)) {
       try {
         console.log(`[proxy-download] Attempting on-the-fly re-resolution for ${platform || 'media'} (${sourceUrl})...`);
-        const freshMedia = await extractMedia(sourceUrl);
+        const reKey = typeof query.apiKey === 'string' && query.apiKey.trim() ? query.apiKey.trim() : undefined;
+        const reServer = query.server === 'server1' || query.server === 'server2' || query.server === 'auto' ? query.server : 'auto';
+        const freshMedia = await extractMedia(sourceUrl, reKey, reServer);
         if (freshMedia && freshMedia.formats && freshMedia.formats.length > 0) {
           const bestFormat = freshMedia.formats.find((f) => f.isDirect && f.url && f.url.startsWith('http')) || freshMedia.formats[0];
           if (bestFormat && bestFormat.url && bestFormat.url !== targetUrl && bestFormat.url.startsWith('http')) {
@@ -327,11 +342,7 @@ export default async function handler(req: any, res: any) {
                 if (rangeHeader) {
                   reqHeaders['Range'] = rangeHeader;
                 }
-                const resCandidate = await fetch(targetUrl, {
-                  headers: reqHeaders,
-                  redirect: 'follow',
-                  signal: AbortSignal.timeout(15000)
-                });
+                const resCandidate = await fetchWithHeaderTimeout(targetUrl, reqHeaders, 15000);
                 if (resCandidate.ok && resCandidate.body) {
                   remoteRes = resCandidate;
                   break;

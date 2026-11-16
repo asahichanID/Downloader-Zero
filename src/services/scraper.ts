@@ -340,6 +340,7 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
   // Extract video ID
   const vMatch = target.match(/(?:youtube\.com\/(?:watch\?[^#]*v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
   const videoId = vMatch ? vMatch[1] : '';
+  const canonicalWatchUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : target;
 
   if (videoId) {
     thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
@@ -347,7 +348,7 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
 
   // Step 1: oEmbed metadata
   try {
-    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(target)}&format=json`;
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalWatchUrl)}&format=json`;
     const oeRes = await fetch(oembedUrl, { signal: AbortSignal.timeout(5000) });
     if (oeRes.ok) {
       const oe = await oeRes.json();
@@ -364,79 +365,101 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
   const envKey = ((typeof process !== 'undefined' && process.env ? process.env.NEOXR_API_KEY : undefined) || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const neoKey = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
 
-  // Step 2: Query Neoxr YouTube API for direct 720p HD stream, 480p, 360p & 128kbps audio
   let direct720Url = '';
   let direct480Url = '';
   let direct360Url = '';
   let directAudioUrl = '';
+  let lastNeoxrError = '';
+
+  const applyNeoxrMetadata = (j: any) => {
+    if (!j || !j.status) return;
+    if (j.thumbnail) thumbnail = j.thumbnail;
+    if (j.title && (!title || title === 'YouTube Video')) title = j.title;
+    if (j.channel && (!author || author === 'YouTube Channel')) author = j.channel;
+    if (!duration) {
+      if (j.duration_seconds && !isNaN(Number(j.duration_seconds))) {
+        duration = Number(j.duration_seconds);
+      } else if (typeof j.duration === 'number' && !isNaN(j.duration)) {
+        duration = j.duration;
+      } else if (typeof j.duration === 'string') {
+        const parts = j.duration.split(':').map((p: string) => Number(p.trim()));
+        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+          duration = parts[0] * 60 + parts[1];
+        } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+          duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        }
+      }
+    }
+    if (!durationFormatted && j.duration && typeof j.duration === 'string') {
+      durationFormatted = j.duration;
+    }
+    if (views === undefined && j.views !== undefined) views = j.views;
+    if (likes === undefined && j.likes !== undefined) likes = j.likes;
+    if (comments === undefined && j.comments !== undefined) comments = j.comments;
+  };
+
+  const queryNeoxrYouTube = async (ytUrl: string, type: 'video' | 'audio', quality: string): Promise<any | null> => {
+    try {
+      const endpoint = `${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(ytUrl)}&type=${type}&quality=${encodeURIComponent(quality)}&apikey=${encodeURIComponent(neoKey)}`;
+      const res = await fetch(endpoint, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!res.ok) {
+        lastNeoxrError = `HTTP ${res.status}`;
+        return null;
+      }
+      const j = await res.json();
+      if (j && j.status && j.data?.url) {
+        applyNeoxrMetadata(j);
+        return j;
+      }
+      if (j?.msg) {
+        lastNeoxrError = String(j.msg);
+      }
+      return null;
+    } catch (e: any) {
+      lastNeoxrError = e?.message || 'Koneksi Server 1 timeout';
+      return null;
+    }
+  };
 
   // Step 2: Query Server 1 (Neoxr API) if serverMode is 'server1' or 'auto'
+  // Note: Neoxr /api/youtube supports 720p, 480p, 360p (video) and 128kbps (audio).
+  // Query 720p + 128kbps first to save quota/avoid concurrency limits, then cascade to 480p/360p if needed.
   if (serverMode !== 'server2') {
-    try {
-      const [vRes720, vRes480, vRes360, aRes] = await Promise.allSettled([
-        fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=video&quality=720p&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) }),
-        fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=video&quality=480p&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) }),
-        fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=video&quality=360p&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) }),
-        fetch(`${NEOXR_BASE_URL}/youtube?url=${encodeURIComponent(target)}&type=audio&quality=128kbps&apikey=${encodeURIComponent(neoKey)}`, { signal: AbortSignal.timeout(10000) })
+    const queryUrlCandidates = canonicalWatchUrl !== target ? [target, canonicalWatchUrl] : [target];
+
+    for (const candidateUrl of queryUrlCandidates) {
+      const [j720, jAudio] = await Promise.all([
+        direct720Url ? Promise.resolve(null) : queryNeoxrYouTube(candidateUrl, 'video', '720p'),
+        directAudioUrl ? Promise.resolve(null) : queryNeoxrYouTube(candidateUrl, 'audio', '128kbps')
       ]);
 
-      if (vRes720.status === 'fulfilled' && vRes720.value.ok) {
-        const j = await vRes720.value.json();
-        if (j && j.status) {
-          if (j.data?.url) direct720Url = j.data.url;
-          if (j.thumbnail) thumbnail = j.thumbnail;
-          if (j.title && title === 'YouTube Video') title = j.title;
-          if (j.channel && author === 'YouTube Channel') author = j.channel;
-          if (j.duration_seconds && !isNaN(Number(j.duration_seconds))) {
-            duration = Number(j.duration_seconds);
-          } else if (typeof j.duration === 'string') {
-            const parts = j.duration.split(':').map((p: string) => Number(p.trim()));
-            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-              duration = parts[0] * 60 + parts[1];
-            } else if (parts.length === 3) {
-              duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
-            }
-          }
-          if (j.duration && typeof j.duration === 'string') {
-            durationFormatted = j.duration;
-          }
-          if (j.views !== undefined) views = j.views;
-          if (j.likes !== undefined) likes = j.likes;
-          if (j.comments !== undefined) comments = j.comments;
+      if (j720?.data?.url) direct720Url = j720.data.url;
+      if (jAudio?.data?.url) directAudioUrl = jAudio.data.url;
+
+      // If 720p was unavailable on this video, cascade to 480p and 360p
+      if (!direct720Url) {
+        const j480 = await queryNeoxrYouTube(candidateUrl, 'video', '480p');
+        if (j480?.data?.url) {
+          direct480Url = j480.data.url;
+        } else {
+          const j360 = await queryNeoxrYouTube(candidateUrl, 'video', '360p');
+          if (j360?.data?.url) direct360Url = j360.data.url;
         }
       }
 
-      if (vRes480.status === 'fulfilled' && vRes480.value.ok) {
-        const j = await vRes480.value.json();
-        if (j && j.status && j.data?.url) direct480Url = j.data.url;
+      if (direct720Url || direct480Url || direct360Url || directAudioUrl) {
+        break;
       }
-
-      if (vRes360.status === 'fulfilled' && vRes360.value.ok) {
-        const j = await vRes360.value.json();
-        if (j && j.status && j.data?.url) direct360Url = j.data.url;
-      }
-
-      if (aRes.status === 'fulfilled' && aRes.value.ok) {
-        const j = await aRes.value.json();
-        if (j && j.status && j.data?.url) {
-          directAudioUrl = j.data.url;
-          if (!duration && j.duration_seconds) {
-            duration = Number(j.duration_seconds);
-          }
-          if (!durationFormatted && j.duration) {
-            durationFormatted = String(j.duration);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('[YouTube] Server 1 query notice:', err);
     }
 
     if (serverMode === 'server1' && !direct720Url && !direct480Url && !direct360Url && !directAudioUrl) {
-      throw new Error('Server 1 tidak dapat menemukan stream video YouTube.');
+      const detail = lastNeoxrError ? ` (${lastNeoxrError})` : '';
+      throw new Error(`Server 1 tidak dapat menemukan stream video YouTube${detail}.`);
     }
   }
-
 
   // Step 3: YouTube watch page HTML extraction for duration, views, likes, comments
   if (videoId && (!duration || views === undefined || likes === undefined || comments === undefined)) {
@@ -498,18 +521,62 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
     duration = 210;
   }
 
-  // Determine working video and audio URLs
+  // Determine working video and audio URLs from Server 1
   const bestVideoUrl = direct720Url || direct480Url || direct360Url || '';
   const bestAudioUrl = directAudioUrl || bestVideoUrl;
 
-  // Register multi-resolution video options with reliable direct streams
+  // Register multi-resolution video options
+  // In server2/auto mode, 4K/2K/1080p mark needsResolution so /api/start-job can attempt high-res Server 2 first and safely fall back to Server 1.
+  // For 480p/360p, if exact stream wasn't pre-fetched, mark needsResolution so /api/start-job fetches the exact resolution on demand.
   const videoResolutions = [
-    { label: '4K (2160p Ultra HD)', format: '2160', res: '4K', note: 'Kualitas sinematik 4K UHD tertinggi', url: bestVideoUrl },
-    { label: '2K (1440p Quad HD)', format: '1440', res: '2K', note: 'Super tajam 2K Quad HD (1440p)', url: bestVideoUrl },
-    { label: '1080p Full HD', format: '1080', res: '1080p', note: 'Standar kualitas Full HD jernih', url: bestVideoUrl },
-    { label: '720p HD (Unduhan Cepat)', format: '720', res: '720p', note: 'Resolusi HD siap unduh langsung', url: direct720Url || bestVideoUrl },
-    { label: '480p Standard', format: '480', res: '480p', note: 'Hemat kuota dan cepat diunduh', url: direct480Url || bestVideoUrl },
-    { label: '360p Ringan', format: '360', res: '360p', note: 'Ukuran paling hemat untuk ponsel', url: direct360Url || bestVideoUrl }
+    {
+      label: '4K (2160p Ultra HD)',
+      format: '2160',
+      res: '4K',
+      note: 'Kualitas sinematik 4K UHD tertinggi',
+      url: bestVideoUrl,
+      needsResolution: serverMode !== 'server1'
+    },
+    {
+      label: '2K (1440p Quad HD)',
+      format: '1440',
+      res: '2K',
+      note: 'Super tajam 2K Quad HD (1440p)',
+      url: bestVideoUrl,
+      needsResolution: serverMode !== 'server1'
+    },
+    {
+      label: '1080p Full HD',
+      format: '1080',
+      res: '1080p',
+      note: 'Standar kualitas Full HD jernih',
+      url: bestVideoUrl,
+      needsResolution: serverMode !== 'server1'
+    },
+    {
+      label: '720p HD (Unduhan Cepat)',
+      format: '720',
+      res: '720p',
+      note: 'Resolusi HD siap unduh langsung',
+      url: direct720Url || bestVideoUrl,
+      needsResolution: !direct720Url && !bestVideoUrl
+    },
+    {
+      label: '480p Standard',
+      format: '480',
+      res: '480p',
+      note: 'Hemat kuota dan cepat diunduh',
+      url: direct480Url || bestVideoUrl,
+      needsResolution: !direct480Url
+    },
+    {
+      label: '360p Ringan',
+      format: '360',
+      res: '360p',
+      note: 'Ukuran paling hemat untuk ponsel',
+      url: direct360Url || bestVideoUrl,
+      needsResolution: !direct360Url
+    }
   ];
 
   videoResolutions.forEach((q) => {
@@ -520,8 +587,9 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
       type: 'video',
       extension: 'mp4',
       url: q.url || bestVideoUrl,
-      isDirect: Boolean(q.url || bestVideoUrl),
-      note: q.url ? 'Unduhan langsung instan siap simpan' : q.note
+      isDirect: Boolean(q.url || bestVideoUrl) && !q.needsResolution,
+      needsResolution: q.needsResolution || !Boolean(q.url || bestVideoUrl),
+      note: q.url && !q.needsResolution ? 'Unduhan langsung instan siap simpan' : q.note
     });
   });
 
@@ -543,6 +611,7 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
       extension: 'mp3',
       url: bestAudioUrl,
       isDirect: Boolean(bestAudioUrl),
+      needsResolution: !Boolean(bestAudioUrl),
       note: bestAudioUrl ? 'Audio siap unduh instan' : aq.note
     });
   });
@@ -561,7 +630,7 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
     likes,
     comments,
     formats,
-    source: direct720Url ? 'Server 1 YouTube Engine' : 'DownloaderZero Cloud Stream Engine',
+    source: bestVideoUrl || directAudioUrl ? 'Server 1 YouTube Engine' : 'DownloaderZero Cloud Stream Engine',
     createdAt: new Date().toISOString()
   };
 }

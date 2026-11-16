@@ -70,41 +70,61 @@ export default async function handler(req: any, res: any) {
 
     const normalizedFormat = normalizeLoaderFormat(format);
 
-    // Server 1 handler (Primary)
+    // Server 1 handler (Primary - Neoxr supports 720p, 480p, 360p video & 128kbps audio)
     const tryServer1 = async () => {
       const envKey = (process.env.NEOXR_API_KEY || 'j3i3mg').trim().replace(/^["']|["']$/g, '');
-      const key = (apiKey || envKey || 'j3i3mg').trim().replace(/^["']|["']$/g, '');
+      const key = (typeof apiKey === 'string' && apiKey.trim() ? apiKey.trim() : envKey).replace(/^["']|["']$/g, '');
       const isAudio = normalizedFormat === 'mp3';
-      const qualityMap: Record<string, string> = {
-        '2160': '1080p',
-        '1440': '1080p',
-        '1080': '1080p',
-        '720': '720p',
-        '480': '480p',
-        '360': '360p',
-        'mp3': '128kbps'
-      };
-      const neoQ = qualityMap[normalizedFormat] || (isAudio ? '128kbps' : '1080p');
       const neoType = isAudio ? 'audio' : 'video';
-      const neoEp = `https://api.neoxr.eu/api/youtube?url=${encodeURIComponent(url)}&type=${neoType}&quality=${neoQ}&apikey=${encodeURIComponent(key)}`;
 
-      const neoRes = await fetch(neoEp, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        signal: AbortSignal.timeout(10000)
-      });
-      if (neoRes.ok) {
-        const neoJson = await neoRes.json();
-        if (neoJson && neoJson.status && neoJson.data?.url) {
-          return {
-            success: true,
-            id: null,
-            downloadUrl: neoJson.data.url,
-            format: normalizedFormat,
-            text: `Siap diunduh (${neoJson.data.quality || normalizedFormat})!`
-          };
+      let neoQualities: string[];
+      if (isAudio) {
+        neoQualities = ['128kbps'];
+      } else if (normalizedFormat === '360') {
+        neoQualities = ['360p', '480p', '720p'];
+      } else if (normalizedFormat === '480') {
+        neoQualities = ['480p', '360p', '720p'];
+      } else {
+        // 720, 1080, 1440 (2K), 2160 (4K): Server 1 natively tops out at 720p and cascades down if absent
+        neoQualities = ['720p', '480p', '360p'];
+      }
+
+      const vMatch = url.match(/(?:youtube\.com\/(?:watch\?[^#]*v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
+      const canonicalWatchUrl = vMatch ? `https://www.youtube.com/watch?v=${vMatch[1]}` : url;
+      const urlCandidates = canonicalWatchUrl !== url ? [url, canonicalWatchUrl] : [url];
+
+      let lastMsg = '';
+      for (const candidateUrl of urlCandidates) {
+        for (const neoQ of neoQualities) {
+          try {
+            const neoEp = `https://api.neoxr.eu/api/youtube?url=${encodeURIComponent(candidateUrl)}&type=${neoType}&quality=${encodeURIComponent(neoQ)}&apikey=${encodeURIComponent(key)}`;
+            const neoRes = await fetch(neoEp, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+              signal: AbortSignal.timeout(10000)
+            });
+            if (neoRes.ok) {
+              const neoJson = await neoRes.json();
+              if (neoJson && neoJson.status && neoJson.data?.url) {
+                return {
+                  success: true,
+                  id: null,
+                  downloadUrl: neoJson.data.url,
+                  format: neoJson.data.quality || neoQ,
+                  text: `Siap diunduh (${neoJson.data.quality || neoQ} via Server 1)!`
+                };
+              }
+              if (neoJson?.msg) {
+                lastMsg = String(neoJson.msg);
+              }
+            } else {
+              lastMsg = `HTTP ${neoRes.status}`;
+            }
+          } catch (err: any) {
+            lastMsg = err?.message || 'Timeout';
+          }
         }
       }
-      throw new Error('Server 1 tidak menghasilkan unduhan.');
+      throw new Error(lastMsg ? `Server 1 tidak menghasilkan unduhan (${lastMsg}).` : 'Server 1 tidak menghasilkan unduhan.');
     };
 
     // Server 2 handler (Alternative / loader engine)
@@ -126,6 +146,13 @@ export default async function handler(req: any, res: any) {
             text: loaderJson.text || 'Memulai konversi Server 2...'
           };
         }
+      } else {
+        let errDetail = `HTTP ${loaderRes.status}`;
+        try {
+          const errJson = await loaderRes.json();
+          if (errJson?.error_code) errDetail = errJson.error_code;
+        } catch {}
+        throw new Error(`Server 2 tidak dapat memulai proses konversi (${errDetail}).`);
       }
       throw new Error('Server 2 tidak dapat memulai proses konversi.');
     };
