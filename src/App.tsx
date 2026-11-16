@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import JSZip from 'jszip';
 import { BannerDZ } from './components/BannerDZ.tsx';
 import { UrlInputCard } from './components/UrlInputCard.tsx';
@@ -41,6 +41,7 @@ import {
   purgeExpiredHistoryItems
 } from './services/historyStorage.ts';
 import { registerWebViewOnce, logDownloadActivity } from './services/firebase.ts';
+import { initAutoRefresh } from './services/autoRefresh.ts';
 import type {
   PlatformType,
   MediaType,
@@ -112,12 +113,21 @@ export default function App() {
     }
   };
 
+  const isBusyRef = useRef<boolean>(false);
+  useEffect(() => {
+    isBusyRef.current = isLoading || berandaStage === 'preparing' || berandaStage === 'downloading';
+  }, [isLoading, berandaStage]);
+
   useEffect(() => {
     void registerWebViewOnce();
+    const stopAutoRefresh = initAutoRefresh(() => isBusyRef.current);
     loadHistory();
     const handleUpdate = () => loadHistory();
     window.addEventListener('dz_history_updated', handleUpdate);
-    return () => window.removeEventListener('dz_history_updated', handleUpdate);
+    return () => {
+      stopAutoRefresh();
+      window.removeEventListener('dz_history_updated', handleUpdate);
+    };
   }, []);
 
   // Theme setting with persistent localStorage

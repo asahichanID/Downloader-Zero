@@ -1,12 +1,39 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, type Plugin} from 'vite';
 
-export default defineConfig(() => {
+function dzBuildVersionPlugin(enabled: boolean): Plugin {
+  const buildId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+  return {
+    name: 'dz-build-version',
+    transformIndexHtml(html) {
+      if (!enabled) return html;
+      return html.replace(
+        '</head>',
+        `    <meta name="dz-build-id" content="${buildId}" />\n  </head>`
+      );
+    },
+    generateBundle() {
+      if (!enabled) return;
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify({
+          buildId,
+          builtAt: new Date().toISOString(),
+        }),
+      });
+    },
+  };
+}
+
+export default defineConfig(({command}) => {
+  const isBuild = command === 'build';
   return {
     base: '/',
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), dzBuildVersionPlugin(isBuild)],
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname || '.', '.'),

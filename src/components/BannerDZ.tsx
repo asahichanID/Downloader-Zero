@@ -125,26 +125,28 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({ paused = false, a
           aria-hidden="true"
         />
 
-        {/* Brand Lockup Overlay (Aligned with content container) */}
-        <div className="absolute inset-0 max-w-4xl mx-auto px-4 sm:px-6 pointer-events-none flex flex-col justify-start">
-          <div className="pt-7 sm:pt-10 max-w-[280px] sm:max-w-sm pointer-events-auto">
-            {/* Blue Download Icon Badge */}
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 p-0.5 shadow-lg shadow-blue-500/35 mb-3 flex items-center justify-center">
-              <div className="w-full h-full rounded-[14px] bg-[#0c245c]/90 flex items-center justify-center">
-                <Download className="w-6 h-6 text-white stroke-[2.5]" />
-              </div>
-            </div>
-
-            {/* Title */}
+        {/* Brand Lockup Overlay (Title/Subtitle top-left, Download logo bottom-left) */}
+        <div className="absolute inset-0 max-w-4xl mx-auto px-4 sm:px-6 pointer-events-none flex flex-col justify-between pt-6 sm:pt-9 pb-14 sm:pb-16">
+          {/* Top-Left: DownloaderZero + Subtitle */}
+          <div className="max-w-[280px] sm:max-w-sm pointer-events-auto">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white drop-shadow-md">
               Downloader<span className="text-cyan-400">Zero</span>
             </h1>
 
-            {/* Subtitle */}
             <p className="text-xs sm:text-sm font-medium text-blue-100/90 mt-1 leading-snug">
-              Download Video & Audio <br className="hidden sm:inline" />
-              dari berbagai platform
+              Download Video &amp; Audio
+              <br />
+              Dari berbagai platform
             </p>
+          </div>
+
+          {/* Bottom-Left: Blue Download Icon Badge */}
+          <div className="pointer-events-auto">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 p-0.5 shadow-lg shadow-blue-500/35 flex items-center justify-center">
+              <div className="w-full h-full rounded-[14px] bg-[#0c245c]/90 flex items-center justify-center">
+                <Download className="w-6 h-6 text-white stroke-[2.5]" />
+              </div>
+            </div>
           </div>
         </div>
       </div>

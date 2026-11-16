@@ -961,6 +961,8 @@ async function startServer() {
       if (filePath.endsWith('.mp4')) {
         // Cache banner videos in browser disk cache for 30 days (2592000s)
         res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+      } else if (filePath.endsWith('.html') || filePath.endsWith('version.json')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       }
     }
   };
@@ -983,6 +985,7 @@ async function startServer() {
   } else {
     app.use(express.static(path.resolve(__dirname, 'dist'), staticVideoCacheOptions));
     app.get('*', (_req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
   }
