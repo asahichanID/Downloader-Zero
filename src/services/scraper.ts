@@ -183,7 +183,7 @@ async function scrapeTikTok(url: string, _apiKey?: string, serverMode: ServerMod
 
 // ----------------- FACEBOOK SCRAPER -----------------
 async function scrapeFacebookServer1(target: string, apiKey?: string): Promise<MediaMetadata> {
-  const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const envKey = ((typeof process !== 'undefined' && process.env ? process.env.NEOXR_API_KEY : undefined) || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const neoKey = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const formats: MediaFormat[] = [];
   const neoRes = await fetch(`${NEOXR_BASE_URL}/fb?url=${encodeURIComponent(target)}&apikey=${encodeURIComponent(neoKey)}`, {
@@ -361,7 +361,7 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
   }
 
   const formats: MediaFormat[] = [];
-  const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const envKey = ((typeof process !== 'undefined' && process.env ? process.env.NEOXR_API_KEY : undefined) || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const neoKey = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
 
   // Step 2: Query Neoxr YouTube API for direct 720p HD stream, 480p, 360p & 128kbps audio
@@ -568,7 +568,7 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
 
 // ----------------- INSTAGRAM SCRAPER -----------------
 async function scrapeInstagramServer1(target: string, apiKey?: string): Promise<MediaMetadata> {
-  const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const envKey = ((typeof process !== 'undefined' && process.env ? process.env.NEOXR_API_KEY : undefined) || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const neoKey = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const formats: MediaFormat[] = [];
   const images: string[] = [];
@@ -854,7 +854,7 @@ async function scrapePinterestServer1(url: string, apiKey?: string): Promise<Med
   const formats: MediaFormat[] = [];
   let images: string[] = [];
 
-  const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const envKey = ((typeof process !== 'undefined' && process.env ? process.env.NEOXR_API_KEY : undefined) || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const neoKey = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
 
   const neoRes = await fetch(`${NEOXR_BASE_URL}/pin?url=${encodeURIComponent(url)}&apikey=${encodeURIComponent(neoKey)}`, {
@@ -1147,7 +1147,7 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
   }
 
   const isPlaylist = entityType === 'playlist' || entityType === 'album';
-  const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const envKey = ((typeof process !== 'undefined' && process.env ? process.env.NEOXR_API_KEY : undefined) || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const neoKey = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
 
   let title = 'Spotify Music';
@@ -1390,7 +1390,7 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
 async function scrapeTerabox(url: string, apiKey?: string, _serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
 
   const target = await resolveRedirectUrl(url);
-  const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const envKey = ((typeof process !== 'undefined' && process.env ? process.env.NEOXR_API_KEY : undefined) || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const key = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
 
   let rawItems: any[] = [];
@@ -1512,7 +1512,7 @@ async function scrapeTerabox(url: string, apiKey?: string, _serverMode: ServerMo
 
 // ----------------- NEOXR API SCRAPER (PRIMARY ENGINE) -----------------
 async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: string): Promise<MediaMetadata> {
-  const envKey = (process.env.NEOXR_API_KEY || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
+  const envKey = ((typeof process !== 'undefined' && process.env ? process.env.NEOXR_API_KEY : undefined) || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const key = (apiKey || envKey || DEFAULT_NEOXR_KEY).trim().replace(/^["']|["']$/g, '');
   const keyParam = `&apikey=${encodeURIComponent(key)}`;
   const formats: MediaFormat[] = [];

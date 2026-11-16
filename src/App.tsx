@@ -40,6 +40,7 @@ import {
   clearAllHistory,
   purgeExpiredHistoryItems
 } from './services/historyStorage.ts';
+import { registerWebViewOnce, logDownloadActivity } from './services/firebase.ts';
 import type {
   PlatformType,
   MediaType,
@@ -112,6 +113,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    void registerWebViewOnce();
     loadHistory();
     const handleUpdate = () => loadHistory();
     window.addEventListener('dz_history_updated', handleUpdate);
@@ -432,6 +434,15 @@ export default function App() {
     } catch (err: any) {
       console.error('Extraction error:', err);
       setErrorMessage(err.message || 'Terjadi kesalahan saat memeriksa tautan.');
+      const detected = detectPlatform(trimmed);
+      void logDownloadActivity({
+        platform: detected !== 'unknown' ? detected : selectedPlatform,
+        url: trimmed,
+        resolution: mediaType === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes,
+        status: 'gagal',
+        mediaType,
+        title: ''
+      });
     } finally {
       setIsLoading(false);
     }
@@ -560,6 +571,14 @@ export default function App() {
       enterPreviewStage(mediaData, targetFormat, finalUrl);
     } catch (err: any) {
       console.error('Prepare preview error:', err);
+      void logDownloadActivity({
+        platform: mediaData.platform,
+        url: mediaData.url,
+        resolution: targetFormat.resolution || targetFormat.quality || '-',
+        status: 'gagal',
+        mediaType: targetFormat.type,
+        title: mediaData.title || ''
+      });
       invalidateCacheForUrl(mediaData.url);
       if (url.trim() && url.trim() !== mediaData.url) {
         invalidateCacheForUrl(url.trim());
@@ -735,6 +754,14 @@ export default function App() {
         }
 
         await loadHistory();
+        void logDownloadActivity({
+          platform: 'terabox',
+          url: media.url,
+          resolution: filesToDownload.map((f) => f.extension.toUpperCase()).join(', ') || targetFormat.resolution || 'File',
+          status: 'berhasil',
+          mediaType: filesToDownload[0]?.mediaType || 'file',
+          title: filesToDownload.map((f) => f.filename).join(', ')
+        });
         setDownloadProgress(100);
         setDownloadStatusText('Unduhan selesai!');
         setCompletedLabel(
@@ -799,6 +826,14 @@ export default function App() {
         }).catch(() => {});
 
         await loadHistory();
+        void logDownloadActivity({
+          platform: media.platform,
+          url: media.url,
+          resolution: `${total} Foto HD (ZIP)`,
+          status: 'berhasil',
+          mediaType: 'photos',
+          title: media.title || 'Slide Foto'
+        });
         setDownloadProgress(100);
         setDownloadStatusText('Unduhan selesai!');
         setCompletedLabel('Foto Terunduh!');
@@ -880,6 +915,15 @@ export default function App() {
         console.warn('Save history notice:', histErr);
       }
 
+      void logDownloadActivity({
+        platform: media.platform,
+        url: media.url,
+        resolution: targetFormat.resolution || targetFormat.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
+        status: 'berhasil',
+        mediaType: targetFormat.type,
+        title: effectiveTitle || 'Media DownloaderZero'
+      });
+
       setDownloadProgress(100);
       setDownloadStatusText('Unduhan selesai!');
       setCompletedLabel(
@@ -892,6 +936,14 @@ export default function App() {
       setBerandaStage('completed');
     } catch (err: any) {
       console.error('Download execution error:', err);
+      void logDownloadActivity({
+        platform: media.platform,
+        url: media.url,
+        resolution: targetFormat.resolution || targetFormat.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
+        status: 'gagal',
+        mediaType: targetFormat.type,
+        title: media.title || ''
+      });
       invalidateCacheForUrl(media.url);
       if (url.trim() && url.trim() !== media.url) {
         invalidateCacheForUrl(url.trim());

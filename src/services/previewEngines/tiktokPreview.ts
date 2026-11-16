@@ -275,7 +275,7 @@ export async function resolveTikTokServer1(
   type: string,
   apiKey?: string
 ): Promise<{ downloadUrl: string; quality?: string }> {
-  const envKey = (process.env.NEOXR_API_KEY || 'j3i3mg').trim().replace(/^["']|["']$/g, '');
+  const envKey = ((typeof process !== 'undefined' && process.env ? process.env.NEOXR_API_KEY : undefined) || 'j3i3mg').trim().replace(/^["']|["']$/g, '');
   const key = (apiKey || envKey || 'j3i3mg').trim().replace(/^["']|["']$/g, '');
 
   const endpoint = `https://api.neoxr.eu/api/tiktok?url=${encodeURIComponent(url)}&apikey=${encodeURIComponent(key)}`;
