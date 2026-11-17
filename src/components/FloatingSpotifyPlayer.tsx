@@ -1,11 +1,17 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { X, Play, Pause, Download, Volume2, VolumeX, Disc3, Music2, Check, Share2 } from 'lucide-react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import JSZip from 'jszip';
+import { X, Play, Pause, Download, Volume2, VolumeX, Disc3, Music2, Check, Copy } from 'lucide-react';
 import type { HistoryItem } from '../types/index.ts';
 
 interface FloatingSpotifyPlayerProps {
   item: HistoryItem | null;
   onClose: () => void;
   onDownloadAgain?: (item: HistoryItem) => void;
+}
+
+interface ExtractedZipTrack {
+  name: string;
+  url: string;
 }
 
 const formatSeconds = (sec: number): string => {
@@ -27,6 +33,95 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
   const [duration, setDuration] = useState<number>(item?.duration || 0);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+
+  const [blobAudioUrl, setBlobAudioUrl] = useState<string>('');
+  const [zipTracks, setZipTracks] = useState<ExtractedZipTrack[]>([]);
+  const [activeZipIndex, setActiveZipIndex] = useState<number>(0);
+  const [forceProxy, setForceProxy] = useState<boolean>(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const createdUrls: string[] = [];
+
+    setForceProxy(false);
+    setAudioError(null);
+    setCurrentTime(0);
+    setDuration(item?.duration || 0);
+    setZipTracks([]);
+    setActiveZipIndex(0);
+    setBlobAudioUrl('');
+
+    if (!item?.blob) {
+      return;
+    }
+
+    if (item.extension === 'zip') {
+      JSZip.loadAsync(item.blob)
+        .then(async (zip) => {
+          const audioEntries = Object.values(zip.files)
+            .filter((entry) => !entry.dir && /\.(mp3|m4a|ogg|wav)$/i.test(entry.name))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+          const parsed: ExtractedZipTrack[] = [];
+          for (const entry of audioEntries) {
+            const rawBlob = await entry.async('blob');
+            const ext = entry.name.split('.').pop()?.toLowerCase() || 'mp3';
+            const mime = ext === 'm4a' ? 'audio/mp4' : 'audio/mpeg';
+            const typed = new Blob([rawBlob], { type: mime });
+            const objUrl = URL.createObjectURL(typed);
+            createdUrls.push(objUrl);
+            const cleanName = entry.name.split('/').pop()?.replace(/\.[^.]+$/, '') || entry.name;
+            parsed.push({ name: cleanName, url: objUrl });
+          }
+
+          if (!cancelled) {
+            if (parsed.length > 0) {
+              setZipTracks(parsed);
+              setActiveZipIndex(0);
+            } else {
+              setAudioError('Arsip ZIP tidak berisi file audio yang dapat diputar.');
+            }
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setAudioError('Gagal membaca arsip audio ZIP.');
+          }
+        });
+    } else {
+      const mime = item.extension === 'm4a' ? 'audio/mp4' : 'audio/mpeg';
+      const typed = item.blob.type === mime ? item.blob : new Blob([item.blob], { type: mime });
+      const objUrl = URL.createObjectURL(typed);
+      createdUrls.push(objUrl);
+      setBlobAudioUrl(objUrl);
+    }
+
+    return () => {
+      cancelled = true;
+      for (const u of createdUrls) {
+        URL.revokeObjectURL(u);
+      }
+    };
+  }, [item]);
+
+  const proxyFallbackUrl = useMemo(() => {
+    if (!item || item.extension === 'zip') return '';
+    const target = item.downloadUrl || item.sourceUrl || '';
+    if (!target) return '';
+    const filename = item.filename || `audio.${item.extension || 'mp3'}`;
+    return `/api/proxy-download?url=${encodeURIComponent(target)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl || '')}&inline=1`;
+  }, [item]);
+
+  const activeAudioUrl = useMemo(() => {
+    if (zipTracks.length > 0) {
+      return zipTracks[activeZipIndex]?.url || '';
+    }
+    if (!forceProxy && blobAudioUrl) {
+      return blobAudioUrl;
+    }
+    return proxyFallbackUrl;
+  }, [zipTracks, activeZipIndex, forceProxy, blobAudioUrl, proxyFallbackUrl]);
 
   const togglePlay = useCallback(() => {
     if (!audioRef.current) return;
@@ -57,15 +152,21 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
     }
   }, [isMuted]);
 
+  useEffect(() => {
+    if (!audioRef.current || !activeAudioUrl) return;
+    audioRef.current.load();
+    audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+  }, [activeAudioUrl]);
+
   if (!item) return null;
 
-  const audioUrl = item.downloadUrl || item.sourceUrl;
+  const originalUrl = (item.sourceUrl || item.downloadUrl || '').trim();
+  const activeTrackTitle = zipTracks.length > 0 ? (zipTracks[activeZipIndex]?.name || item.title) : item.title;
 
   const toggleMute = () => {
     setIsMuted((prev) => !prev);
   };
 
-  // Throttle React state ticks to ~4Hz so scrubber moves cleanly without forcing rapid React reconciliations
   const handleTimeUpdate = () => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -87,8 +188,8 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
   };
 
   const handleCopyLink = () => {
-    if (audioUrl) {
-      navigator.clipboard.writeText(audioUrl).catch(() => {});
+    if (originalUrl) {
+      navigator.clipboard?.writeText(originalUrl).catch(() => {});
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     }
@@ -103,9 +204,9 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-sm sm:max-w-md rounded-3xl bg-gradient-to-b from-[#0b1f48] via-[#07132e] to-[#040b1b] border border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-black/95 text-white overflow-hidden dz-animate-scale"
+        className="relative w-full max-w-sm sm:max-w-md rounded-3xl bg-gradient-to-b from-[#0b1f48] via-[#07132e] to-[#040b1b] border border-blue-500/30 p-5 sm:p-6 shadow-2xl shadow-black/95 text-white overflow-hidden dz-animate-scale max-h-[92vh] overflow-y-auto"
       >
-        {/* Top Bar: Platform pill and Close button */}
+        {/* Top Bar */}
         <div className="relative flex items-center justify-between pb-4 border-b border-white/10 z-10">
           <div className="flex items-center gap-2">
             <div className="w-5 h-5 rounded-full bg-[#1DB954] flex items-center justify-center shrink-0">
@@ -126,37 +227,50 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
         </div>
 
         {/* Hidden HTML5 Audio Element */}
-        <audio
-          ref={audioRef}
-          src={audioUrl}
-          autoPlay
-          onTimeUpdate={handleTimeUpdate}
-          onEnded={() => setIsPlaying(false)}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onLoadedMetadata={(e) => {
-            const dur = (e.target as HTMLAudioElement).duration;
-            if (dur && !isNaN(dur)) setDuration(dur);
-          }}
-        />
+        {activeAudioUrl && (
+          <audio
+            ref={audioRef}
+            src={activeAudioUrl}
+            autoPlay
+            onTimeUpdate={handleTimeUpdate}
+            onEnded={() => {
+              if (zipTracks.length > 0 && activeZipIndex < zipTracks.length - 1) {
+                setActiveZipIndex((prev) => prev + 1);
+              } else {
+                setIsPlaying(false);
+              }
+            }}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onLoadedMetadata={(e) => {
+              const dur = (e.target as HTMLAudioElement).duration;
+              if (dur && !isNaN(dur)) setDuration(dur);
+            }}
+            onError={() => {
+              if (!forceProxy && blobAudioUrl && proxyFallbackUrl) {
+                setForceProxy(true);
+              } else {
+                setAudioError('Audio tidak dapat diputar. Gunakan tombol Unduh Berkas.');
+              }
+            }}
+          />
+        )}
 
         {/* Centered Album Cover with Vinyl Effect */}
-        <div className="relative my-6 flex items-center justify-center">
+        <div className="relative my-5 flex items-center justify-center">
           <div className="relative group">
-            {/* Spinning Disc behind the cover when playing (compositor transform only) */}
             <div
-              className={`absolute -right-4 top-2 w-48 h-48 sm:w-56 sm:h-56 rounded-full bg-slate-950 border-4 border-slate-800 shadow-xl flex items-center justify-center will-change-transform transition-transform duration-500 ${
-                isPlaying ? 'translate-x-6 sm:translate-x-8 animate-spin' : 'translate-x-0'
+              className={`absolute -right-4 top-2 w-40 h-40 sm:w-48 sm:h-48 rounded-full bg-slate-950 border-4 border-slate-800 shadow-xl flex items-center justify-center will-change-transform transition-transform duration-500 ${
+                isPlaying ? 'translate-x-5 sm:translate-x-7 animate-spin' : 'translate-x-0'
               }`}
               style={{ animationDuration: '6s' }}
             >
-              <div className="w-16 h-16 rounded-full bg-[#1DB954]/20 border-2 border-[#1DB954] flex items-center justify-center">
-                <div className="w-4 h-4 rounded-full bg-white" />
+              <div className="w-14 h-14 rounded-full bg-[#1DB954]/20 border-2 border-[#1DB954] flex items-center justify-center">
+                <div className="w-3.5 h-3.5 rounded-full bg-white" />
               </div>
             </div>
 
-            {/* Main Album Artwork */}
-            <div className="relative z-10 w-48 h-48 sm:w-56 sm:h-56 rounded-2xl overflow-hidden bg-slate-900 border-2 border-white/20 shadow-2xl shadow-blue-950/80">
+            <div className="relative z-10 w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden bg-slate-900 border-2 border-white/20 shadow-2xl shadow-blue-950/80">
               {item.thumbnail ? (
                 <img
                   src={item.thumbnail}
@@ -169,7 +283,7 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-emerald-600 to-blue-800">
-                  <Disc3 className={`w-16 h-16 text-white/80 ${isPlaying ? 'animate-spin' : ''}`} />
+                  <Disc3 className={`w-14 h-14 text-white/80 ${isPlaying ? 'animate-spin' : ''}`} />
                 </div>
               )}
             </div>
@@ -179,18 +293,24 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
         {/* Song Info */}
         <div className="relative z-10 text-center px-2">
           <h3 className="font-extrabold text-base sm:text-lg text-white truncate">
-            {item.title}
+            {activeTrackTitle}
           </h3>
           <p className="text-xs sm:text-sm text-emerald-400/90 font-medium mt-1 truncate">
             {item.artist || item.author || 'Artis Musik'}
           </p>
-          <span className="inline-block mt-1 text-[11px] font-semibold text-slate-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
+          <span className="inline-block mt-1 text-[11px] font-semibold text-slate-400">
             {item.quality || '320 kbps'} • MP3 Audio
           </span>
         </div>
 
+        {audioError && (
+          <p className="mt-3 text-center text-xs text-amber-300 bg-amber-950/40 border border-amber-500/30 rounded-xl px-3 py-2">
+            {audioError}
+          </p>
+        )}
+
         {/* Scrubber / Progress Bar */}
-        <div className="relative z-10 mt-5 space-y-1.5">
+        <div className="relative z-10 mt-4 space-y-1.5">
           <input
             type="range"
             min={0}
@@ -206,7 +326,7 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
         </div>
 
         {/* Playback Controls */}
-        <div className="relative z-10 flex items-center justify-center gap-6 my-4">
+        <div className="relative z-10 flex items-center justify-center gap-6 my-3.5">
           <button
             type="button"
             onClick={toggleMute}
@@ -216,7 +336,6 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
             {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
           </button>
 
-          {/* Big Play/Pause Button */}
           <button
             type="button"
             onClick={togglePlay}
@@ -230,11 +349,32 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
             type="button"
             onClick={handleCopyLink}
             className="text-slate-400 hover:text-white p-2 active:scale-90 transition-transform duration-150 cursor-pointer"
-            title="Salin tautan audio"
+            title="Salin URL ori"
           >
-            {isCopied ? <Check className="w-5 h-5 text-emerald-400" /> : <Share2 className="w-5 h-5" />}
+            {isCopied ? <Check className="w-5 h-5 text-emerald-400" /> : <Copy className="w-5 h-5" />}
           </button>
         </div>
+
+        {/* Playlist ZIP Track Switcher */}
+        {zipTracks.length > 0 && (
+          <div className="relative z-10 mb-3 max-h-36 overflow-y-auto rounded-xl bg-slate-950/60 border border-white/10 divide-y divide-white/10">
+            {zipTracks.map((trk, idx) => (
+              <button
+                key={`${trk.name}-${idx}`}
+                type="button"
+                onClick={() => setActiveZipIndex(idx)}
+                className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                  idx === activeZipIndex
+                    ? 'bg-emerald-500/20 text-emerald-300 font-bold'
+                    : 'text-slate-300 hover:bg-white/5'
+                }`}
+              >
+                <span className="truncate">{trk.name}</span>
+                {idx === activeZipIndex && <Play className="w-3 h-3 fill-current shrink-0" />}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Bottom Actions: Unduh MP3 */}
         <div className="relative z-10 pt-2 border-t border-white/10">
@@ -245,7 +385,7 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
               className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform duration-150 cursor-pointer"
             >
               <Download className="w-4 h-4 stroke-[2.5]" />
-              <span>Unduh Berkas MP3</span>
+              <span>{item.extension === 'zip' ? 'Unduh Arsip ZIP' : 'Unduh Berkas MP3'}</span>
             </button>
           )}
         </div>

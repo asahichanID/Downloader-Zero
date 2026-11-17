@@ -18,11 +18,13 @@ import {
 import type { PlatformType } from '../types/index.ts';
 
 export const TARGET_WEB_DOMAIN = 'https://downloader-zero.vercel.app/';
+const FIREBASE_PROJECT_ID = 'viewing-and-download';
+const FIRESTORE_REST_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  apiKey: (typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_FIREBASE_API_KEY : '') || '',
   authDomain: 'viewing-and-download.firebaseapp.com',
-  projectId: 'viewing-and-download',
+  projectId: FIREBASE_PROJECT_ID,
   storageBucket: 'viewing-and-download.firebasestorage.app',
   messagingSenderId: '277373651997',
   appId: '1:277373651997:web:50df7db704fa3821ed8af4',
@@ -48,14 +50,14 @@ if (typeof window !== 'undefined' && app && firebaseConfig.measurementId) {
     .catch(() => {});
 }
 
-// Validate Firestore connection on boot
+// Validate Firestore connection on boot when SDK is active
 async function testConnection() {
   if (typeof window === 'undefined' || !db) return;
   try {
     await getDocFromServer(doc(db, 'site_stats', 'downloader_zero'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('[Firebase] Client is offline — check Firebase configuration.');
+      console.warn('[Firebase] Client is offline — using Firestore REST fallback.');
     }
   }
 }
@@ -77,6 +79,10 @@ const VIEW_COUNTED_STORAGE_KEY = 'dz_web_view_counted_v1';
 const VISITOR_ID_STORAGE_KEY = 'dz_web_visitor_id_v1';
 const VIEW_COOKIE_NAME = 'dz_vw_v1';
 
+// In-memory cache prevents temporary 0 flicker across tab switches
+let cachedSiteViews: number | null = null;
+let cachedDownloadActivities: DownloadActivityRecord[] | null = null;
+
 function readCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
   try {
@@ -96,7 +102,6 @@ function writeCookie(name: string, value: string) {
 }
 
 function hashStringHex(input: string): string {
-  // Dual 32-bit FNV-1a hash -> 16-char deterministic hex string
   let h1 = 0x811c9dc5;
   let h2 = 0x9e3779b9;
   for (let i = 0; i < input.length; i++) {
@@ -126,6 +131,15 @@ function getCanvasSignature(): string {
   } catch {
     return 'no-canvas';
   }
+}
+
+function generateFirestoreId(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let out = '';
+  for (let i = 0; i < 20; i++) {
+    out += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return out;
 }
 
 /**
@@ -163,10 +177,6 @@ export function getStableVisitorId(): string {
   return visitorId;
 }
 
-/**
- * Checks whether the current runtime is genuinely the DownloaderZero web app
- * opened by a real user browser (never triggers on bots or non-downloader origins).
- */
 function isDownloaderWebContext(): boolean {
   if (typeof window === 'undefined' || typeof document === 'undefined') return false;
   if (navigator.webdriver) return false;
@@ -188,14 +198,186 @@ function isDownloaderWebContext(): boolean {
   return isOfficialOrPreviewHost && hasDownloaderMarker;
 }
 
+// ---------- Firestore v1 REST API Helpers ----------
+
+function decodeFirestoreInt(field: any): number {
+  if (!field) return 0;
+  const raw = field.integerValue ?? field.doubleValue ?? 0;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function decodeFirestoreString(field: any, fallback = ''): string {
+  if (!field) return fallback;
+  return typeof field.stringValue === 'string' ? field.stringValue : fallback;
+}
+
+function decodeFirestoreTimestampMs(field: any, createTimeIso?: string): number {
+  const iso = field?.timestampValue || createTimeIso || '';
+  if (iso) {
+    const parsed = Date.parse(iso);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return Date.now();
+}
+
+async function fetchSiteViewsRest(): Promise<number> {
+  const res = await fetch(`${FIRESTORE_REST_BASE}/site_stats/downloader_zero`, {
+    cache: 'no-store'
+  });
+  if (res.status === 404) return 0;
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return decodeFirestoreInt(data?.fields?.totalViews);
+}
+
+async function fetchDownloadActivitiesRest(maxItems = 500): Promise<DownloadActivityRecord[]> {
+  const res = await fetch(`${FIRESTORE_REST_BASE}:runQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: 'download_activities' }],
+        orderBy: [{ field: { fieldPath: 'createdAt' }, direction: 'DESCENDING' }],
+        limit: maxItems
+      }
+    })
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const rows = (await res.json()) as Array<{ document?: any }>;
+  if (!Array.isArray(rows)) return [];
+
+  const records: DownloadActivityRecord[] = [];
+  for (const row of rows) {
+    const docData = row?.document;
+    if (!docData || !docData.name) continue;
+    const f = docData.fields || {};
+    const id = String(docData.name).split('/').pop() || generateFirestoreId();
+    const mType = decodeFirestoreString(f.mediaType, 'video');
+    records.push({
+      id,
+      platform: decodeFirestoreString(f.platform, 'unknown'),
+      url: decodeFirestoreString(f.url, '-'),
+      resolution: decodeFirestoreString(f.resolution, '-'),
+      status: decodeFirestoreString(f.status, 'berhasil') === 'gagal' ? 'gagal' : 'berhasil',
+      mediaType:
+        mType === 'audio' || mType === 'photos' || mType === 'file' ? mType : 'video',
+      title: decodeFirestoreString(f.title, ''),
+      visitorId: decodeFirestoreString(f.visitorId, ''),
+      createdAtMs: decodeFirestoreTimestampMs(f.createdAt, docData.createTime)
+    });
+  }
+  return records;
+}
+
+async function registerWebViewRest(visitorId: string): Promise<void> {
+  // 1. Check whether visitor already recorded
+  const checkRes = await fetch(`${FIRESTORE_REST_BASE}/web_visitors/${encodeURIComponent(visitorId)}`, {
+    cache: 'no-store'
+  });
+  if (checkRes.ok) {
+    // Already counted for this browser/device
+    return;
+  }
+  if (checkRes.status !== 404) {
+    throw new Error(`Visitor check HTTP ${checkRes.status}`);
+  }
+
+  // 2. Atomically create visitor record (if not exists) and increment totalViews by 1
+  const docBase = `projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+  const commitRes = await fetch(`${FIRESTORE_REST_BASE}:commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      writes: [
+        {
+          update: {
+            name: `${docBase}/web_visitors/${visitorId}`,
+            fields: {
+              visitorId: { stringValue: visitorId },
+              domain: { stringValue: TARGET_WEB_DOMAIN }
+            }
+          },
+          updateTransforms: [
+            { fieldPath: 'createdAt', setToServerValue: 'REQUEST_TIME' }
+          ],
+          currentDocument: { exists: false }
+        },
+        {
+          transform: {
+            document: `${docBase}/site_stats/downloader_zero`,
+            fieldTransforms: [
+              { fieldPath: 'totalViews', increment: { integerValue: '1' } },
+              { fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' }
+            ]
+          }
+        }
+      ]
+    })
+  });
+
+  if (!commitRes.ok && commitRes.status !== 409) {
+    throw new Error(`Visitor commit HTTP ${commitRes.status}`);
+  }
+}
+
+async function logDownloadActivityRest(payload: {
+  platform: string;
+  url: string;
+  resolution: string;
+  status: 'berhasil' | 'gagal';
+  mediaType: 'video' | 'audio' | 'photos' | 'file';
+  title: string;
+  visitorId: string;
+}): Promise<void> {
+  const docId = generateFirestoreId();
+  const docName = `projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/download_activities/${docId}`;
+  const res = await fetch(`${FIRESTORE_REST_BASE}:commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      writes: [
+        {
+          update: {
+            name: docName,
+            fields: {
+              platform: { stringValue: payload.platform },
+              url: { stringValue: payload.url },
+              resolution: { stringValue: payload.resolution },
+              status: { stringValue: payload.status },
+              mediaType: { stringValue: payload.mediaType },
+              title: { stringValue: payload.title },
+              visitorId: { stringValue: payload.visitorId }
+            }
+          },
+          updateTransforms: [
+            { fieldPath: 'createdAt', setToServerValue: 'REQUEST_TIME' }
+          ],
+          currentDocument: { exists: false }
+        }
+      ]
+    })
+  });
+  if (!res.ok) {
+    throw new Error(`Activity commit HTTP ${res.status}`);
+  }
+}
+
+// ---------- Public Firebase / Firestore API ----------
+
 let viewRegistrationInFlight = false;
 
 /**
  * Records exactly 1 view per browser/device for https://downloader-zero.vercel.app/
- * without authentication. Safe against page reloads, multi-tab spam, and localStorage resets.
+ * permanently in Firestore. Works both with Web SDK and REST fallback.
  */
 export async function registerWebViewOnce(): Promise<void> {
-  if (!db || !isDownloaderWebContext() || viewRegistrationInFlight) return;
+  if (!isDownloaderWebContext() || viewRegistrationInFlight) return;
 
   try {
     if (localStorage.getItem(VIEW_COUNTED_STORAGE_KEY) === '1' || readCookie(VIEW_COOKIE_NAME) === '1') {
@@ -206,42 +388,46 @@ export async function registerWebViewOnce(): Promise<void> {
   viewRegistrationInFlight = true;
   try {
     const visitorId = getStableVisitorId();
-    const visitorRef = doc(db, 'web_visitors', visitorId);
-    const statsRef = doc(db, 'site_stats', 'downloader_zero');
 
-    await runTransaction(db, async (tx) => {
-      const visitorSnap = await tx.get(visitorRef);
-      if (visitorSnap.exists()) {
-        // Already counted for this device/browser
-        return;
-      }
+    if (db) {
+      const visitorRef = doc(db, 'web_visitors', visitorId);
+      const statsRef = doc(db, 'site_stats', 'downloader_zero');
 
-      const statsSnap = await tx.get(statsRef);
-      const currentViews =
-        statsSnap.exists() && typeof statsSnap.data()?.totalViews === 'number'
-          ? statsSnap.data().totalViews
-          : 0;
+      await runTransaction(db, async (tx) => {
+        const visitorSnap = await tx.get(visitorRef);
+        if (visitorSnap.exists()) {
+          return;
+        }
 
-      if (!statsSnap.exists()) {
-        tx.set(statsRef, {
+        const statsSnap = await tx.get(statsRef);
+        const currentViews =
+          statsSnap.exists() && typeof statsSnap.data()?.totalViews === 'number'
+            ? statsSnap.data().totalViews
+            : 0;
+
+        if (!statsSnap.exists()) {
+          tx.set(statsRef, {
+            domain: TARGET_WEB_DOMAIN,
+            totalViews: 1,
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          tx.update(statsRef, {
+            domain: TARGET_WEB_DOMAIN,
+            totalViews: currentViews + 1,
+            updatedAt: serverTimestamp()
+          });
+        }
+
+        tx.set(visitorRef, {
+          visitorId,
           domain: TARGET_WEB_DOMAIN,
-          totalViews: 1,
-          updatedAt: serverTimestamp()
+          createdAt: serverTimestamp()
         });
-      } else {
-        tx.update(statsRef, {
-          domain: TARGET_WEB_DOMAIN,
-          totalViews: currentViews + 1,
-          updatedAt: serverTimestamp()
-        });
-      }
-
-      tx.set(visitorRef, {
-        visitorId,
-        domain: TARGET_WEB_DOMAIN,
-        createdAt: serverTimestamp()
       });
-    });
+    } else {
+      await registerWebViewRest(visitorId);
+    }
 
     try {
       localStorage.setItem(VIEW_COUNTED_STORAGE_KEY, '1');
@@ -255,34 +441,72 @@ export async function registerWebViewOnce(): Promise<void> {
 }
 
 /**
- * Subscribes to live total view count for https://downloader-zero.vercel.app/
+ * Subscribes to live total view count for https://downloader-zero.vercel.app/.
+ * Uses Firestore SDK when available, or live REST polling fallback if VITE_FIREBASE_API_KEY is unset.
  */
 export function subscribeSiteViews(
   onUpdate: (views: number) => void,
   onError?: (message: string) => void
 ): Unsubscribe {
-  if (!db) {
-    onUpdate(0);
-    return () => {};
+  if (cachedSiteViews !== null) {
+    onUpdate(cachedSiteViews);
   }
-  const statsRef = doc(db, 'site_stats', 'downloader_zero');
-  return onSnapshot(
-    statsRef,
-    (snap) => {
-      if (snap.exists()) {
-        const raw = snap.data()?.totalViews;
-        onUpdate(typeof raw === 'number' && !isNaN(raw) ? raw : 0);
-      } else {
-        onUpdate(0);
+
+  let disposed = false;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let unsubSdk: Unsubscribe | null = null;
+
+  const startRestPolling = () => {
+    if (disposed || pollTimer) return;
+    const load = async () => {
+      try {
+        const count = await fetchSiteViewsRest();
+        if (!disposed) {
+          cachedSiteViews = count;
+          onUpdate(count);
+        }
+      } catch (err: any) {
+        if (!disposed && cachedSiteViews === null && onError) {
+          onError(err?.message || 'Gagal memuat data kunjungan dari Firebase.');
+        }
       }
-    },
-    (err) => {
-      console.warn('[Firebase Viewing] Listener error:', err);
-      if (onError) {
-        onError(err?.message || 'Gagal memuat data kunjungan dari Firebase.');
+    };
+    void load();
+    pollTimer = setInterval(() => {
+      void load();
+    }, 12000);
+  };
+
+  if (db) {
+    const statsRef = doc(db, 'site_stats', 'downloader_zero');
+    unsubSdk = onSnapshot(
+      statsRef,
+      (snap) => {
+        if (disposed) return;
+        if (snap.exists()) {
+          const raw = snap.data()?.totalViews;
+          const val = typeof raw === 'number' && !isNaN(raw) ? raw : 0;
+          cachedSiteViews = val;
+          onUpdate(val);
+        } else {
+          cachedSiteViews = 0;
+          onUpdate(0);
+        }
+      },
+      (err) => {
+        console.warn('[Firebase Viewing] SDK listener fallback ke REST:', err);
+        startRestPolling();
       }
-    }
-  );
+    );
+  } else {
+    startRestPolling();
+  }
+
+  return () => {
+    disposed = true;
+    if (unsubSdk) unsubSdk();
+    if (pollTimer) clearInterval(pollTimer);
+  };
 }
 
 export interface LogDownloadActivityInput {
@@ -295,10 +519,10 @@ export interface LogDownloadActivityInput {
 }
 
 /**
- * Records a single download attempt into Firestore `download_activities` (no auth required).
+ * Records a single download attempt permanently into Firestore `download_activities`.
  */
 export async function logDownloadActivity(input: LogDownloadActivityInput): Promise<void> {
-  if (typeof window === 'undefined' || !db) return;
+  if (typeof window === 'undefined') return;
   try {
     const visitorId = getStableVisitorId().slice(0, 64);
     const cleanPlatform = String(input.platform || 'unknown').trim().slice(0, 30) || 'unknown';
@@ -311,68 +535,116 @@ export async function logDownloadActivity(input: LogDownloadActivityInput): Prom
         : 'video';
     const cleanTitle = String(input.title || '').trim().slice(0, 200);
 
-    await addDoc(collection(db, 'download_activities'), {
-      platform: cleanPlatform,
-      url: cleanUrl,
-      resolution: cleanResolution,
-      status: cleanStatus,
-      mediaType: cleanMediaType,
-      title: cleanTitle,
-      visitorId,
-      createdAt: serverTimestamp()
-    });
+    if (db) {
+      await addDoc(collection(db, 'download_activities'), {
+        platform: cleanPlatform,
+        url: cleanUrl,
+        resolution: cleanResolution,
+        status: cleanStatus,
+        mediaType: cleanMediaType,
+        title: cleanTitle,
+        visitorId,
+        createdAt: serverTimestamp()
+      });
+    } else {
+      await logDownloadActivityRest({
+        platform: cleanPlatform,
+        url: cleanUrl,
+        resolution: cleanResolution,
+        status: cleanStatus,
+        mediaType: cleanMediaType,
+        title: cleanTitle,
+        visitorId
+      });
+    }
   } catch (err) {
     console.warn('[Firebase Activity] Gagal mencatat aktivitas unduhan:', err);
   }
 }
 
 /**
- * Subscribes to live download activity records for AdminPanelView.
+ * Subscribes to permanent download activity records for AdminPanelView.
+ * Uses Firestore SDK when available, or live REST polling fallback if VITE_FIREBASE_API_KEY is unset.
  */
 export function subscribeDownloadActivities(
   onUpdate: (items: DownloadActivityRecord[]) => void,
   onError?: (message: string) => void,
-  maxItems = 100
+  maxItems = 500
 ): Unsubscribe {
-  if (!db) {
-    onUpdate([]);
-    return () => {};
+  if (cachedDownloadActivities !== null) {
+    onUpdate(cachedDownloadActivities);
   }
-  const q = query(
-    collection(db, 'download_activities'),
-    orderBy('createdAt', 'desc'),
-    limit(maxItems)
-  );
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const items: DownloadActivityRecord[] = snapshot.docs.map((docSnap) => {
-        const d = docSnap.data() || {};
-        const ts = d.createdAt as Timestamp | undefined;
-        const createdAtMs = ts && typeof ts.toMillis === 'function' ? ts.toMillis() : Date.now();
-        return {
-          id: docSnap.id,
-          platform: String(d.platform || 'unknown'),
-          url: String(d.url || '-'),
-          resolution: String(d.resolution || '-'),
-          status: d.status === 'gagal' ? 'gagal' : 'berhasil',
-          mediaType:
-            d.mediaType === 'audio' || d.mediaType === 'photos' || d.mediaType === 'file'
-              ? d.mediaType
-              : 'video',
-          title: String(d.title || ''),
-          visitorId: String(d.visitorId || ''),
-          createdAtMs
-        };
-      });
-      onUpdate(items);
-    },
-    (err) => {
-      console.warn('[Firebase Activity] Listener error:', err);
-      if (onError) {
-        onError(err?.message || 'Gagal memuat aktivitas unduhan dari Firebase.');
+  let disposed = false;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let unsubSdk: Unsubscribe | null = null;
+
+  const startRestPolling = () => {
+    if (disposed || pollTimer) return;
+    const load = async () => {
+      try {
+        const items = await fetchDownloadActivitiesRest(maxItems);
+        if (!disposed) {
+          cachedDownloadActivities = items;
+          onUpdate(items);
+        }
+      } catch (err: any) {
+        if (!disposed && cachedDownloadActivities === null && onError) {
+          onError(err?.message || 'Gagal memuat aktivitas unduhan dari Firebase.');
+        }
       }
-    }
-  );
+    };
+    void load();
+    pollTimer = setInterval(() => {
+      void load();
+    }, 10000);
+  };
+
+  if (db) {
+    const q = query(
+      collection(db, 'download_activities'),
+      orderBy('createdAt', 'desc'),
+      limit(maxItems)
+    );
+
+    unsubSdk = onSnapshot(
+      q,
+      (snapshot) => {
+        if (disposed) return;
+        const items: DownloadActivityRecord[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data() || {};
+          const ts = d.createdAt as Timestamp | undefined;
+          const createdAtMs = ts && typeof ts.toMillis === 'function' ? ts.toMillis() : Date.now();
+          return {
+            id: docSnap.id,
+            platform: String(d.platform || 'unknown'),
+            url: String(d.url || '-'),
+            resolution: String(d.resolution || '-'),
+            status: d.status === 'gagal' ? 'gagal' : 'berhasil',
+            mediaType:
+              d.mediaType === 'audio' || d.mediaType === 'photos' || d.mediaType === 'file'
+                ? d.mediaType
+                : 'video',
+            title: String(d.title || ''),
+            visitorId: String(d.visitorId || ''),
+            createdAtMs
+          };
+        });
+        cachedDownloadActivities = items;
+        onUpdate(items);
+      },
+      (err) => {
+        console.warn('[Firebase Activity] SDK listener fallback ke REST:', err);
+        startRestPolling();
+      }
+    );
+  } else {
+    startRestPolling();
+  }
+
+  return () => {
+    disposed = true;
+    if (unsubSdk) unsubSdk();
+    if (pollTimer) clearInterval(pollTimer);
+  };
 }

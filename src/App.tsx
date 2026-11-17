@@ -14,6 +14,7 @@ import { BottomNavbar, type TabType } from './components/BottomNavbar.tsx';
 import { FormatSelectorModal } from './components/FormatSelectorModal.tsx';
 import { FloatingVideoPlayer } from './components/FloatingVideoPlayer.tsx';
 import { FloatingSpotifyPlayer } from './components/FloatingSpotifyPlayer.tsx';
+import { FloatingPhotoViewer } from './components/FloatingPhotoViewer.tsx';
 import { SupportedPlatformsModal } from './components/SupportedPlatformsModal.tsx';
 import { HistoryFullView } from './components/HistoryFullView.tsx';
 import { SettingsFullView } from './components/SettingsFullView.tsx';
@@ -265,9 +266,13 @@ export default function App() {
     loadHistory();
     const handleUpdate = () => loadHistory();
     window.addEventListener('dz_history_updated', handleUpdate);
+    const expiryTimer = window.setInterval(() => {
+      loadHistory();
+    }, 60_000);
     return () => {
       stopAutoRefresh();
       window.removeEventListener('dz_history_updated', handleUpdate);
+      window.clearInterval(expiryTimer);
     };
   }, []);
 
@@ -969,7 +974,7 @@ export default function App() {
       setSpotifyTrackStatuses((prev) => ({ ...prev, [trackId]: 'done' }));
 
       await saveDownloadedMedia({
-        sourceUrl: media.url,
+        sourceUrl: effectiveUrl || media.url,
         platform: 'spotify',
         title: track.title || media.title,
         author: track.artist || media.author,
@@ -1714,6 +1719,15 @@ export default function App() {
       {/* MODAL 3: Floating Spotify Player (Played directly with Spotify aesthetic) */}
       {playingItem && playingItem.mediaType === 'audio' && (
         <FloatingSpotifyPlayer
+          item={playingItem}
+          onClose={handleClosePlayer}
+          onDownloadAgain={handleDownloadAgain}
+        />
+      )}
+
+      {/* MODAL 4: Floating Photo Viewer (Played directly from history photos / photo ZIP) */}
+      {playingItem && playingItem.mediaType === 'photos' && (
+        <FloatingPhotoViewer
           item={playingItem}
           onClose={handleClosePlayer}
           onDownloadAgain={handleDownloadAgain}

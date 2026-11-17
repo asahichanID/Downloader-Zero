@@ -78,14 +78,6 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = React.memo(({
         )}
       </div>
 
-      {/* Expiration Note Card */}
-      <div className="p-3 rounded-2xl bg-sky-50 dark:bg-[#091a3c] border border-sky-200 dark:border-blue-500/20 flex items-center gap-2.5 text-xs text-sky-900 dark:text-blue-200/80">
-        <Clock className="w-4 h-4 text-sky-600 dark:text-cyan-400 shrink-0" />
-        <p className="leading-snug">
-          Riwayat tersimpan di browser Anda dan otomatis kadaluarsa setelah 24 jam.
-        </p>
-      </div>
-
       {/* Search Input */}
       {items.length > 0 && (
         <div className="relative w-full">
@@ -127,11 +119,11 @@ export const HistoryFullView: React.FC<HistoryFullViewProps> = React.memo(({
           <p className="text-sm font-bold text-slate-800 dark:text-slate-300">
             {searchQuery ? 'Tidak ada hasil pencarian' : 'Belum ada riwayat'}
           </p>
-          <p className="text-xs text-slate-500 mt-1 max-w-xs">
-            {searchQuery
-              ? 'Coba gunakan kata kunci pencarian yang lain.'
-              : 'Unduhan Anda akan otomatis tersimpan di sini selama 24 jam.'}
-          </p>
+          {searchQuery && (
+            <p className="text-xs text-slate-500 mt-1 max-w-xs">
+              Coba gunakan kata kunci pencarian yang lain.
+            </p>
+          )}
         </div>
       ) : (
         <div className="space-y-2.5">

@@ -1,5 +1,5 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { X, Download, Check } from 'lucide-react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
+import { X, Download, Check, Copy } from 'lucide-react';
 import type { HistoryItem } from '../types/index.ts';
 
 interface FloatingVideoPlayerProps {
@@ -15,6 +15,38 @@ export const FloatingVideoPlayer: React.FC<FloatingVideoPlayerProps> = React.mem
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [blobUrl, setBlobUrl] = useState<string>('');
+  const [forceProxy, setForceProxy] = useState<boolean>(false);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setForceProxy(false);
+    setPlaybackError(null);
+
+    if (!item?.blob) {
+      setBlobUrl('');
+      return;
+    }
+
+    const mime = item.blob.type && item.blob.type !== 'application/octet-stream' ? item.blob.type : 'video/mp4';
+    const typedBlob = item.blob.type === mime ? item.blob : new Blob([item.blob], { type: mime });
+    const objectUrl = URL.createObjectURL(typedBlob);
+    setBlobUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [item]);
+
+  const proxyUrl = useMemo(() => {
+    if (!item) return '';
+    const target = item.downloadUrl || item.sourceUrl || '';
+    if (!target) return '';
+    const filename = item.filename || `preview.${item.extension || 'mp4'}`;
+    return `/api/proxy-download?url=${encodeURIComponent(target)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl || '')}&inline=1`;
+  }, [item]);
+
+  const activeSrc = (!forceProxy && blobUrl) ? blobUrl : proxyUrl;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -24,13 +56,19 @@ export const FloatingVideoPlayer: React.FC<FloatingVideoPlayerProps> = React.mem
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  useEffect(() => {
+    if (!videoRef.current || !activeSrc) return;
+    videoRef.current.load();
+    videoRef.current.play().catch(() => {});
+  }, [activeSrc]);
+
   if (!item) return null;
 
-  const streamUrl = item.downloadUrl || item.sourceUrl;
+  const originalUrl = (item.sourceUrl || item.downloadUrl || '').trim();
 
   const handleCopyLink = () => {
-    if (streamUrl) {
-      navigator.clipboard.writeText(streamUrl).catch(() => {});
+    if (originalUrl) {
+      navigator.clipboard?.writeText(originalUrl).catch(() => {});
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     }
@@ -50,7 +88,6 @@ export const FloatingVideoPlayer: React.FC<FloatingVideoPlayerProps> = React.mem
         {/* Header */}
         <div className="flex items-center justify-between pb-3 mb-3 border-b border-blue-900/50">
           <div className="flex items-center gap-2 min-w-0 pr-2">
-            <span className="w-2 h-2 rounded-full bg-cyan-400" />
             <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">
               {item.platform} • {item.resolution || item.quality}
             </span>
@@ -66,16 +103,27 @@ export const FloatingVideoPlayer: React.FC<FloatingVideoPlayerProps> = React.mem
         </div>
 
         {/* Video Container */}
-        <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-black border border-blue-900/40 shadow-inner">
-          <video
-            ref={videoRef}
-            src={streamUrl}
-            poster={item.thumbnail}
-            autoPlay
-            playsInline
-            controls
-            className="w-full h-full object-contain"
-          />
+        <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-black border border-blue-900/40 shadow-inner flex items-center justify-center">
+          {playbackError ? (
+            <p className="text-xs text-slate-300 px-4 text-center">{playbackError}</p>
+          ) : (
+            <video
+              ref={videoRef}
+              src={activeSrc}
+              poster={item.thumbnail}
+              autoPlay
+              playsInline
+              controls
+              onError={() => {
+                if (!forceProxy && blobUrl && proxyUrl) {
+                  setForceProxy(true);
+                } else {
+                  setPlaybackError('Video tidak dapat diputar di browser ini. Gunakan tombol Unduh Lagi.');
+                }
+              }}
+              className="w-full h-full object-contain"
+            />
+          )}
         </div>
 
         {/* Video Info & Controls */}
@@ -114,8 +162,8 @@ export const FloatingVideoPlayer: React.FC<FloatingVideoPlayerProps> = React.mem
               onClick={handleCopyLink}
               className="py-3 px-4 rounded-xl bg-[#0d224a] hover:bg-[#123068] border border-blue-500/30 text-white text-xs sm:text-sm font-semibold flex items-center gap-1.5 active:scale-95 transition-colors duration-150 cursor-pointer"
             >
-              {isCopied ? <Check className="w-4 h-4 text-emerald-400" /> : null}
-              <span>{isCopied ? 'Tersalin' : 'Salin Link'}</span>
+              {isCopied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              <span>{isCopied ? 'Tersalin' : 'Salin URL Ori'}</span>
             </button>
           </div>
         </div>

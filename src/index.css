@@ -41,9 +41,7 @@ button, a, input, select {
 }
 
 .dz-contain-row {
-  content-visibility: auto;
-  contain-intrinsic-size: 72px;
-  contain: layout style paint;
+  position: relative;
 }
 
 .dz-card {
