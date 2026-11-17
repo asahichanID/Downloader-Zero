@@ -50,9 +50,11 @@ interface BerandaResultViewProps {
   selectedSpotifyTrackId: string | null;
   spotifyPlayTrigger?: number;
   spotifyTrackStatuses?: Record<string, 'downloading' | 'done' | 'error'>;
+  photoDownloadStatuses?: Record<number, 'downloading' | 'done' | 'error'>;
   onSelectSpotifyTrack: (track: AudioTrack) => void;
   onDownloadSingleSpotifyTrack?: (track: AudioTrack) => void;
   onDownloadAllSpotifyZip?: () => void;
+  onDownloadSinglePhoto?: (photoUrl: string, slideIndex: number) => void;
   onClickDownload: () => void;
   onBackToHome: () => void;
 }
@@ -289,9 +291,11 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
   selectedSpotifyTrackId,
   spotifyPlayTrigger = 0,
   spotifyTrackStatuses = {},
+  photoDownloadStatuses = {},
   onSelectSpotifyTrack,
   onDownloadSingleSpotifyTrack,
   onDownloadAllSpotifyZip,
+  onDownloadSinglePhoto,
   onClickDownload,
   onBackToHome
 }) => {
@@ -709,35 +713,97 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
             )}
           </div>
 
-          {/* Direct Thumbnail Strip for Carousel */}
+          {/* Direct Thumbnail Strip & Single-Photo Serial Download for Multi-Photo Slides ONLY */}
           {activePhotos.length > 1 && (
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              {activePhotos.map((imgUrl, idx) => {
-                const active = idx === photoIndex;
+            <>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {activePhotos.map((imgUrl, idx) => {
+                  const active = idx === photoIndex;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setPhotoIndex(idx)}
+                      className={`relative w-14 h-14 rounded-xl overflow-hidden shrink-0 cursor-pointer transition-opacity duration-150 ${
+                        active
+                          ? 'ring-2 ring-sky-500 dark:ring-cyan-400 opacity-100 scale-[1.03]'
+                          : 'opacity-65 hover:opacity-95 ring-1 ring-slate-300 dark:ring-slate-700'
+                      }`}
+                      aria-label={`Pilih foto ${idx + 1}`}
+                    >
+                      <img
+                        src={imgUrl}
+                        alt={`Slide ${idx + 1}`}
+                        loading="lazy"
+                        decoding="async"
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
+                      <span className="absolute bottom-1 left-1 px-1 py-0.5 rounded bg-black/80 text-white text-[10px] font-mono tabular-nums font-bold leading-none">
+                        {idx + 1}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {(() => {
+                const currentPhotoUrl = activePhotos[photoIndex];
+                const singleStatus = photoDownloadStatuses[photoIndex];
                 return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setPhotoIndex(idx)}
-                    className={`relative w-14 h-14 rounded-xl overflow-hidden shrink-0 cursor-pointer transition-opacity duration-150 ${
-                      active
-                        ? 'ring-2 ring-sky-500 dark:ring-cyan-400 opacity-100 scale-[1.03]'
-                        : 'opacity-60 hover:opacity-90 ring-1 ring-slate-300 dark:ring-slate-700'
-                    }`}
-                    aria-label={`Pilih foto ${idx + 1}`}
-                  >
-                    <img
-                      src={imgUrl}
-                      alt={`Slide ${idx + 1}`}
-                      loading="lazy"
-                      decoding="async"
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover"
-                    />
-                  </button>
+                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-2xl bg-white/95 dark:bg-[#091635]/95 border border-slate-200 dark:border-blue-500/20 shadow-sm">
+                    <div className="min-w-0">
+                      <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                        Foto #{photoIndex + 1} dari {activePhotos.length}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        Simpan 1 gambar ini saja
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentPhotoUrl && singleStatus !== 'downloading') {
+                          onDownloadSinglePhoto?.(currentPhotoUrl, photoIndex);
+                        }
+                      }}
+                      disabled={!currentPhotoUrl || singleStatus === 'downloading'}
+                      aria-label={`Unduh Foto #${photoIndex + 1}`}
+                      className={`min-h-[44px] px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shrink-0 transition-colors duration-150 cursor-pointer active:scale-[0.98] disabled:opacity-60 ${
+                        singleStatus === 'done'
+                          ? 'bg-teal-700 hover:bg-teal-600 text-white'
+                          : singleStatus === 'error'
+                            ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
+                      }`}
+                    >
+                      {singleStatus === 'downloading' ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Mengunduh #{photoIndex + 1}...</span>
+                        </>
+                      ) : singleStatus === 'done' ? (
+                        <>
+                          <Check className="w-4 h-4 stroke-[2.5]" />
+                          <span>Foto #{photoIndex + 1} Terunduh</span>
+                        </>
+                      ) : singleStatus === 'error' ? (
+                        <>
+                          <AlertCircle className="w-4 h-4" />
+                          <span>Coba Foto #{photoIndex + 1}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4 stroke-[2.2]" />
+                          <span>Unduh Foto #{photoIndex + 1}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 );
-              })}
-            </div>
+              })()}
+            </>
           )}
         </div>
       )}

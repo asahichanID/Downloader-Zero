@@ -144,14 +144,14 @@ export async function extractTikTokPreview(rawUrl: string): Promise<MediaMetadat
   if (isPhotoSlide) {
     formats.push({
       id: 'tt-photos-all',
-      quality: `Koleksi Foto (${rawImages.length} Slide Gambar HD)`,
+      quality: rawImages.length > 1 ? `Koleksi Foto (${rawImages.length} Slide Gambar HD)` : 'Foto TikTok HD (Resolusi Asli)',
       resolution: 'HD Foto',
       type: 'photos',
       extension: 'jpg',
       url: rawImages[0],
       isDirect: true,
       needsResolution: false,
-      note: `${rawImages.length} foto resolusi penuh siap unduh`
+      note: rawImages.length > 1 ? `${rawImages.length} foto resolusi penuh siap unduh` : 'Foto resolusi penuh siap unduh'
     });
 
     rawImages.slice(0, 10).forEach((imgUrl, i) => {

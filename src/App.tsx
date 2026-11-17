@@ -133,6 +133,7 @@ export default function App() {
   const [selectedSpotifyTrackId, setSelectedSpotifyTrackId] = useState<string | null>(() => initialSnap?.selectedSpotifyTrackId ?? null);
   const [spotifyPlayTrigger, setSpotifyPlayTrigger] = useState<number>(0);
   const [spotifyTrackStatuses, setSpotifyTrackStatuses] = useState<Record<string, 'downloading' | 'done' | 'error'>>({});
+  const [photoDownloadStatuses, setPhotoDownloadStatuses] = useState<Record<number, 'downloading' | 'done' | 'error'>>({});
 
   // Extracted media metadata
   const [mediaData, setMediaData] = useState<MediaMetadata | null>(() => initialSnap?.mediaData || null);
@@ -537,6 +538,7 @@ export default function App() {
       setSpotifyPlayTrigger(0);
       setSpotifyTrackStatuses({});
     }
+    setPhotoDownloadStatuses({});
     setPreparedDownload({
       media: meta,
       format: fmt,
@@ -1010,6 +1012,76 @@ export default function App() {
     }
   };
 
+  // Download 1 individual slide photo by serial number (does NOT wrap in ZIP)
+  const handleDownloadSingleSlidePhoto = async (photoUrl: string, slideIndex: number) => {
+    if (!preparedDownload || !photoUrl || !photoUrl.startsWith('http')) return;
+    const { media } = preparedDownload;
+    const slideNumber = slideIndex + 1;
+
+    setPhotoDownloadStatuses((prev) => ({ ...prev, [slideIndex]: 'downloading' }));
+    setErrorMessage(null);
+
+    try {
+      const extMatch = photoUrl.match(/\.(png|jpg|jpeg)(?:[?#]|$)/i);
+      const rawExt = extMatch ? extMatch[1].toLowerCase() : 'jpg';
+      const ext: 'jpg' | 'png' = rawExt === 'png' ? 'png' : 'jpg';
+
+      const sanitizedTitle = (media.title || 'Media_Foto').slice(0, 35).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const serialTag = String(slideNumber).padStart(2, '0');
+      const filename = `DownloaderZero_${sanitizedTitle}_foto_${serialTag}.${ext}`;
+      const downloadHref = buildProxyHref(photoUrl, filename, media, false);
+
+      const res = await fetch(downloadHref);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(errText || `Gagal mengunduh Foto #${slideNumber} (HTTP ${res.status}).`);
+      }
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      if (ct.includes('text/html') || ct.includes('application/json')) {
+        throw new Error(`Respon server tidak valid untuk Foto #${slideNumber}.`);
+      }
+
+      const imgBlob = await res.blob();
+      if (imgBlob.size < 500) {
+        throw new Error(`Berkas Foto #${slideNumber} tidak valid atau terlalu kecil.`);
+      }
+
+      triggerBlobDownload(imgBlob, filename);
+      setPhotoDownloadStatuses((prev) => ({ ...prev, [slideIndex]: 'done' }));
+
+      await saveDownloadedMedia({
+        sourceUrl: media.url,
+        platform: media.platform,
+        title: `${media.title || 'Foto Slide'} (Foto #${slideNumber})`,
+        author: media.author || media.platform,
+        thumbnail: photoUrl || media.thumbnail || '',
+        quality: `Foto #${slideNumber} HD`,
+        resolution: `Foto #${slideNumber}`,
+        mediaType: 'photos',
+        extension: ext,
+        filename,
+        filesize: formatBytes(imgBlob.size),
+        filesizeBytes: imgBlob.size,
+        downloadUrl: photoUrl,
+        blob: imgBlob
+      }).catch(() => {});
+
+      await loadHistory();
+      void logDownloadActivity({
+        platform: media.platform,
+        url: media.url,
+        resolution: `Foto #${slideNumber} HD`,
+        status: 'berhasil',
+        mediaType: 'photos',
+        title: `${media.title || 'Foto Slide'} #${slideNumber}`
+      });
+    } catch (err: any) {
+      console.warn('[Photo Slide] Single photo download error:', err);
+      setPhotoDownloadStatuses((prev) => ({ ...prev, [slideIndex]: 'error' }));
+      setErrorMessage(err?.message || `Gagal mengunduh Foto #${slideNumber}.`);
+    }
+  };
+
   // Download ALL tracks in Spotify playlist into 1 ZIP archive using max 10 concurrent queue
   const handleDownloadAllSpotifyZip = async () => {
     if (berandaStage !== 'preview' || !preparedDownload) return;
@@ -1282,11 +1354,21 @@ export default function App() {
           setDownloadStatusText(`Mengunduh foto ${i + 1} dari ${total}...`);
           setDownloadProgress(10 + Math.round(((i + 1) / total) * 70));
           const imgUrl = media.images[i];
-          const res = await fetch(`/api/proxy-download?url=${encodeURIComponent(imgUrl)}&filename=photo_${i + 1}.jpg&platform=${encodeURIComponent(media.platform)}`);
+          const isPng = /\.(png)(?:[?#]|$)/i.test(imgUrl);
+          const photoExt = isPng ? 'png' : 'jpg';
+          const photoEntryName = `${sanitizedTitle}_foto_${String(i + 1).padStart(2, '0')}.${photoExt}`;
+          const res = await fetch(
+            `/api/proxy-download?url=${encodeURIComponent(imgUrl)}&filename=${encodeURIComponent(photoEntryName)}&platform=${encodeURIComponent(media.platform)}&sourceUrl=${encodeURIComponent(media.url)}`
+          );
           if (res.ok) {
-            const imgBlob = await res.blob();
-            folder.file(`${sanitizedTitle}_foto_${String(i + 1).padStart(2, '0')}.jpg`, imgBlob);
-            downloadedPhotoCount++;
+            const ct = (res.headers.get('content-type') || '').toLowerCase();
+            if (!ct.includes('text/html') && !ct.includes('application/json')) {
+              const imgBlob = await res.blob();
+              if (imgBlob.size >= 500) {
+                folder.file(photoEntryName, imgBlob);
+                downloadedPhotoCount++;
+              }
+            }
           }
         }
         if (downloadedPhotoCount === 0) {
@@ -1355,12 +1437,21 @@ export default function App() {
           selectedTrack.url?.startsWith('http') && !selectedTrack.url.includes('mp3-preview')
             ? selectedTrack.url
             : `https://open.spotify.com/track/${trackId || selectedTrack.id}`;
+      } else if (targetFormat.type === 'photos') {
+        const singlePhotoUrl = (media.images && media.images[0]) || resolvedUrl;
+        if (singlePhotoUrl && singlePhotoUrl.startsWith('http')) {
+          effectiveUrl = singlePhotoUrl;
+        }
       }
 
-      const ext = targetFormat.extension || (targetFormat.type === 'audio' ? 'mp3' : 'mp4');
+      const rawExt = targetFormat.extension || (targetFormat.type === 'audio' ? 'mp3' : targetFormat.type === 'photos' ? 'jpg' : 'mp4');
+      const ext =
+        targetFormat.type === 'photos' && rawExt === 'zip'
+          ? (/\.(png)(?:[?#]|$)/i.test(effectiveUrl) ? 'png' : 'jpg')
+          : rawExt;
       const sanitizedTitle = effectiveTitle.slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const rawResTag = targetFormat.resolution || targetFormat.quality.split(' ')[0] || (targetFormat.type === 'audio' ? 'Audio' : '1080p');
-      const resTag = rawResTag.replace(/\s+/g, '');
+      const rawResTag = targetFormat.resolution || targetFormat.quality.split(' ')[0] || (targetFormat.type === 'audio' ? 'Audio' : targetFormat.type === 'photos' ? 'HD_Foto' : '1080p');
+      const resTag = rawResTag.replace(/\s+/g, '_');
       const filename = `DownloaderZero_${sanitizedTitle}_${resTag}.${ext}`;
 
       const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, selectedTrack, targetFormat);
@@ -1593,9 +1684,11 @@ export default function App() {
                 selectedSpotifyTrackId={selectedSpotifyTrackId}
                 spotifyPlayTrigger={spotifyPlayTrigger}
                 spotifyTrackStatuses={spotifyTrackStatuses}
+                photoDownloadStatuses={photoDownloadStatuses}
                 onSelectSpotifyTrack={handleSelectSpotifyTrack}
                 onDownloadSingleSpotifyTrack={handleDownloadSingleSpotifyTrack}
                 onDownloadAllSpotifyZip={handleDownloadAllSpotifyZip}
+                onDownloadSinglePhoto={handleDownloadSingleSlidePhoto}
                 onClickDownload={handleExecuteActualDownload}
                 onBackToHome={handleBackFromPreview}
               />

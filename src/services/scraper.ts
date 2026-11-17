@@ -1829,13 +1829,13 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
     if (isPhotoSlide) {
       formats.push({
         id: 'nx-tt-photos-all',
-        quality: `Koleksi Foto (${images.length} Slide Gambar HD)`,
+        quality: images.length > 1 ? `Koleksi Foto (${images.length} Slide Gambar HD)` : 'Foto TikTok HD (Resolusi Asli)',
         resolution: 'HD Foto',
         type: 'photos',
         extension: 'jpg',
         url: images[0],
         isDirect: true,
-        note: `${images.length} foto resolusi penuh siap unduh`
+        note: images.length > 1 ? `${images.length} foto resolusi penuh siap unduh` : 'Foto resolusi penuh siap unduh'
       });
       if (!thumbnail && images.length > 0) {
         thumbnail = images[0];
