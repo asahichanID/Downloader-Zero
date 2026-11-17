@@ -56,6 +56,30 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
   const isSpotify = media.platform === 'spotify';
   const isTerabox = media.platform === 'terabox';
   const isTwitter = media.platform === 'twitter';
+  const isYouTubeServer2 =
+    media.platform === 'youtube' &&
+    videoFormats.length > 0 &&
+    (Boolean(media.source?.includes('Server 2')) || videoFormats.some((f) => f.id.startsWith('yt-s2-')));
+
+  const isSameResolution = (a: string, b: string): boolean => {
+    const na = a.toLowerCase().trim();
+    const nb = b.toLowerCase().trim();
+    if (na === nb) return true;
+    const isA4k = na === '4k' || na.includes('2160');
+    const isB4k = nb === '4k' || nb.includes('2160');
+    if (isA4k && isB4k) return true;
+    const isA2k = na === '2k' || na.includes('1440');
+    const isB2k = nb === '2k' || nb.includes('1440');
+    if (isA2k && isB2k) return true;
+    return na.replace(/p$/i, '') === nb.replace(/p$/i, '');
+  };
+
+  const activeYoutubeRes = isYouTubeServer2
+    ? (videoFormats.find((vf) => isSameResolution(vf.resolution || '', selectedVideoRes))?.resolution ||
+       videoFormats.find((vf) => isSameResolution(vf.resolution || '', '1080p'))?.resolution ||
+       videoFormats[0]?.resolution ||
+       '1080p')
+    : selectedVideoRes;
 
   // Determine current active format to download
   const handleStartDownload = () => {
@@ -94,6 +118,16 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
         videoFormats[0];
       if (exactTwitterFormat) {
         onConfirmDownload(exactTwitterFormat);
+      }
+      return;
+    }
+
+    if (isYouTubeServer2 && effectiveType === 'video') {
+      const exactYtFormat =
+        videoFormats.find((f) => isSameResolution(f.resolution || '', activeYoutubeRes)) ||
+        videoFormats[0];
+      if (exactYtFormat) {
+        onConfirmDownload(exactYtFormat);
       }
       return;
     }
@@ -331,7 +365,11 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
             ) : effectiveType === 'video' ? (
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 block">
-                  {isTwitter ? 'Resolusi Asli Tersedia (Server 2)' : 'Pilih Resolusi Video'}
+                  {isTwitter
+                    ? 'Resolusi Asli Tersedia (Server 2)'
+                    : isYouTubeServer2
+                      ? 'Resolusi Tersedia (YouTube Server 2)'
+                      : 'Pilih Resolusi Video'}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {isTwitter
@@ -374,6 +412,46 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                           </button>
                         );
                       })
+                    : isYouTubeServer2
+                      ? videoFormats.map((fmt) => {
+                          const resLabel = fmt.resolution || 'HD';
+                          const isSelected = isSameResolution(resLabel, activeYoutubeRes);
+                          const badgeText =
+                            resLabel === '4K' ? 'Ultra 4K (2160p)'
+                              : resLabel === '2K' ? '2K QHD (1440p)'
+                              : resLabel === '1080p' ? 'Full HD · Populer'
+                              : resLabel === '720p' ? 'HD · Cepat'
+                              : resLabel === '480p' ? 'SD · Hemat Data'
+                              : resLabel === '360p' ? 'Ringan'
+                              : resLabel === '240p' ? 'Mobile Ringan'
+                              : (fmt.quality || 'MP4 Video');
+                          return (
+                            <button
+                              key={fmt.id}
+                              type="button"
+                              onClick={() => onSelectVideoRes(resLabel)}
+                              className={`p-3 rounded-2xl border text-left transition-colors duration-150 active:scale-[0.98] cursor-pointer relative ${
+                                isSelected
+                                  ? 'bg-sky-50 dark:bg-[#102450] border-sky-500 dark:border-cyan-400 ring-1 ring-sky-500/40 dark:ring-cyan-400/50 shadow-md shadow-sky-500/15 dark:shadow-cyan-500/20'
+                                  : 'bg-slate-50 dark:bg-[#0c1a3a]/70 border-slate-200 dark:border-blue-900/60 hover:border-sky-400 dark:hover:border-blue-600/60 hover:bg-slate-100 dark:hover:bg-[#0c1e42]'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                                  {resLabel}
+                                </span>
+                                {isSelected && (
+                                  <div className="w-4 h-4 rounded-full bg-sky-600 dark:bg-cyan-400 text-white dark:text-black flex items-center justify-center">
+                                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                  </div>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-slate-500 dark:text-blue-200/70 block mt-1 truncate">
+                                {badgeText}
+                              </span>
+                            </button>
+                          );
+                        })
                     : videoPresets.map((preset) => {
                         const isSelected = selectedVideoRes === preset.resolution;
                         return (

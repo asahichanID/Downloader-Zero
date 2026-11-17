@@ -20,7 +20,7 @@ import type { PlatformType } from '../types/index.ts';
 export const TARGET_WEB_DOMAIN = 'https://downloader-zero.vercel.app/';
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyASK_SZZdv8Pr2mzP5q6mgZL8ih8B3-e6s',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
   authDomain: 'viewing-and-download.firebaseapp.com',
   projectId: 'viewing-and-download',
   storageBucket: 'viewing-and-download.firebasestorage.app',
@@ -29,11 +29,16 @@ const firebaseConfig = {
   measurementId: 'G-3NQEGCD6HN'
 };
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+
+const app = isFirebaseConfigured
+  ? (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig))
+  : null;
+
+export const db = app ? getFirestore(app) : null;
 
 // Initialize Analytics safely in browser environments only
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && app && firebaseConfig.measurementId) {
   isAnalyticsSupported()
     .then((supported) => {
       if (supported) {
@@ -45,7 +50,7 @@ if (typeof window !== 'undefined') {
 
 // Validate Firestore connection on boot
 async function testConnection() {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || !db) return;
   try {
     await getDocFromServer(doc(db, 'site_stats', 'downloader_zero'));
   } catch (error) {
@@ -190,7 +195,7 @@ let viewRegistrationInFlight = false;
  * without authentication. Safe against page reloads, multi-tab spam, and localStorage resets.
  */
 export async function registerWebViewOnce(): Promise<void> {
-  if (!isDownloaderWebContext() || viewRegistrationInFlight) return;
+  if (!db || !isDownloaderWebContext() || viewRegistrationInFlight) return;
 
   try {
     if (localStorage.getItem(VIEW_COUNTED_STORAGE_KEY) === '1' || readCookie(VIEW_COOKIE_NAME) === '1') {
@@ -256,6 +261,10 @@ export function subscribeSiteViews(
   onUpdate: (views: number) => void,
   onError?: (message: string) => void
 ): Unsubscribe {
+  if (!db) {
+    onUpdate(0);
+    return () => {};
+  }
   const statsRef = doc(db, 'site_stats', 'downloader_zero');
   return onSnapshot(
     statsRef,
@@ -289,7 +298,7 @@ export interface LogDownloadActivityInput {
  * Records a single download attempt into Firestore `download_activities` (no auth required).
  */
 export async function logDownloadActivity(input: LogDownloadActivityInput): Promise<void> {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || !db) return;
   try {
     const visitorId = getStableVisitorId().slice(0, 64);
     const cleanPlatform = String(input.platform || 'unknown').trim().slice(0, 30) || 'unknown';
@@ -325,6 +334,10 @@ export function subscribeDownloadActivities(
   onError?: (message: string) => void,
   maxItems = 100
 ): Unsubscribe {
+  if (!db) {
+    onUpdate([]);
+    return () => {};
+  }
   const q = query(
     collection(db, 'download_activities'),
     orderBy('createdAt', 'desc'),

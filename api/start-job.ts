@@ -1,4 +1,4 @@
-import { detectPlatform, resolveTikTokDownload } from './_utils/scraper.ts';
+import { detectPlatform, resolveTikTokDownload, resolveYouTubeServer2 } from './_utils/scraper.ts';
 
 function normalizeLoaderFormat(raw: string | undefined): string {
   if (!raw) return '1080';
@@ -9,6 +9,8 @@ function normalizeLoaderFormat(raw: string | undefined): string {
   if (f === '720' || f === '720p' || f.includes('720')) return '720';
   if (f === '480' || f === '480p' || f.includes('480')) return '480';
   if (f === '360' || f === '360p' || f.includes('360')) return '360';
+  if (f === '240' || f === '240p' || f.includes('240')) return '240';
+  if (f === '144' || f === '144p' || f.includes('144')) return '144';
   if (f === 'mp3' || f === 'audio' || f.includes('mp3') || f.includes('audio')) return 'mp3';
   return f.replace(/p$/i, '');
 }
@@ -127,34 +129,21 @@ export default async function handler(req: any, res: any) {
       throw new Error(lastMsg ? `Server 1 tidak menghasilkan unduhan (${lastMsg}).` : 'Server 1 tidak menghasilkan unduhan.');
     };
 
-    // Server 2 handler (Alternative / loader engine)
+    // Server 2 handler (SaveTube VIP Multi-CDN YouTube Engine)
     const tryServer2 = async () => {
-      const loaderRes = await fetch(`https://loader.to/ajax/download.php?button=1&start=1&format=${encodeURIComponent(normalizedFormat)}&url=${encodeURIComponent(url)}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
-        signal: AbortSignal.timeout(10000)
-      });
-      if (loaderRes.ok) {
-        const loaderJson = await loaderRes.json();
-        if (loaderJson && (loaderJson.id || loaderJson.download_url)) {
-          return {
-            success: true,
-            id: loaderJson.id || null,
-            downloadUrl: loaderJson.download_url || undefined,
-            format: normalizedFormat,
-            text: loaderJson.text || 'Memulai konversi Server 2...'
-          };
-        }
-      } else {
-        let errDetail = `HTTP ${loaderRes.status}`;
-        try {
-          const errJson = await loaderRes.json();
-          if (errJson?.error_code) errDetail = errJson.error_code;
-        } catch {}
-        throw new Error(`Server 2 tidak dapat memulai proses konversi (${errDetail}).`);
-      }
-      throw new Error('Server 2 tidak dapat memulai proses konversi.');
+      const resolved = await resolveYouTubeServer2(
+        url,
+        formatId || '',
+        resolution || format || '1080p',
+        type || (normalizedFormat === 'mp3' ? 'audio' : 'video')
+      );
+      return {
+        success: true,
+        id: null,
+        downloadUrl: resolved.downloadUrl,
+        format: normalizedFormat,
+        text: `Siap diunduh (${resolved.quality || normalizedFormat} via Server 2)!`
+      };
     };
 
     if (serverMode === 'server1') {

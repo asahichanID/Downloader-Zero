@@ -1,5 +1,78 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { spawn } from 'child_process';
 import NodeID3 from 'node-id3';
-import { extractMedia } from './_utils/scraper.ts';
+import { extractMedia, detectPlatform, resolveYouTubeServer2, resolveSpotifyFullAudioServer2 } from './_utils/scraper.ts';
+
+const ALLOWED_MP3_BITRATES = new Set(['320k', '256k', '192k', '128k', '64k']);
+function normalizeTargetBitrate(raw: unknown, fallback = '320k'): string {
+  const cleaned = String(raw || fallback).toLowerCase().trim();
+  const withSuffix = /^\d+$/.test(cleaned) ? `${cleaned}k` : cleaned;
+  return ALLOWED_MP3_BITRATES.has(withSuffix) ? withSuffix : fallback;
+}
+
+async function ensureMp3TargetBitrateIfAvailable(inputBuffer: Buffer, targetBitrate: string): Promise<Buffer> {
+  const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const tmpInPath = path.join(os.tmpdir(), `dz_api_in_${uid}.media`);
+  const tmpOutPath = path.join(os.tmpdir(), `dz_api_out_${uid}.mp3`);
+  const targetBps = parseInt(targetBitrate, 10) * 1000;
+
+  try {
+    fs.writeFileSync(tmpInPath, inputBuffer);
+
+    const probeResult = await new Promise<{ codec?: string; bitRate?: number } | null>((resolve) => {
+      const fp = spawn(
+        'ffprobe',
+        ['-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', tmpInPath],
+        { stdio: ['ignore', 'pipe', 'ignore'] }
+      );
+      const chunks: Buffer[] = [];
+      fp.stdout.on('data', (c: Buffer) => chunks.push(c));
+      fp.on('error', () => resolve(null));
+      fp.on('close', (code) => {
+        if (code !== 0) return resolve(null);
+        try {
+          const info = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          const aud = Array.isArray(info?.streams) ? info.streams.find((s: any) => s?.codec_type === 'audio') : null;
+          const br = Number(aud?.bit_rate || info?.format?.bit_rate || 0);
+          resolve({ codec: aud?.codec_name, bitRate: isNaN(br) ? 0 : br });
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+
+    if (probeResult?.codec === 'mp3' && probeResult.bitRate && Math.abs(probeResult.bitRate - targetBps) <= 16000) {
+      return inputBuffer;
+    }
+
+    const bufsize = targetBps >= 256000 ? '640k' : '384k';
+    const encoded = await new Promise<Buffer>((resolve, reject) => {
+      const ff = spawn(
+        'ffmpeg',
+        [
+          '-y', '-i', tmpInPath, '-vn',
+          '-c:a', 'libmp3lame', '-b:a', targetBitrate, '-minrate', targetBitrate, '-maxrate', targetBitrate,
+          '-bufsize', bufsize, '-compression_level', '7', '-ar', '44100', '-ac', '2', '-f', 'mp3', tmpOutPath
+        ],
+        { stdio: ['ignore', 'ignore', 'ignore'] }
+      );
+      ff.on('error', (err) => reject(err));
+      ff.on('close', (code) => {
+        if (code === 0 && fs.existsSync(tmpOutPath)) resolve(fs.readFileSync(tmpOutPath));
+        else reject(new Error(`ffmpeg exited ${code}`));
+      });
+    });
+
+    return encoded.length > 0 ? encoded : inputBuffer;
+  } catch {
+    return inputBuffer;
+  } finally {
+    try { if (fs.existsSync(tmpInPath)) fs.unlinkSync(tmpInPath); } catch {}
+    try { if (fs.existsSync(tmpOutPath)) fs.unlinkSync(tmpOutPath); } catch {}
+  }
+}
 
 // In-memory process cache for Spotify MP3 files (automatically purged 15 seconds after completion)
 const spotifyProcessCache = new Map<string, { buffer: Buffer; timestamp: number }>();
@@ -24,7 +97,7 @@ export default async function handler(req: any, res: any) {
     const urlParamIdx = rawReqUrl.indexOf('url=');
     if (urlParamIdx !== -1) {
       let extracted = rawReqUrl.slice(urlParamIdx + 4);
-      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate)=/);
+      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate|duration)=/);
       if (nextParamMatch && nextParamMatch.index !== undefined) {
         extracted = extracted.slice(0, nextParamMatch.index);
       }
@@ -90,51 +163,105 @@ export default async function handler(req: any, res: any) {
       targetUrl.includes('spotify.link') ||
       (!platform && sanitizedFilename.endsWith('.mp3') && (Boolean(query.title || req.query?.title) || Boolean(query.artist || req.query?.artist)));
 
-    // Handle Spotify with Neo audio download + embedded ID3 metadata & cover art
+    // Handle Spotify full-song audio download + embedded ID3 metadata & cover art
     if (isSpotify) {
       let directAudioUrl = targetUrl;
       const neoxrKey = ((query.apiKey as string) || (req.query?.apiKey as string) || process.env.NEOXR_API_KEY || 'j3i3mg').trim();
+      const reqServerMode = ((query.server as string) || (req.query?.server as string) || 'auto').toLowerCase();
+      let metaTitle = ((query.title || req.query?.title || '') as string);
+      let metaArtist = ((query.artist || req.query?.artist || '') as string);
+      let metaAlbum = ((query.album || req.query?.album || '') as string);
+      let metaCover = ((query.cover || req.query?.cover || '') as string);
+      let metaYear = ((query.year || req.query?.year || '') as string);
+      const metaDuration = Number(query.duration || req.query?.duration || 0) || 0;
 
-      // If targetUrl is still a Spotify web URL, resolve to Neo full MP3 URL
-      if (directAudioUrl.includes('spotify.com') || directAudioUrl.includes('spotify.link')) {
-        try {
-          const neoRes = await fetch(
-            `https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(directAudioUrl)}&apikey=${encodeURIComponent(neoxrKey)}`,
-            {
-              headers: { 'User-Agent': 'Mozilla/5.0' },
-              signal: AbortSignal.timeout(14000)
+      // If targetUrl is a Spotify web URL or accidentally points to a 30s mp3-preview, resolve to FULL song MP3
+      if (directAudioUrl.includes('spotify.com') || directAudioUrl.includes('spotify.link') || directAudioUrl.includes('mp3-preview')) {
+        let resolvedOk = false;
+
+        if (reqServerMode !== 'server2') {
+          try {
+            const neoRes = await fetch(
+              `https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(directAudioUrl)}&apikey=${encodeURIComponent(neoxrKey)}`,
+              {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                signal: AbortSignal.timeout(12000)
+              }
+            );
+            if (neoRes.ok) {
+              const neoJson = await neoRes.json();
+              const fullSongUrl = neoJson.data?.url || neoJson.data?.download || neoJson.data?.link;
+              if (fullSongUrl && typeof fullSongUrl === 'string' && fullSongUrl.startsWith('http') && !fullSongUrl.includes('mp3-preview')) {
+                directAudioUrl = fullSongUrl;
+                resolvedOk = true;
+              }
             }
-          );
-          if (neoRes.ok) {
-            const neoJson = await neoRes.json();
-            const fullSongUrl = neoJson.data?.url || neoJson.data?.download || neoJson.data?.link;
-            if (fullSongUrl && typeof fullSongUrl === 'string' && fullSongUrl.startsWith('http') && !fullSongUrl.includes('mp3-preview')) {
-              directAudioUrl = fullSongUrl;
-            }
+          } catch (e) {
+            console.warn('[Spotify Download] Server 1 resolve notice:', e);
           }
-        } catch (e) {
-          console.warn('[Spotify Download] Neo direct resolve notice:', e);
+        }
+
+        if (!resolvedOk && reqServerMode !== 'server1') {
+          try {
+            const s2 = await resolveSpotifyFullAudioServer2(directAudioUrl, {
+              title: metaTitle,
+              artist: metaArtist,
+              album: metaAlbum,
+              coverUrl: metaCover,
+              duration: metaDuration
+            });
+            directAudioUrl = s2.audioUrl;
+            if (!metaTitle && s2.title) metaTitle = s2.title;
+            if (!metaArtist && s2.artist) metaArtist = s2.artist;
+            if (!metaAlbum && s2.album) metaAlbum = s2.album;
+            if (!metaCover && s2.coverUrl) metaCover = s2.coverUrl;
+            if (!metaYear && s2.releaseDate) metaYear = s2.releaseDate;
+            resolvedOk = true;
+          } catch (s2Err: any) {
+            console.warn('[Spotify Download] Server 2 resolve error:', s2Err?.message || s2Err);
+          }
+        }
+
+        if (!resolvedOk || directAudioUrl.includes('spotify.com') || directAudioUrl.includes('spotify.link')) {
+          res.status(502).send('Gagal menyelesaikan tautan lagu penuh Spotify dari server sumber.');
+          return;
         }
       }
 
-      // Fetch raw audio stream from Neo
+      // Fetch full audio stream
       const audioRes = await fetch(directAudioUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           'Accept': '*/*'
-        }
+        },
+        signal: AbortSignal.timeout(25000)
       });
 
       if (!audioRes.ok) {
-        res.status(audioRes.status || 500).send('Gagal mengunduh audio Spotify dari server sumber.');
+        res.status(audioRes.status || 502).send('Gagal mengunduh audio Spotify dari server sumber.');
+        return;
+      }
+
+      const audioCt = (audioRes.headers.get('content-type') || '').toLowerCase();
+      if (audioCt.includes('text/html')) {
+        res.status(502).send('Respon audio Spotify tidak valid (HTML bukan file MP3).');
         return;
       }
 
       const audioArrayBuffer = await audioRes.arrayBuffer();
-      const rawAudioBuffer = Buffer.from(audioArrayBuffer);
+      let rawAudioBuffer: Buffer = Buffer.from(audioArrayBuffer);
+      if (rawAudioBuffer.length < 10000) {
+        res.status(502).send('File audio Spotify terlalu kecil atau korup.');
+        return;
+      }
+
+      const targetSpotifyBitrate = normalizeTargetBitrate(query.bitrate || req.query?.bitrate, '320k');
+      if (!isInline) {
+        rawAudioBuffer = await ensureMp3TargetBitrateIfAvailable(rawAudioBuffer, targetSpotifyBitrate);
+      }
 
       // Fetch Cover Art buffer if cover URL is provided
-      const coverUrl = (query.cover || req.query?.cover) as string;
+      const coverUrl = metaCover;
       let coverBuffer: Buffer | null = null;
       let coverMime = 'image/jpeg';
       if (coverUrl && typeof coverUrl === 'string' && coverUrl.startsWith('http')) {
@@ -151,14 +278,14 @@ export default async function handler(req: any, res: any) {
 
       // Embed ID3 tags (Title, Artist, Album, Genre, Year, Cover Art)
       const tags: any = {
-        title: (query.title || req.query?.title || 'Spotify Track') as string,
-        artist: (query.artist || req.query?.artist || 'Spotify Artist') as string,
-        album: (query.album || req.query?.album || 'Spotify Music') as string,
-        genre: (query.genre || req.query?.genre || 'Pop') as string,
-        year: (((query.year || req.query?.year || new Date().getFullYear().toString()) as string)).slice(0, 4),
+        title: metaTitle || 'Spotify Track',
+        artist: metaArtist || 'Spotify Artist',
+        album: metaAlbum || 'Spotify Music',
+        genre: ((query.genre || req.query?.genre || 'Pop') as string),
+        year: (metaYear || new Date().getFullYear().toString()).slice(0, 4),
         comment: {
           language: 'eng',
-          text: 'Downloaded with DownloaderZero via Neo'
+          text: 'Downloaded with DownloaderZero'
         }
       };
 
@@ -247,7 +374,15 @@ export default async function handler(req: any, res: any) {
       platformReferer = 'https://www.facebook.com/';
     } else if (targetUrl.includes('instagram') || targetUrl.includes('cdninstagram')) {
       platformReferer = 'https://www.instagram.com/';
-    } else if (targetUrl.includes('youtube') || targetUrl.includes('googlevideo')) {
+    } else if (targetUrl.includes('savetube')) {
+      platformReferer = 'https://save-tube.com/';
+    } else if (
+      targetUrl.includes('youtube') ||
+      targetUrl.includes('googlevideo') ||
+      targetUrl.includes('yt3.ggpht.com') ||
+      targetUrl.includes('yt4.ggpht.com') ||
+      targetUrl.includes('lh3.googleusercontent.com')
+    ) {
       platformReferer = 'https://www.youtube.com/';
     } else if (targetUrl.includes('pinterest') || targetUrl.includes('pinimg')) {
       platformReferer = 'https://www.pinterest.com/';
@@ -332,23 +467,36 @@ export default async function handler(req: any, res: any) {
         const reKey = typeof query.apiKey === 'string' && query.apiKey.trim() ? query.apiKey.trim() : undefined;
         const reServer = query.server === 'server1' || query.server === 'server2' || query.server === 'auto' ? query.server : 'auto';
         const freshMedia = await extractMedia(sourceUrl, reKey, reServer);
+        let freshTargetUrl = '';
         if (freshMedia && freshMedia.formats && freshMedia.formats.length > 0) {
           const bestFormat = freshMedia.formats.find((f) => f.isDirect && f.url && f.url.startsWith('http')) || freshMedia.formats[0];
-          if (bestFormat && bestFormat.url && bestFormat.url !== targetUrl && bestFormat.url.startsWith('http')) {
-            targetUrl = bestFormat.url;
-            for (const cfg of fetchCandidateConfigs) {
-              try {
-                const reqHeaders: Record<string, string> = { ...cfg.headers };
-                if (rangeHeader) {
-                  reqHeaders['Range'] = rangeHeader;
-                }
-                const resCandidate = await fetchWithHeaderTimeout(targetUrl, reqHeaders, 15000);
-                if (resCandidate.ok && resCandidate.body) {
-                  remoteRes = resCandidate;
-                  break;
-                }
-              } catch {}
-            }
+          if (bestFormat?.url?.startsWith('http')) {
+            freshTargetUrl = bestFormat.url;
+          }
+        }
+        if (!freshTargetUrl && (platform === 'youtube' || detectPlatform(sourceUrl) === 'youtube') && reServer !== 'server1') {
+          const resolvedYt = await resolveYouTubeServer2(
+            sourceUrl,
+            '',
+            sanitizedFilename.toLowerCase().endsWith('.mp3') ? '320 kbps' : '1080p',
+            sanitizedFilename.toLowerCase().endsWith('.mp3') ? 'audio' : 'video'
+          );
+          freshTargetUrl = resolvedYt.downloadUrl;
+        }
+        if (freshTargetUrl && freshTargetUrl !== targetUrl && freshTargetUrl.startsWith('http')) {
+          targetUrl = freshTargetUrl;
+          for (const cfg of fetchCandidateConfigs) {
+            try {
+              const reqHeaders: Record<string, string> = { ...cfg.headers };
+              if (rangeHeader) {
+                reqHeaders['Range'] = rangeHeader;
+              }
+              const resCandidate = await fetchWithHeaderTimeout(targetUrl, reqHeaders, 15000);
+              if (resCandidate.ok && resCandidate.body) {
+                remoteRes = resCandidate;
+                break;
+              }
+            } catch {}
           }
         }
       } catch (reErr) {

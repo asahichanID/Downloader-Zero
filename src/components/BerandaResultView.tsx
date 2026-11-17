@@ -24,7 +24,7 @@ import {
   AlertCircle,
   Disc3
 } from 'lucide-react';
-import type { MediaMetadata, MediaFormat, TeraboxFile, AudioTrack } from '../types/index.ts';
+import type { MediaMetadata, MediaFormat, TeraboxFile, AudioTrack, ServerMode } from '../types/index.ts';
 import { formatCount } from '../services/scraper.ts';
 
 export type BerandaStage = 'idle' | 'preparing' | 'preview' | 'downloading' | 'completed';
@@ -44,10 +44,15 @@ interface BerandaResultViewProps {
   errorMessage: string | null;
   completedCountdown: number;
   completedLabel?: string;
+  serverMode?: ServerMode;
   selectedTeraboxFileIds: string[];
   onToggleTeraboxFile: (fileId: string) => void;
   selectedSpotifyTrackId: string | null;
+  spotifyPlayTrigger?: number;
+  spotifyTrackStatuses?: Record<string, 'downloading' | 'done' | 'error'>;
   onSelectSpotifyTrack: (track: AudioTrack) => void;
+  onDownloadSingleSpotifyTrack?: (track: AudioTrack) => void;
+  onDownloadAllSpotifyZip?: () => void;
   onClickDownload: () => void;
   onBackToHome: () => void;
 }
@@ -66,6 +71,9 @@ interface AudioPreviewCardProps {
   genre?: string;
   thumbnail?: string;
   fallbackDuration?: number;
+  playTrigger?: number;
+  isPreviewClip?: boolean;
+  onPlayingStateChange?: (playing: boolean) => void;
 }
 
 const AudioPreviewCard: React.FC<AudioPreviewCardProps> = React.memo(({
@@ -74,15 +82,23 @@ const AudioPreviewCard: React.FC<AudioPreviewCardProps> = React.memo(({
   author,
   genre,
   thumbnail,
-  fallbackDuration
+  fallbackDuration,
+  playTrigger = 0,
+  isPreviewClip = false,
+  onPlayingStateChange
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastTickRef = useRef<number>(0);
+  const lastTriggerRef = useRef<number>(playTrigger);
   const [isAudioPlaying, setIsAudioPlaying] = useState<boolean>(false);
   const [audioCurrentTime, setAudioCurrentTime] = useState<number>(0);
   const [audioDuration, setAudioDuration] = useState<number>(fallbackDuration || 30);
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
   const [isAudioLoading, setIsAudioLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    onPlayingStateChange?.(isAudioPlaying);
+  }, [isAudioPlaying, onPlayingStateChange]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -93,6 +109,9 @@ const AudioPreviewCard: React.FC<AudioPreviewCardProps> = React.memo(({
     setAudioCurrentTime(0);
 
     if (!audioUrl) return;
+
+    const shouldAutoPlay = playTrigger > 0 && playTrigger !== lastTriggerRef.current;
+    lastTriggerRef.current = playTrigger;
 
     const audio = new Audio();
     audio.src = audioUrl;
@@ -128,12 +147,30 @@ const AudioPreviewCard: React.FC<AudioPreviewCardProps> = React.memo(({
 
     audioRef.current = audio;
 
+    if (shouldAutoPlay) {
+      setIsAudioLoading(true);
+      audio.play().catch(() => setIsAudioLoading(false));
+    }
+
     return () => {
       audio.pause();
       audio.src = '';
       audioRef.current = null;
     };
   }, [audioUrl, fallbackDuration]);
+
+  // Toggle play/pause when user taps the currently active track row again
+  useEffect(() => {
+    if (playTrigger === 0 || playTrigger === lastTriggerRef.current) return;
+    lastTriggerRef.current = playTrigger;
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+  }, [playTrigger]);
 
   const toggleAudioPlay = () => {
     if (!audioRef.current) return;
@@ -180,7 +217,7 @@ const AudioPreviewCard: React.FC<AudioPreviewCardProps> = React.memo(({
 
           <div className="flex-1 min-w-0 space-y-1">
             <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 truncate">
-              Audio MP3 {genre ? `· ${genre}` : ''}
+              {isPreviewClip ? 'Pratinjau Audio' : 'Audio MP3'} {genre ? `· ${genre}` : ''}
             </p>
             <p className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white truncate">
               {title}
@@ -246,10 +283,15 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
   errorMessage,
   completedCountdown,
   completedLabel,
+  serverMode = 'auto',
   selectedTeraboxFileIds,
   onToggleTeraboxFile,
   selectedSpotifyTrackId,
+  spotifyPlayTrigger = 0,
+  spotifyTrackStatuses = {},
   onSelectSpotifyTrack,
+  onDownloadSingleSpotifyTrack,
+  onDownloadAllSpotifyZip,
   onClickDownload,
   onBackToHome
 }) => {
@@ -258,6 +300,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
 
   const [photoIndex, setPhotoIndex] = useState<number>(0);
   const [videoError, setVideoError] = useState<boolean>(false);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState<boolean>(false);
 
   // Active TeraBox file being previewed (defaults to first selected or first file)
   const teraboxFiles: TeraboxFile[] = media?.files && media.files.length > 0
@@ -314,7 +357,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
 
   const buildInlineProxyUrl = (rawUrl: string, filename: string, track?: AudioTrack) => {
     if (!rawUrl || !rawUrl.startsWith('http')) return '';
-    let href = `/api/proxy-download?url=${encodeURIComponent(rawUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(media?.platform || '')}&sourceUrl=${encodeURIComponent(media?.url || '')}&inline=1`;
+    let href = `/api/proxy-download?url=${encodeURIComponent(rawUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(media?.platform || '')}&sourceUrl=${encodeURIComponent(media?.url || '')}&server=${encodeURIComponent(serverMode)}&inline=1`;
     if (media?.platform === 'spotify') {
       let customKey = '';
       try {
@@ -324,7 +367,8 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
       const tArtist = track?.artist || media.author || '';
       const tAlbum = track?.album || media.album || '';
       const tCover = track?.thumbnail || media.thumbnail || '';
-      href += `&title=${encodeURIComponent(tTitle)}&artist=${encodeURIComponent(tArtist)}&album=${encodeURIComponent(tAlbum)}&cover=${encodeURIComponent(tCover)}&apiKey=${encodeURIComponent(customKey)}`;
+      const tDuration = track?.duration || media.duration || 0;
+      href += `&title=${encodeURIComponent(tTitle)}&artist=${encodeURIComponent(tArtist)}&album=${encodeURIComponent(tAlbum)}&cover=${encodeURIComponent(tCover)}&duration=${tDuration}&apiKey=${encodeURIComponent(customKey)}`;
     }
     return href;
   };
@@ -616,7 +660,10 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
           author={displayAuthor}
           genre={media.genre}
           thumbnail={displayThumbnail}
-          fallbackDuration={activeSpotifyTrack?.duration || media.duration}
+          fallbackDuration={activeSpotifyTrack?.previewUrl ? 30 : (activeSpotifyTrack?.duration || media.duration)}
+          playTrigger={isSpotify && spotifyTracks.length > 1 ? spotifyPlayTrigger : 0}
+          isPreviewClip={isSpotify && Boolean(activeSpotifyTrack?.previewUrl || media.previewUrl)}
+          onPlayingStateChange={setIsPreviewPlaying}
         />
       )}
 
@@ -872,14 +919,14 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
       )}
 
       {isSpotify && spotifyTracks.length > 1 && (
-        <section aria-label="Pilih Lagu Spotify" className="space-y-2.5">
+        <section aria-label="Daftar Lagu Spotify" className="space-y-2.5">
           <div className="flex items-end justify-between gap-2 px-0.5">
             <div>
               <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                Pilih Lagu Spotify
+                Daftar Lagu Playlist
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Pilih 1 lagu dari daftar untuk diputar dan diunduh
+                Ketuk lagu untuk memutar pratinjau • Ketuk ikon unduh untuk 1 lagu
               </p>
             </div>
             <span className="text-xs font-mono tabular-nums font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
@@ -887,52 +934,108 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
             </span>
           </div>
 
-          <div className="rounded-2xl bg-white/95 dark:bg-[#091635]/95 border border-slate-200 dark:border-blue-500/25 divide-y divide-slate-100 dark:divide-blue-900/50 overflow-hidden shadow-sm max-h-64 overflow-y-auto">
+          <div className="rounded-2xl bg-white/95 dark:bg-[#091635]/95 border border-slate-200 dark:border-blue-500/25 divide-y divide-slate-100 dark:divide-blue-900/50 overflow-hidden shadow-sm max-h-[400px] overflow-y-auto">
             {spotifyTracks.map((trk, idx) => {
               const isSelected = activeSpotifyTrack?.id === trk.id;
+              const isTrackPlaying = isSelected && isPreviewPlaying;
+              const trkStatus = spotifyTrackStatuses[trk.id];
+
               return (
-                <button
+                <div
                   key={trk.id || idx}
-                  type="button"
-                  onClick={() => onSelectSpotifyTrack(trk)}
-                  className={`w-full min-h-[60px] px-3.5 sm:px-4 py-3 text-left flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                  className={`w-full min-h-[64px] px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2.5 transition-colors ${
                     isSelected
                       ? 'bg-emerald-50/90 dark:bg-emerald-950/35'
                       : 'hover:bg-slate-50 dark:hover:bg-white/5'
                   }`}
                 >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <span className="text-xs font-mono tabular-nums font-bold text-slate-400 dark:text-slate-500 w-5 text-center shrink-0">
-                      {String(idx + 1).padStart(2, '0')}
+                  <button
+                    type="button"
+                    onClick={() => onSelectSpotifyTrack(trk)}
+                    className="flex-1 min-w-0 flex items-center gap-3 text-left cursor-pointer py-0.5"
+                    aria-label={isTrackPlaying ? `Jeda pratinjau ${trk.title}` : `Putar pratinjau ${trk.title}`}
+                  >
+                    <span className="w-6 flex items-center justify-center shrink-0 text-xs font-mono tabular-nums font-bold text-slate-400 dark:text-slate-500">
+                      {isSelected ? (
+                        isTrackPlaying ? (
+                          <Pause className="w-4 h-4 text-emerald-600 dark:text-emerald-400 fill-current" />
+                        ) : (
+                          <Play className="w-4 h-4 text-emerald-600 dark:text-emerald-400 fill-current" />
+                        )
+                      ) : (
+                        String(idx + 1).padStart(2, '0')
+                      )}
                     </span>
-                    <img
-                      src={trk.thumbnail || media.thumbnail}
-                      alt={trk.title}
-                      loading="lazy"
-                      decoding="async"
-                      referrerPolicy="no-referrer"
-                      className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-700"
-                    />
+
+                    <div className="relative w-11 h-11 rounded-xl overflow-hidden shrink-0 border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 flex items-center justify-center">
+                      {trk.thumbnail || media.thumbnail ? (
+                        <img
+                          src={trk.thumbnail || media.thumbnail}
+                          alt={trk.title}
+                          loading="lazy"
+                          decoding="async"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Music className="w-5 h-5 text-emerald-500" />
+                      )}
+                    </div>
+
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                      <p className={`text-xs sm:text-sm font-bold truncate ${
+                        isSelected ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-white'
+                      }`}>
                         {trk.title}
                       </p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                        {trk.artist} {trk.durationFormatted ? `· ${trk.durationFormatted}` : ''}
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5 flex items-center gap-1.5">
+                        <span className="truncate">{trk.artist}</span>
+                        {trk.durationFormatted && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-mono tabular-nums shrink-0">{trk.durationFormatted}</span>
+                          </>
+                        )}
+                        {isTrackPlaying && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold shrink-0">Memutar pratinjau</span>
+                          </>
+                        )}
                       </p>
                     </div>
-                  </div>
+                  </button>
 
-                  <div
-                    className={`w-6 h-6 rounded-full flex items-center justify-center border shrink-0 transition-colors ${
-                      isSelected
-                        ? 'bg-emerald-500 border-emerald-500 text-white dark:text-slate-950'
-                        : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-transparent'
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (trkStatus !== 'downloading') {
+                        onDownloadSingleSpotifyTrack?.(trk);
+                      }
+                    }}
+                    disabled={trkStatus === 'downloading'}
+                    title={`Unduh lagu penuh: ${trk.title}`}
+                    aria-label={`Unduh lagu penuh ${trk.title}`}
+                    className={`min-h-[44px] min-w-[44px] rounded-xl flex items-center justify-center border shrink-0 transition-colors cursor-pointer active:scale-95 ${
+                      trkStatus === 'done'
+                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+                        : trkStatus === 'error'
+                          ? 'bg-red-500/10 border-red-400/40 text-red-600 dark:text-red-400'
+                          : 'bg-slate-100 hover:bg-emerald-500 hover:text-white dark:bg-slate-900/90 dark:hover:bg-emerald-500 dark:hover:text-slate-950 border-slate-200 dark:border-blue-500/25 text-slate-700 dark:text-slate-200'
                     }`}
                   >
-                    <Check className="w-3.5 h-3.5 stroke-[3]" />
-                  </div>
-                </button>
+                    {trkStatus === 'downloading' ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
+                    ) : trkStatus === 'done' ? (
+                      <Check className="w-4 h-4 stroke-[2.5]" />
+                    ) : trkStatus === 'error' ? (
+                      <AlertCircle className="w-4 h-4" />
+                    ) : (
+                      <Download className="w-4 h-4 stroke-[2.2]" />
+                    )}
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -949,23 +1052,45 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
 
       {/* ZONE 5: Dedicated Primary Download Action */}
       <div className="space-y-2 pt-1">
-        <button
-          type="button"
-          onClick={onClickDownload}
-          disabled={isTerabox && selectedTeraboxFileIds.length === 0}
-          className="w-full h-13 sm:h-14 rounded-full bg-gradient-to-r from-[#1864f7] via-[#1d74fe] to-[#00b4d8] hover:from-[#1354d4] hover:to-[#009ec0] active:scale-[0.985] text-white font-bold flex items-center justify-center gap-2.5 shadow-xl shadow-blue-600/25 transition-transform duration-150 text-sm sm:text-base cursor-pointer disabled:opacity-50"
-        >
-          <Download className="w-5 h-5 stroke-[2.5]" />
-          <span className="whitespace-nowrap">
-            {isTerabox && selectedTeraboxFileIds.length > 1
-              ? `Download (${selectedTeraboxFileIds.length} File)`
-              : 'Download'}
-          </span>
-        </button>
+        {isSpotify && spotifyTracks.length > 1 ? (
+          <>
+            <button
+              type="button"
+              onClick={() => (onDownloadAllSpotifyZip ? onDownloadAllSpotifyZip() : onClickDownload())}
+              className="w-full h-13 sm:h-14 rounded-full bg-gradient-to-r from-[#1864f7] via-[#1d74fe] to-[#00b4d8] hover:from-[#1354d4] hover:to-[#009ec0] active:scale-[0.985] text-white font-bold flex items-center justify-center gap-2.5 shadow-xl shadow-blue-600/25 transition-transform duration-150 text-sm sm:text-base cursor-pointer"
+            >
+              <FileArchive className="w-5 h-5 stroke-[2.2]" />
+              <span className="whitespace-nowrap">
+                Unduh Semua ({spotifyTracks.length} Lagu · ZIP)
+              </span>
+            </button>
+            <p className="text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">
+              {spotifyTracks.length > 10
+                ? `Semua ${spotifyTracks.length} lagu penuh MP3 dikemas ke 1 ZIP (maks 10 paralel, sisanya mengantri)`
+                : `Semua ${spotifyTracks.length} lagu penuh MP3 dikemas menjadi 1 file ZIP`}
+            </p>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={onClickDownload}
+              disabled={isTerabox && selectedTeraboxFileIds.length === 0}
+              className="w-full h-13 sm:h-14 rounded-full bg-gradient-to-r from-[#1864f7] via-[#1d74fe] to-[#00b4d8] hover:from-[#1354d4] hover:to-[#009ec0] active:scale-[0.985] text-white font-bold flex items-center justify-center gap-2.5 shadow-xl shadow-blue-600/25 transition-transform duration-150 text-sm sm:text-base cursor-pointer disabled:opacity-50"
+            >
+              <Download className="w-5 h-5 stroke-[2.5]" />
+              <span className="whitespace-nowrap">
+                {isTerabox && selectedTeraboxFileIds.length > 1
+                  ? `Download (${selectedTeraboxFileIds.length} File)`
+                  : 'Download'}
+              </span>
+            </button>
 
-        <p className="text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">
-          Siap disimpan · {qualitySummary}
-        </p>
+            <p className="text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">
+              Siap disimpan · {qualitySummary}
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

@@ -130,6 +130,8 @@ export default function App() {
   const [completedLabel, setCompletedLabel] = useState<string>('');
   const [selectedTeraboxFileIds, setSelectedTeraboxFileIds] = useState<string[]>(() => initialSnap?.selectedTeraboxFileIds || []);
   const [selectedSpotifyTrackId, setSelectedSpotifyTrackId] = useState<string | null>(() => initialSnap?.selectedSpotifyTrackId ?? null);
+  const [spotifyPlayTrigger, setSpotifyPlayTrigger] = useState<number>(0);
+  const [spotifyTrackStatuses, setSpotifyTrackStatuses] = useState<Record<string, 'downloading' | 'done' | 'error'>>({});
 
   // Extracted media metadata
   const [mediaData, setMediaData] = useState<MediaMetadata | null>(() => initialSnap?.mediaData || null);
@@ -310,6 +312,52 @@ export default function App() {
       return 'auto';
     }
   });
+  const [isServer1Limited, setIsServer1Limited] = useState<boolean>(false);
+
+  const refreshNeoxrStatus = useCallback(async (force = false, customKeyOverride?: string) => {
+    try {
+      const activeCustomKey =
+        typeof customKeyOverride === 'string'
+          ? customKeyOverride.trim()
+          : (localStorage.getItem('dz_neoxr_api_key') || '').trim();
+      const qs = new URLSearchParams();
+      if (activeCustomKey) qs.set('apiKey', activeCustomKey);
+      if (force) qs.set('force', '1');
+      const res = await fetch(`/api/neoxr-status${qs.toString() ? `?${qs.toString()}` : ''}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          const limited = Boolean(data.isLimited);
+          setIsServer1Limited(limited);
+          return limited;
+        }
+      }
+    } catch {}
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    void refreshNeoxrStatus();
+  }, [refreshNeoxrStatus]);
+
+  useEffect(() => {
+    if (activeTab === 'pengaturan' && !isAdminPanelOpen) {
+      void refreshNeoxrStatus();
+    }
+  }, [activeTab, isAdminPanelOpen, refreshNeoxrStatus]);
+
+  // If Server 1 API is at limit, allow inspecting/configuring Server 1 inside Settings,
+  // but automatically switch to Server 2 whenever user leaves Settings or is elsewhere.
+  useEffect(() => {
+    const isInsideSettings = activeTab === 'pengaturan' && !isAdminPanelOpen;
+    if (!isInsideSettings && isServer1Limited && serverMode === 'server1') {
+      setServerMode('server2');
+      try {
+        localStorage.setItem('dz_server_mode', 'server2');
+        window.dispatchEvent(new CustomEvent('dz_server_mode_changed', { detail: 'server2' }));
+      } catch {}
+    }
+  }, [activeTab, isAdminPanelOpen, isServer1Limited, serverMode]);
 
   useEffect(() => {
     const handleServerModeChange = (e: any) => {
@@ -413,10 +461,13 @@ export default function App() {
     trackOverride?: AudioTrack,
     formatOverride?: MediaFormat
   ): string => {
-    let href = `/api/proxy-download?url=${encodeURIComponent(targetUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(meta.platform)}&sourceUrl=${encodeURIComponent(meta.url)}`;
+    let href = `/api/proxy-download?url=${encodeURIComponent(targetUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(meta.platform)}&sourceUrl=${encodeURIComponent(meta.url)}&server=${encodeURIComponent(serverMode)}`;
     if (inline) {
       href += '&inline=1';
     }
+    const kbpsMatch = `${formatOverride?.resolution || ''} ${formatOverride?.quality || ''} ${selectedAudioQuality}`.match(/(320|256|192|128|64)/);
+    const bitrate = kbpsMatch ? `${kbpsMatch[1]}k` : (meta.platform === 'spotify' ? '320k' : '192k');
+
     if (meta.platform === 'spotify') {
       const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
       const tTitle = trackOverride?.title || meta.title || '';
@@ -425,10 +476,9 @@ export default function App() {
       const tGenre = trackOverride?.genre || meta.genre || 'Pop';
       const tYear = trackOverride?.releaseDate || meta.releaseDate || '';
       const tCover = trackOverride?.thumbnail || meta.thumbnail || '';
-      href += `&title=${encodeURIComponent(tTitle)}&artist=${encodeURIComponent(tArtist)}&album=${encodeURIComponent(tAlbum)}&genre=${encodeURIComponent(tGenre)}&year=${encodeURIComponent(tYear)}&cover=${encodeURIComponent(tCover)}&apiKey=${encodeURIComponent(customKey)}`;
+      const tDuration = trackOverride?.duration || meta.duration || 0;
+      href += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(tTitle)}&artist=${encodeURIComponent(tArtist)}&album=${encodeURIComponent(tAlbum)}&genre=${encodeURIComponent(tGenre)}&year=${encodeURIComponent(tYear)}&cover=${encodeURIComponent(tCover)}&duration=${tDuration}&apiKey=${encodeURIComponent(customKey)}`;
     } else if (formatOverride?.type === 'audio' || filename.toLowerCase().endsWith('.mp3')) {
-      const kbpsMatch = `${formatOverride?.resolution || ''} ${formatOverride?.quality || ''} ${selectedAudioQuality}`.match(/(320|256|192|128|64)/);
-      const bitrate = kbpsMatch ? `${kbpsMatch[1]}k` : '192k';
       href += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(meta.title || '')}&artist=${encodeURIComponent(meta.author || '')}`;
     }
     return href;
@@ -475,8 +525,12 @@ export default function App() {
     }
     if (meta.platform === 'spotify' && meta.tracks && meta.tracks.length > 0) {
       setSelectedSpotifyTrackId(meta.tracks[0].id);
+      setSpotifyPlayTrigger(0);
+      setSpotifyTrackStatuses({});
     } else {
       setSelectedSpotifyTrackId(null);
+      setSpotifyPlayTrigger(0);
+      setSpotifyTrackStatuses({});
     }
     setPreparedDownload({
       media: meta,
@@ -505,6 +559,29 @@ export default function App() {
       const topTwitterVideo = meta.formats.find((f) => f.type === 'video' && f.resolution);
       if (topTwitterVideo?.resolution) {
         setSelectedVideoRes(topTwitterVideo.resolution);
+      }
+    } else if (meta.platform === 'youtube') {
+      const ytVideos = meta.formats.filter((f) => f.type === 'video' && f.resolution);
+      if (ytVideos.length > 0) {
+        const curLower = selectedVideoRes.toLowerCase();
+        const curMatch = ytVideos.find((f) => {
+          const r = (f.resolution || '').toLowerCase();
+          if (r === curLower) return true;
+          if ((r === '4k' || r.includes('2160')) && (curLower === '4k' || curLower.includes('2160'))) return true;
+          if ((r === '2k' || r.includes('1440')) && (curLower === '2k' || curLower.includes('1440'))) return true;
+          return false;
+        });
+        if (curMatch?.resolution) {
+          setSelectedVideoRes(curMatch.resolution);
+        } else {
+          const fallbackYt =
+            ytVideos.find((f) => f.resolution === '1080p') ||
+            ytVideos.find((f) => f.resolution === '720p') ||
+            ytVideos[0];
+          if (fallbackYt?.resolution) {
+            setSelectedVideoRes(fallbackYt.resolution);
+          }
+        }
       }
     }
 
@@ -590,7 +667,11 @@ export default function App() {
       openAfterExtraction(meta);
     } catch (err: any) {
       console.error('Extraction error:', err);
-      setErrorMessage(err.message || 'Terjadi kesalahan saat memeriksa tautan.');
+      const errMsg = err.message || 'Terjadi kesalahan saat memeriksa tautan.';
+      setErrorMessage(errMsg);
+      if (/limit|habis|server 1/i.test(errMsg)) {
+        void refreshNeoxrStatus(true);
+      }
       const detected = detectPlatform(trimmed);
       void logDownloadActivity({
         platform: detected !== 'unknown' ? detected : selectedPlatform,
@@ -837,9 +918,245 @@ export default function App() {
     });
   };
 
-  // Handle Spotify track selection (single track)
+  // Handle Spotify track selection (preview playback only)
   const handleSelectSpotifyTrack = (track: AudioTrack) => {
     setSelectedSpotifyTrackId(track.id);
+    setSpotifyPlayTrigger((prev) => prev + 1);
+  };
+
+  // Resolve canonical full-song Spotify track URL (never mp3-preview)
+  const getSpotifyCanonicalTrackUrl = (track: AudioTrack, fallbackUrl: string): string => {
+    if (track.url?.startsWith('http') && !track.url.includes('mp3-preview')) {
+      return track.url;
+    }
+    const trackId = track.id?.replace(/^sp-track-/, '') || '';
+    if (trackId && !trackId.startsWith('sp-')) {
+      return `https://open.spotify.com/track/${trackId}`;
+    }
+    return fallbackUrl;
+  };
+
+  // Download 1 individual full song from Spotify playlist row button
+  const handleDownloadSingleSpotifyTrack = async (track: AudioTrack) => {
+    if (!preparedDownload) return;
+    const { media, format: targetFormat } = preparedDownload;
+    const trackId = track.id;
+
+    setSpotifyTrackStatuses((prev) => ({ ...prev, [trackId]: 'downloading' }));
+    setErrorMessage(null);
+
+    try {
+      const effectiveUrl = getSpotifyCanonicalTrackUrl(track, media.url);
+      const safeTitle = (track.title || 'Spotify_Track').slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `DownloaderZero_${safeTitle}_320kbps.mp3`;
+      const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, track, targetFormat);
+
+      const res = await fetch(downloadHref);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(errText || `Gagal mengunduh "${track.title}" (HTTP ${res.status}).`);
+      }
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      if (ct.includes('text/html')) {
+        throw new Error(`Respon server tidak valid untuk "${track.title}".`);
+      }
+      const mp3Blob = await res.blob();
+      if (mp3Blob.size < 10000) {
+        throw new Error(`File audio "${track.title}" terlalu kecil.`);
+      }
+
+      triggerBlobDownload(mp3Blob, filename);
+      setSpotifyTrackStatuses((prev) => ({ ...prev, [trackId]: 'done' }));
+
+      await saveDownloadedMedia({
+        sourceUrl: media.url,
+        platform: 'spotify',
+        title: track.title || media.title,
+        author: track.artist || media.author,
+        artist: track.artist || media.author,
+        album: track.album || media.album,
+        thumbnail: track.thumbnail || media.thumbnail || '',
+        duration: track.duration || 200,
+        durationFormatted: track.durationFormatted || formatDuration(track.duration || 200),
+        quality: '320 kbps (MP3 Lagu Penuh)',
+        resolution: '320 kbps',
+        mediaType: 'audio',
+        extension: 'mp3',
+        filename,
+        filesize: formatBytes(mp3Blob.size),
+        filesizeBytes: mp3Blob.size,
+        downloadUrl: effectiveUrl,
+        blob: mp3Blob
+      }).catch(() => {});
+
+      await loadHistory();
+      void logDownloadActivity({
+        platform: 'spotify',
+        url: effectiveUrl,
+        resolution: '320 kbps',
+        status: 'berhasil',
+        mediaType: 'audio',
+        title: `${track.artist} - ${track.title}`
+      });
+    } catch (err: any) {
+      console.warn('[Spotify Playlist] Single track download error:', err);
+      setSpotifyTrackStatuses((prev) => ({ ...prev, [trackId]: 'error' }));
+      setErrorMessage(err?.message || `Gagal mengunduh "${track.title}".`);
+    }
+  };
+
+  // Download ALL tracks in Spotify playlist into 1 ZIP archive using max 10 concurrent queue
+  const handleDownloadAllSpotifyZip = async () => {
+    if (berandaStage !== 'preview' || !preparedDownload) return;
+    const { media, format: targetFormat } = preparedDownload;
+    const tracks = media.tracks || [];
+    if (tracks.length === 0) return;
+
+    setErrorMessage(null);
+    setBerandaStage('downloading');
+    setDownloadProgress(6);
+    const total = tracks.length;
+    const MAX_CONCURRENT = Math.min(10, total);
+    setDownloadStatusText(
+      total > 10
+        ? `Menyiapkan antrean ${total} lagu penuh (maks 10 paralel, sisanya mengantri)...`
+        : `Mengunduh ${total} lagu penuh secara paralel...`
+    );
+
+    try {
+      const results: Array<{ index: number; entryName: string; blob: Blob } | null> = new Array(total).fill(null);
+      let nextCursor = 0;
+      let finishedCount = 0;
+      let successCount = 0;
+
+      const fetchSingleTrackWithRetry = async (trk: AudioTrack, idx: number): Promise<Blob | null> => {
+        const effectiveUrl = getSpotifyCanonicalTrackUrl(trk, media.url);
+        const safeTrackName = (trk.title || `Track_${idx + 1}`).slice(0, 45).replace(/[^a-zA-Z0-9._ -]/g, '_').trim();
+        const downloadHref = buildProxyHref(effectiveUrl, `${safeTrackName}.mp3`, media, false, trk, targetFormat);
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const res = await fetch(downloadHref);
+            if (!res.ok) continue;
+            const ct = (res.headers.get('content-type') || '').toLowerCase();
+            if (ct.includes('text/html')) continue;
+            const blob = await res.blob();
+            if (blob.size >= 10000) {
+              return blob;
+            }
+          } catch {}
+          await new Promise((r) => setTimeout(r, 400));
+        }
+        return null;
+      };
+
+      const worker = async () => {
+        while (true) {
+          const idx = nextCursor;
+          nextCursor += 1;
+          if (idx >= total) break;
+
+          const trk = tracks[idx];
+          const blob = await fetchSingleTrackWithRetry(trk, idx);
+          if (blob) {
+            const cleanArtist = (trk.artist || 'Artist').slice(0, 30).replace(/[\\/:*?"<>|]/g, '_').trim();
+            const cleanTitle = (trk.title || `Track_${idx + 1}`).slice(0, 45).replace(/[\\/:*?"<>|]/g, '_').trim();
+            const entryName = `${String(idx + 1).padStart(2, '0')}_${cleanArtist} - ${cleanTitle}.mp3`;
+            results[idx] = { index: idx, entryName, blob };
+            successCount += 1;
+          }
+
+          finishedCount += 1;
+          const remainingQueue = Math.max(0, total - finishedCount);
+          setDownloadProgress(8 + Math.round((finishedCount / total) * 76));
+          setDownloadStatusText(
+            remainingQueue > 0 && total > 10
+              ? `Mengunduh ${finishedCount} / ${total} lagu (${successCount} selesai · ${remainingQueue} dalam antrean)...`
+              : `Mengunduh ${finishedCount} / ${total} lagu penuh (${successCount} berhasil)...`
+          );
+        }
+      };
+
+      // Launch worker pool capped at max 10 concurrent downloads
+      await Promise.all(Array.from({ length: MAX_CONCURRENT }, () => worker()));
+
+      if (successCount === 0) {
+        throw new Error('Gagal mengunduh lagu-lagu dari playlist Spotify. Silakan coba lagi.');
+      }
+
+      setDownloadProgress(88);
+      setDownloadStatusText(`Mengemas ${successCount} lagu penuh MP3 ke dalam 1 file ZIP...`);
+
+      const zip = new JSZip();
+      const sanitizedPlaylist = (media.title || 'Spotify_Playlist').slice(0, 35).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const folder = zip.folder(sanitizedPlaylist) || zip;
+
+      for (const item of results) {
+        if (item) {
+          folder.file(item.entryName, item.blob);
+        }
+      }
+
+      // Use STORE (fast) because MP3 frames are already compressed
+      const zipBlob = await zip.generateAsync({
+        type: 'blob',
+        compression: 'STORE'
+      });
+
+      const zipFilename = `DownloaderZero_${sanitizedPlaylist}_${successCount}Lagu.zip`;
+      triggerBlobDownload(zipBlob, zipFilename);
+
+      await saveDownloadedMedia({
+        sourceUrl: media.url,
+        platform: 'spotify',
+        title: `${media.title || 'Playlist Spotify'} (${successCount} Lagu MP3)`,
+        author: media.author || 'Spotify Playlist',
+        album: media.album || media.title,
+        thumbnail: media.thumbnail || tracks[0]?.thumbnail || '',
+        quality: `${successCount} Lagu MP3 (ZIP)`,
+        resolution: '320 kbps ZIP',
+        mediaType: 'audio',
+        extension: 'zip',
+        filename: zipFilename,
+        filesize: formatBytes(zipBlob.size),
+        filesizeBytes: zipBlob.size,
+        downloadUrl: media.url,
+        blob: zipBlob
+      }).catch(() => {});
+
+      await loadHistory();
+      void logDownloadActivity({
+        platform: 'spotify',
+        url: media.url,
+        resolution: `${successCount}/${total} Lagu ZIP`,
+        status: 'berhasil',
+        mediaType: 'audio',
+        title: media.title || 'Playlist Spotify'
+      });
+
+      setDownloadProgress(100);
+      setDownloadStatusText('Unduhan selesai!');
+      setCompletedLabel(
+        successCount === total
+          ? `${successCount} Lagu Terunduh (ZIP)!`
+          : `${successCount} dari ${total} Lagu Terunduh (ZIP)!`
+      );
+      setBerandaStage('completed');
+    } catch (err: any) {
+      console.error('Spotify playlist ZIP error:', err);
+      void logDownloadActivity({
+        platform: 'spotify',
+        url: media.url,
+        resolution: `${total} Lagu ZIP`,
+        status: 'gagal',
+        mediaType: 'audio',
+        title: media.title || 'Playlist Spotify'
+      });
+      setBerandaStage('preview');
+      setDownloadProgress(0);
+      setDownloadStatusText('');
+      setErrorMessage(err?.message || 'Gagal mengunduh playlist Spotify menjadi ZIP.');
+    }
   };
 
   // Execute actual download when user clicks the "Download" button in BerandaResultView
@@ -1134,10 +1451,12 @@ export default function App() {
     const filename = item.filename || `DownloaderZero_${item.title.slice(0, 30)}.${ext}`;
     const streamUrl = item.downloadUrl || item.sourceUrl;
 
-    let downloadHref = `/api/proxy-download?url=${encodeURIComponent(streamUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl)}`;
+    let downloadHref = `/api/proxy-download?url=${encodeURIComponent(streamUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl)}&server=${encodeURIComponent(serverMode)}`;
     if (item.platform === 'spotify') {
       const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
-      downloadHref += `&title=${encodeURIComponent(item.title || '')}&artist=${encodeURIComponent(item.artist || item.author || '')}&album=${encodeURIComponent(item.album || '')}&cover=${encodeURIComponent(item.thumbnail || '')}&apiKey=${encodeURIComponent(customKey)}`;
+      const kbpsMatch = `${item.resolution || ''} ${item.quality || ''}`.match(/(320|256|192|128|64)/);
+      const bitrate = kbpsMatch ? `${kbpsMatch[1]}k` : '320k';
+      downloadHref += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(item.title || '')}&artist=${encodeURIComponent(item.artist || item.author || '')}&album=${encodeURIComponent(item.album || '')}&cover=${encodeURIComponent(item.thumbnail || '')}&duration=${item.duration || 0}&apiKey=${encodeURIComponent(customKey)}`;
     }
 
     const a = document.createElement('a');
@@ -1263,10 +1582,15 @@ export default function App() {
                 errorMessage={errorMessage}
                 completedCountdown={completedCountdown}
                 completedLabel={completedLabel}
+                serverMode={serverMode}
                 selectedTeraboxFileIds={selectedTeraboxFileIds}
                 onToggleTeraboxFile={handleToggleTeraboxFile}
                 selectedSpotifyTrackId={selectedSpotifyTrackId}
+                spotifyPlayTrigger={spotifyPlayTrigger}
+                spotifyTrackStatuses={spotifyTrackStatuses}
                 onSelectSpotifyTrack={handleSelectSpotifyTrack}
+                onDownloadSingleSpotifyTrack={handleDownloadSingleSpotifyTrack}
+                onDownloadAllSpotifyZip={handleDownloadAllSpotifyZip}
                 onClickDownload={handleExecuteActualDownload}
                 onBackToHome={handleBackFromPreview}
               />
@@ -1341,6 +1665,8 @@ export default function App() {
               onClearHistory={handleClearAllHistory}
               serverMode={serverMode}
               onSelectServerMode={handleSelectServerMode}
+              isServer1Limited={isServer1Limited}
+              onRefreshNeoxrStatus={refreshNeoxrStatus}
               isAdmin={isAdmin}
               onAdminAccessChange={handleAdminAccessChange}
               onOpenAdmin={handleOpenAdmin}

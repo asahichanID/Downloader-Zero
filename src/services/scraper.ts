@@ -3,13 +3,34 @@ import * as cheerio from 'cheerio';
 import { extractTikTokPreview, resolveTikTokDownload } from './previewEngines/tiktokPreview.ts';
 import { scrapeTikTokServer2, resolveTikTokServer2 } from './server2/tiktok-s2.ts';
 import { scrapeTwitterServer2 } from './server2/twitter-s2.ts';
+import {
+  scrapeYouTubeServer2,
+  resolveYouTubeServer2,
+  scrapeYouTubePost,
+  isYouTubePostUrl
+} from './server2/youtube-s2.ts';
+import {
+  scrapeSpotifyServer2,
+  resolveSpotifyFullAudioServer2
+} from './server2/spotify-s2.ts';
 
-export { resolveTikTokDownload, resolveTikTokServer2, scrapeTikTokServer2, scrapeTwitterServer2 };
+export {
+  resolveTikTokDownload,
+  resolveTikTokServer2,
+  scrapeTikTokServer2,
+  scrapeTwitterServer2,
+  scrapeYouTubeServer2,
+  resolveYouTubeServer2,
+  scrapeYouTubePost,
+  isYouTubePostUrl,
+  scrapeSpotifyServer2,
+  resolveSpotifyFullAudioServer2
+};
 
 
 export function detectPlatform(url: string): PlatformType {
   const trimmed = url.trim();
-  if (/(?:youtube\.com\/(?:watch|shorts|embed|live)|youtu\.be\/)/i.test(trimmed)) {
+  if (/(?:youtube\.com\/(?:watch|shorts|embed|live|post\/|channel\/[^/]+\/community|@[^/]+\/(?:community|posts))|youtu\.be\/)/i.test(trimmed)) {
     return 'youtube';
   }
   if (/(?:tiktok\.com|vt\.tiktok\.com|vm\.tiktok\.com)/i.test(trimmed)) {
@@ -171,6 +192,52 @@ function extractAllMediaUrls(data: any): { videos: string[]; audios: string[]; i
 const NEOXR_BASE_URL = 'https://api.neoxr.eu/api';
 const DEFAULT_NEOXR_KEY = 'j3i3mg';
 
+const neoxrStatusCache = new Map<string, { isLimited: boolean; hasCustomKey: boolean; checkedAt: number }>();
+
+/**
+ * Checks whether the active Neoxr API key for Server 1 is out of limit/expired.
+ * Never returns the server key or date/day counts to the client.
+ */
+export async function checkNeoxrApiKeyStatus(
+  customApiKey?: string,
+  force = false
+): Promise<{ success: boolean; isLimited: boolean; hasCustomKey: boolean; checkedAt: number }> {
+  const envKey = ((typeof process !== 'undefined' && process.env ? process.env.NEOXR_API_KEY : undefined) || DEFAULT_NEOXR_KEY)
+    .trim()
+    .replace(/^["']|["']$/g, '');
+  const cleanedCustom = typeof customApiKey === 'string' ? customApiKey.trim().replace(/^["']|["']$/g, '') : '';
+  const activeKey = cleanedCustom || envKey;
+  const hasCustomKey = Boolean(cleanedCustom);
+
+  const cached = neoxrStatusCache.get(activeKey);
+  if (!force && cached && Date.now() - cached.checkedAt < 30_000) {
+    return { success: true, ...cached };
+  }
+
+  try {
+    const res = await fetch(`${NEOXR_BASE_URL}/check?apikey=${encodeURIComponent(activeKey)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(6000)
+    });
+    if (!res.ok) {
+      return { success: false, isLimited: false, hasCustomKey, checkedAt: Date.now() };
+    }
+    const json = await res.json();
+    if (!json || json.status === false) {
+      const result = { isLimited: true, hasCustomKey, checkedAt: Date.now() };
+      neoxrStatusCache.set(activeKey, result);
+      return { success: true, ...result };
+    }
+    const limitVal = Number(json.data?.limit ?? 0);
+    const isLimited = !Number.isFinite(limitVal) || limitVal <= 0;
+    const result = { isLimited, hasCustomKey, checkedAt: Date.now() };
+    neoxrStatusCache.set(activeKey, result);
+    return { success: true, ...result };
+  } catch {
+    return { success: false, isLimited: false, hasCustomKey, checkedAt: Date.now() };
+  }
+}
+
 // ----------------- TIKTOK SCRAPER (Delegated to dedicated modular server2/tiktok-s2.ts) -----------------
 async function scrapeTikTok(url: string, _apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
   if (serverMode === 'server2') {
@@ -327,6 +394,16 @@ async function scrapeFacebook(url: string, apiKey?: string, serverMode: ServerMo
 async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
   const target = await resolveRedirectUrl(url);
 
+  // YouTube Community Posts & Photo Slides (single or multi-photo carousel)
+  if (isYouTubePostUrl(target)) {
+    return await scrapeYouTubePost(target);
+  }
+
+  // Dedicated Server 2 fast free scraper
+  if (serverMode === 'server2') {
+    return await scrapeYouTubeServer2(target);
+  }
+
   let title = 'YouTube Video';
   let author = 'YouTube Channel';
   let thumbnail = '';
@@ -427,7 +504,7 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
   // Step 2: Query Server 1 (Neoxr API) if serverMode is 'server1' or 'auto'
   // Note: Neoxr /api/youtube supports 720p, 480p, 360p (video) and 128kbps (audio).
   // Query 720p + 128kbps first to save quota/avoid concurrency limits, then cascade to 480p/360p if needed.
-  if (serverMode !== 'server2') {
+  if (serverMode === 'server1' || serverMode === 'auto') {
     const queryUrlCandidates = canonicalWatchUrl !== target ? [target, canonicalWatchUrl] : [target];
 
     for (const candidateUrl of queryUrlCandidates) {
@@ -458,6 +535,16 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
     if (serverMode === 'server1' && !direct720Url && !direct480Url && !direct360Url && !directAudioUrl) {
       const detail = lastNeoxrError ? ` (${lastNeoxrError})` : '';
       throw new Error(`Server 1 tidak dapat menemukan stream video YouTube${detail}.`);
+    }
+
+    // In Auto mode, if Server 1 (Neoxr) returned no streams (e.g. rate limit), seamlessly upgrade to Server 2 YouTube Engine
+    if (serverMode === 'auto' && !direct720Url && !direct480Url && !direct360Url && !directAudioUrl) {
+      try {
+        console.warn('[YouTube] Server 1 returned no streams in Auto mode, falling back to Server 2...');
+        return await scrapeYouTubeServer2(target);
+      } catch (s2Err) {
+        console.warn('[YouTube] Server 2 fallback notice:', s2Err);
+      }
     }
   }
 
@@ -1197,7 +1284,12 @@ async function enrichSpotifyMetadata(
 // ----------------- SPOTIFY SCRAPER -----------------
 async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
   const trimmed = rawUrl.trim();
-  
+
+  // Direct Server 2 mode (100% free & keyless — supports tracks, albums & playlists)
+  if (serverMode === 'server2') {
+    return await scrapeSpotifyServer2(trimmed);
+  }
+
   // Extract entity type and ID: track, playlist, album, episode
   const match = trimmed.match(/(?:spotify\.com\/(?:intl-[a-z]+\/)?(track|playlist|album|episode)\/([a-zA-Z0-9]+)|spotify\.link\/([a-zA-Z0-9]+))/i);
   let entityType = match?.[1]?.toLowerCase() || 'track';
@@ -1232,59 +1324,62 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
   // STEP 1: Cek Server 1 (jika mode server1 atau auto)
   // =========================================================================
   let neoSucceeded = false;
-  if (serverMode !== 'server2') {
-    try {
-      const neoEndpoint = `https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(trimmed)}&apikey=${encodeURIComponent(neoKey)}`;
-      const neoRes = await fetch(neoEndpoint, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'application/json'
-        },
-        signal: AbortSignal.timeout(10000)
-      });
+  try {
+    const neoEndpoint = `https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(trimmed)}&apikey=${encodeURIComponent(neoKey)}`;
+    const neoRes = await fetch(neoEndpoint, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
+      },
+      signal: AbortSignal.timeout(10000)
+    });
 
-      if (neoRes.ok) {
-        const neoJson = await neoRes.json();
-        if (neoJson && (neoJson.status === true || neoJson.data)) {
-          const d = neoJson.data?.data || neoJson.data;
-          if (d && typeof d === 'object') {
-            neoSucceeded = true;
+    if (neoRes.ok) {
+      const neoJson = await neoRes.json();
+      if (neoJson && (neoJson.status === true || neoJson.data)) {
+        const d = neoJson.data?.data || neoJson.data;
+        if (d && typeof d === 'object') {
+          neoSucceeded = true;
 
-            if (d.title) title = d.title;
-            if (d.artist || d.author) author = d.artist || d.author;
-            if (d.thumbnail || d.cover) thumbnail = d.thumbnail || d.cover;
-            if (d.preview || d.preview_url) previewUrl = d.preview || d.preview_url;
-            if (d.url || d.download || d.link) fullDownloadUrl = d.url || d.download || d.link;
+          if (d.title) title = d.title;
+          if (d.artist || d.author) author = d.artist || d.author;
+          if (d.thumbnail || d.cover) thumbnail = d.thumbnail || d.cover;
+          if (d.preview || d.preview_url) previewUrl = d.preview || d.preview_url;
+          if (d.url || d.download || d.link) fullDownloadUrl = d.url || d.download || d.link;
 
-            // Parse duration
-            if (typeof d.duration === 'string' && d.duration.includes(':')) {
-              const parts = d.duration.split(':').map((p: string) => Number(p.trim()));
-              if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-                duration = parts[0] * 60 + parts[1];
-              } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-                duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
-              }
-            } else if (typeof d.duration === 'number') {
-              duration = d.duration > 1000 ? Math.round(d.duration / 1000) : d.duration;
+          // Parse duration
+          if (typeof d.duration === 'string' && d.duration.includes(':')) {
+            const parts = d.duration.split(':').map((p: string) => Number(p.trim()));
+            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+              duration = parts[0] * 60 + parts[1];
+            } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+              duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
             }
+          } else if (typeof d.duration === 'number') {
+            duration = d.duration > 1000 ? Math.round(d.duration / 1000) : d.duration;
+          }
 
-            // Clean title if Neo returns "Song Title - Artist"
-            if (title.includes(' - ') && author && title.toLowerCase().includes(author.toLowerCase())) {
-              const parts = title.split(' - ');
-              if (parts[1].trim().toLowerCase() === author.trim().toLowerCase()) {
-                title = parts[0].trim();
-              }
+          // Clean title if Neo returns "Song Title - Artist"
+          if (title.includes(' - ') && author && title.toLowerCase().includes(author.toLowerCase())) {
+            const parts = title.split(' - ');
+            if (parts[1].trim().toLowerCase() === author.trim().toLowerCase()) {
+              title = parts[0].trim();
             }
           }
         }
       }
-    } catch (neoErr: any) {
-      console.warn('[Spotify Engine] Server 1 API check notice:', neoErr?.message || neoErr);
     }
+  } catch (neoErr: any) {
+    console.warn('[Spotify Engine] Server 1 API check notice:', neoErr?.message || neoErr);
+  }
 
-    if (serverMode === 'server1' && (!neoSucceeded || !fullDownloadUrl)) {
-      throw new Error('Server 1 tidak dapat menemukan media Spotify.');
-    }
+  if (serverMode === 'server1' && (!neoSucceeded || !fullDownloadUrl)) {
+    throw new Error('Server 1 tidak dapat menemukan media Spotify.');
+  }
+
+  // In Auto mode: if Server 1 failed / has no full song URL / or URL is playlist/album, use Server 2 Spotify engine
+  if (serverMode === 'auto' && (!neoSucceeded || !fullDownloadUrl || isPlaylist)) {
+    return await scrapeSpotifyServer2(trimmed);
   }
 
 

@@ -8,7 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import NodeID3 from 'node-id3';
-import { extractMedia, detectPlatform, resolveTikTokDownload } from './src/services/scraper.ts';
+import { extractMedia, detectPlatform, resolveTikTokDownload, resolveYouTubeServer2, resolveSpotifyFullAudioServer2, checkNeoxrApiKeyStatus } from './src/services/scraper.ts';
 import {
   isSafePublicUrl,
   createRateLimiter,
@@ -101,6 +101,103 @@ async function startServer() {
   // Short-lived cache for ffmpeg-extracted MP3 audio (preview -> download instant reuse)
   const mp3TranscodeCache = new Map<string, { buffer: Buffer; timestamp: number }>();
 
+  const ALLOWED_MP3_BITRATES = new Set(['320k', '256k', '192k', '128k', '64k']);
+  const normalizeTargetBitrate = (raw: unknown, fallback = '192k'): string => {
+    const cleaned = String(raw || fallback).toLowerCase().trim();
+    const withSuffix = /^\d+$/.test(cleaned) ? `${cleaned}k` : cleaned;
+    return ALLOWED_MP3_BITRATES.has(withSuffix) ? withSuffix : fallback;
+  };
+
+  // Probes input audio buffer and encodes genuine CBR MP3 at requested bitrate (e.g. 320k CBR)
+  // so Android/desktop music players display exact bitrate badge (320kbps) & filesize.
+  const ensureMp3TargetBitrate = async (inputBuffer: Buffer, targetBitrate: string): Promise<Buffer> => {
+    const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const tmpInPath = path.join(os.tmpdir(), `dz_in_${uid}.media`);
+    const tmpOutPath = path.join(os.tmpdir(), `dz_out_${uid}.mp3`);
+    const targetBps = parseInt(targetBitrate, 10) * 1000;
+
+    try {
+      fs.writeFileSync(tmpInPath, inputBuffer);
+
+      // Probe current codec & bitrate (~40ms) to avoid redundant re-encoding when upstream already matches
+      const probeResult = await new Promise<{ codec?: string; bitRate?: number } | null>((resolve) => {
+        const fp = spawn(
+          'ffprobe',
+          ['-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', tmpInPath],
+          { stdio: ['ignore', 'pipe', 'ignore'] }
+        );
+        const chunks: Buffer[] = [];
+        fp.stdout.on('data', (c: Buffer) => chunks.push(c));
+        fp.on('error', () => resolve(null));
+        fp.on('close', (code) => {
+          if (code !== 0) return resolve(null);
+          try {
+            const info = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            const aud = Array.isArray(info?.streams)
+              ? info.streams.find((s: any) => s?.codec_type === 'audio')
+              : null;
+            const br = Number(aud?.bit_rate || info?.format?.bit_rate || 0);
+            resolve({ codec: aud?.codec_name, bitRate: isNaN(br) ? 0 : br });
+          } catch {
+            resolve(null);
+          }
+        });
+      });
+
+      if (
+        probeResult?.codec === 'mp3' &&
+        probeResult.bitRate &&
+        Math.abs(probeResult.bitRate - targetBps) <= 16000
+      ) {
+        return inputBuffer;
+      }
+
+      const bufsize = targetBps >= 256000 ? '640k' : '384k';
+      const encoded = await new Promise<Buffer>((resolve, reject) => {
+        const ff = spawn(
+          'ffmpeg',
+          [
+            '-y',
+            '-i', tmpInPath,
+            '-vn',
+            '-c:a', 'libmp3lame',
+            '-b:a', targetBitrate,
+            '-minrate', targetBitrate,
+            '-maxrate', targetBitrate,
+            '-bufsize', bufsize,
+            '-compression_level', '7',
+            '-ar', '44100',
+            '-ac', '2',
+            '-f', 'mp3',
+            tmpOutPath
+          ],
+          { stdio: ['ignore', 'ignore', 'pipe'] }
+        );
+        let errText = '';
+        ff.stderr.on('data', (chunk: Buffer) => {
+          if (errText.length < 800) errText += chunk.toString('utf8');
+        });
+        ff.on('error', (err) => reject(err));
+        ff.on('close', (code) => {
+          if (code === 0 && fs.existsSync(tmpOutPath)) {
+            resolve(fs.readFileSync(tmpOutPath));
+          } else {
+            reject(new Error(`ffmpeg exited ${code}: ${errText.slice(-200)}`));
+          }
+        });
+      });
+
+      return encoded.length > 0 ? encoded : inputBuffer;
+    } finally {
+      try {
+        if (fs.existsSync(tmpInPath)) fs.unlinkSync(tmpInPath);
+      } catch {}
+      try {
+        if (fs.existsSync(tmpOutPath)) fs.unlinkSync(tmpOutPath);
+      } catch {}
+    }
+  };
+
   // 1. Health check & Security Shield status
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({
@@ -110,6 +207,20 @@ async function startServer() {
       version: '2026.1',
       platforms: ['youtube', 'tiktok', 'twitter', 'facebook', 'instagram', 'pinterest', 'spotify', 'terabox']
     });
+  });
+
+  // 1b. Check Server 1 (Neoxr) quota/limit status without exposing server keys or dates
+  app.all('/api/neoxr-status', extractLimiter, async (req: Request, res: Response) => {
+    try {
+      const apiKey = typeof req.query.apiKey === 'string'
+        ? req.query.apiKey
+        : (typeof req.body?.apiKey === 'string' ? req.body.apiKey : '');
+      const force = req.query.force === '1' || req.body?.force === true || req.body?.force === '1';
+      const status = await checkNeoxrApiKeyStatus(apiKey, force);
+      res.json(status);
+    } catch {
+      res.json({ success: false, isLimited: false, hasCustomKey: false, checkedAt: Date.now() });
+    }
   });
 
   // 2. Extract media metadata and formats (with anti-SSRF & rate limiter)
@@ -149,6 +260,8 @@ async function startServer() {
     if (f === '720' || f === '720p' || f.includes('720')) return '720';
     if (f === '480' || f === '480p' || f.includes('480')) return '480';
     if (f === '360' || f === '360p' || f.includes('360')) return '360';
+    if (f === '240' || f === '240p' || f.includes('240')) return '240';
+    if (f === '144' || f === '144p' || f.includes('144')) return '144';
     if (f === 'mp3' || f === 'audio' || f.includes('mp3') || f.includes('audio')) return 'mp3';
     return f.replace(/p$/i, '');
   }
@@ -259,34 +372,21 @@ async function startServer() {
         throw new Error(lastMsg ? `Server 1 tidak menghasilkan unduhan (${lastMsg}).` : 'Server 1 tidak menghasilkan unduhan.');
       };
 
-      // Server 2 handler (Alternative / loader engine)
+      // Server 2 handler (SaveTube VIP Multi-CDN YouTube Engine)
       const tryServer2 = async () => {
-        const loaderRes = await fetch(`https://loader.to/ajax/download.php?button=1&start=1&format=${encodeURIComponent(normalizedFormat)}&url=${encodeURIComponent(url)}`, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          },
-          signal: AbortSignal.timeout(10000)
-        });
-        if (loaderRes.ok) {
-          const loaderJson = await loaderRes.json();
-          if (loaderJson && (loaderJson.id || loaderJson.download_url)) {
-            return {
-              success: true,
-              id: loaderJson.id || null,
-              downloadUrl: loaderJson.download_url || undefined,
-              format: normalizedFormat,
-              text: loaderJson.text || 'Memulai konversi Server 2...'
-            };
-          }
-        } else {
-          let errDetail = `HTTP ${loaderRes.status}`;
-          try {
-            const errJson = await loaderRes.json();
-            if (errJson?.error_code) errDetail = errJson.error_code;
-          } catch {}
-          throw new Error(`Server 2 tidak dapat memulai proses konversi (${errDetail}).`);
-        }
-        throw new Error('Server 2 tidak dapat memulai proses konversi.');
+        const resolved = await resolveYouTubeServer2(
+          url,
+          formatId || '',
+          resolution || format || '1080p',
+          type || (normalizedFormat === 'mp3' ? 'audio' : 'video')
+        );
+        return {
+          success: true,
+          id: null,
+          downloadUrl: resolved.downloadUrl,
+          format: normalizedFormat,
+          text: `Siap diunduh (${resolved.quality || normalizedFormat} via Server 2)!`
+        };
       };
 
       if (serverMode === 'server1') {
@@ -401,7 +501,7 @@ async function startServer() {
       const urlParamIdx = rawReqUrl.indexOf('url=');
       if (urlParamIdx !== -1) {
         let extracted = rawReqUrl.slice(urlParamIdx + 4);
-        const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate)=/);
+        const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate|duration)=/);
         if (nextParamMatch && nextParamMatch.index !== undefined) {
           extracted = extracted.slice(0, nextParamMatch.index);
         }
@@ -478,51 +578,110 @@ async function startServer() {
         targetUrl.includes('spotify.link') ||
         (!platform && sanitizedFilename.endsWith('.mp3') && (Boolean(req.query.title) || Boolean(req.query.artist)));
 
-      // Handle Spotify with Neo audio download + embedded ID3 metadata & cover art
+      // Handle Spotify full-song audio download + embedded ID3 metadata & cover art
       if (isSpotify) {
         let directAudioUrl = targetUrl;
         const neoxrKey = ((req.query?.apiKey as string) || process.env.NEOXR_API_KEY || 'j3i3mg').trim();
+        const reqServerMode = ((req.query?.server as string) || 'auto').toLowerCase();
+        let metaTitle = (req.query.title as string) || '';
+        let metaArtist = (req.query.artist as string) || '';
+        let metaAlbum = (req.query.album as string) || '';
+        let metaCover = (req.query.cover as string) || '';
+        let metaYear = (req.query.year as string) || '';
+        const metaDuration = Number(req.query.duration || 0) || 0;
 
-        // If targetUrl is still a Spotify web URL, resolve to Neo full MP3 URL
-        if (directAudioUrl.includes('spotify.com') || directAudioUrl.includes('spotify.link')) {
-          try {
-            const neoRes = await fetch(
-              `https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(directAudioUrl)}&apikey=${encodeURIComponent(neoxrKey)}`,
-              {
-                headers: { 'User-Agent': 'Mozilla/5.0' },
-                signal: AbortSignal.timeout(14000)
+        // If targetUrl is a Spotify web URL or accidentally points to a 30s mp3-preview, resolve to FULL song MP3
+        if (directAudioUrl.includes('spotify.com') || directAudioUrl.includes('spotify.link') || directAudioUrl.includes('mp3-preview')) {
+          let resolvedOk = false;
+
+          if (reqServerMode !== 'server2') {
+            try {
+              const neoRes = await fetch(
+                `https://api.neoxr.eu/api/spotify?url=${encodeURIComponent(directAudioUrl)}&apikey=${encodeURIComponent(neoxrKey)}`,
+                {
+                  headers: { 'User-Agent': 'Mozilla/5.0' },
+                  signal: AbortSignal.timeout(12000)
+                }
+              );
+              if (neoRes.ok) {
+                const neoJson = await neoRes.json();
+                const fullSongUrl = neoJson.data?.url || neoJson.data?.download || neoJson.data?.link;
+                if (fullSongUrl && typeof fullSongUrl === 'string' && fullSongUrl.startsWith('http') && !fullSongUrl.includes('mp3-preview')) {
+                  directAudioUrl = fullSongUrl;
+                  resolvedOk = true;
+                }
               }
-            );
-            if (neoRes.ok) {
-              const neoJson = await neoRes.json();
-              const fullSongUrl = neoJson.data?.url || neoJson.data?.download || neoJson.data?.link;
-              if (fullSongUrl && typeof fullSongUrl === 'string' && fullSongUrl.startsWith('http') && !fullSongUrl.includes('mp3-preview')) {
-                directAudioUrl = fullSongUrl;
-              }
+            } catch (e) {
+              console.warn('[Spotify Download] Server 1 resolve notice:', e);
             }
-          } catch (e) {
-            console.warn('[Spotify Download] Neo direct resolve notice:', e);
+          }
+
+          if (!resolvedOk && reqServerMode !== 'server1') {
+            try {
+              const s2 = await resolveSpotifyFullAudioServer2(directAudioUrl, {
+                title: metaTitle,
+                artist: metaArtist,
+                album: metaAlbum,
+                coverUrl: metaCover,
+                duration: metaDuration
+              });
+              directAudioUrl = s2.audioUrl;
+              if (!metaTitle && s2.title) metaTitle = s2.title;
+              if (!metaArtist && s2.artist) metaArtist = s2.artist;
+              if (!metaAlbum && s2.album) metaAlbum = s2.album;
+              if (!metaCover && s2.coverUrl) metaCover = s2.coverUrl;
+              if (!metaYear && s2.releaseDate) metaYear = s2.releaseDate;
+              resolvedOk = true;
+            } catch (s2Err: any) {
+              console.warn('[Spotify Download] Server 2 resolve error:', s2Err?.message || s2Err);
+            }
+          }
+
+          if (!resolvedOk || directAudioUrl.includes('spotify.com') || directAudioUrl.includes('spotify.link')) {
+            res.status(502).send('Gagal menyelesaikan tautan lagu penuh Spotify dari server sumber.');
+            return;
           }
         }
 
-        // Fetch raw audio stream from Neo
+        // Fetch full audio stream
         const audioRes = await fetch(directAudioUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': '*/*'
-          }
+          },
+          signal: AbortSignal.timeout(25000)
         });
 
         if (!audioRes.ok) {
-          res.status(audioRes.status || 500).send('Gagal mengunduh audio Spotify dari server sumber.');
+          res.status(audioRes.status || 502).send('Gagal mengunduh audio Spotify dari server sumber.');
+          return;
+        }
+
+        const audioCt = (audioRes.headers.get('content-type') || '').toLowerCase();
+        if (audioCt.includes('text/html')) {
+          res.status(502).send('Respon audio Spotify tidak valid (HTML bukan file MP3).');
           return;
         }
 
         const audioArrayBuffer = await audioRes.arrayBuffer();
-        const rawAudioBuffer = Buffer.from(audioArrayBuffer);
+        let rawAudioBuffer: Buffer = Buffer.from(audioArrayBuffer);
+        if (rawAudioBuffer.length < 10000) {
+          res.status(502).send('File audio Spotify terlalu kecil atau korup.');
+          return;
+        }
+
+        // Enforce exact requested MP3 bitrate (default 320k CBR) on downloads so filesize & music player 320kbps badge match
+        const targetSpotifyBitrate = normalizeTargetBitrate(req.query.bitrate, '320k');
+        if (!isInline) {
+          try {
+            rawAudioBuffer = await ensureMp3TargetBitrate(rawAudioBuffer, targetSpotifyBitrate);
+          } catch (encErr: any) {
+            console.warn('[Spotify Download] Bitrate encode notice (using upstream audio):', encErr?.message || encErr);
+          }
+        }
 
         // Fetch Cover Art buffer if cover URL is provided (with SSRF check)
-        const coverUrl = req.query.cover as string;
+        const coverUrl = metaCover;
         let coverBuffer: Buffer | null = null;
         let coverMime = 'image/jpeg';
         if (coverUrl && typeof coverUrl === 'string' && coverUrl.startsWith('http')) {
@@ -541,14 +700,14 @@ async function startServer() {
 
         // Embed ID3 tags (Title, Artist, Album, Genre, Year, Cover Art)
         const tags: any = {
-          title: (req.query.title as string) || 'Spotify Track',
-          artist: (req.query.artist as string) || 'Spotify Artist',
-          album: (req.query.album as string) || 'Spotify Music',
+          title: metaTitle || 'Spotify Track',
+          artist: metaArtist || 'Spotify Artist',
+          album: metaAlbum || 'Spotify Music',
           genre: (req.query.genre as string) || 'Pop',
-          year: ((req.query.year as string) || new Date().getFullYear().toString()).slice(0, 4),
+          year: (metaYear || new Date().getFullYear().toString()).slice(0, 4),
           comment: {
             language: 'eng',
-            text: 'Downloaded with DownloaderZero via Neo'
+            text: 'Downloaded with DownloaderZero'
           }
         };
 
@@ -566,7 +725,7 @@ async function startServer() {
           const tagged = NodeID3.write(tags, rawAudioBuffer);
           if (tagged && tagged.length > 0) {
             finalMp3Buffer = tagged;
-            console.log(`[Spotify Download] ✅ ID3 Tags & Cover embedded successfully! Size: ${finalMp3Buffer.length} bytes`);
+            console.log(`[Spotify Download] ✅ ${targetSpotifyBitrate} MP3 + ID3 & Cover ready! Size: ${finalMp3Buffer.length} bytes`);
           }
         } catch (id3Err) {
           console.error('[Spotify Download] ID3 tagging failed, streaming raw audio:', id3Err);
@@ -639,7 +798,15 @@ async function startServer() {
         platformReferer = 'https://www.facebook.com/';
       } else if (targetUrl.includes('instagram') || targetUrl.includes('cdninstagram')) {
         platformReferer = 'https://www.instagram.com/';
-      } else if (targetUrl.includes('youtube') || targetUrl.includes('googlevideo')) {
+      } else if (targetUrl.includes('savetube')) {
+        platformReferer = 'https://save-tube.com/';
+      } else if (
+        targetUrl.includes('youtube') ||
+        targetUrl.includes('googlevideo') ||
+        targetUrl.includes('yt3.ggpht.com') ||
+        targetUrl.includes('yt4.ggpht.com') ||
+        targetUrl.includes('lh3.googleusercontent.com')
+      ) {
         platformReferer = 'https://www.youtube.com/';
       } else if (targetUrl.includes('pinterest') || targetUrl.includes('pinimg')) {
         platformReferer = 'https://www.pinterest.com/';
@@ -773,10 +940,24 @@ async function startServer() {
           const reKey = typeof req.query.apiKey === 'string' && req.query.apiKey.trim() ? req.query.apiKey.trim() : undefined;
           const reServer = req.query.server === 'server1' || req.query.server === 'server2' || req.query.server === 'auto' ? req.query.server : 'auto';
           const freshMedia = await extractMedia(sourceUrl, reKey, reServer);
+          let freshTargetUrl = '';
           if (freshMedia && freshMedia.formats && freshMedia.formats.length > 0) {
             const bestFormat = freshMedia.formats.find((f) => f.isDirect && f.url && f.url.startsWith('http')) || freshMedia.formats[0];
-            if (bestFormat && bestFormat.url && bestFormat.url !== targetUrl && bestFormat.url.startsWith('http')) {
-              targetUrl = bestFormat.url;
+            if (bestFormat?.url?.startsWith('http')) {
+              freshTargetUrl = bestFormat.url;
+            }
+          }
+          if (!freshTargetUrl && (platform === 'youtube' || detectPlatform(sourceUrl) === 'youtube') && reServer !== 'server1') {
+            const resolvedYt = await resolveYouTubeServer2(
+              sourceUrl,
+              '',
+              sanitizedFilename.toLowerCase().endsWith('.mp3') ? '320 kbps' : '1080p',
+              sanitizedFilename.toLowerCase().endsWith('.mp3') ? 'audio' : 'video'
+            );
+            freshTargetUrl = resolvedYt.downloadUrl;
+          }
+          if (freshTargetUrl && freshTargetUrl !== targetUrl && freshTargetUrl.startsWith('http')) {
+            targetUrl = freshTargetUrl;
               for (const cfg of fetchCandidateConfigs) {
                 try {
                   const reqHeaders: Record<string, string> = { ...cfg.headers };
@@ -791,7 +972,6 @@ async function startServer() {
                 } catch {}
               }
             }
-          }
         } catch (reErr) {
           console.warn('[proxy-download] On-the-fly re-resolution notice:', reErr);
         }
@@ -835,11 +1015,12 @@ async function startServer() {
 
       const rawContentType = response.headers.get('content-type') || '';
 
-      // If client requested an .mp3 audio extraction from an MP4/video/M4A source stream, transcode genuinely to MP3 via ffmpeg
+      // Transcode to genuine MP3 CBR at requested bitrate when source is non-MP3 OR when download requests specific MP3 bitrate (e.g. 320k/256k from 128k upstream)
+      const isUpstreamMp3 =
+        rawContentType.includes('audio/mpeg') || rawContentType.includes('audio/mp3');
       const needsMp3Transcode =
         wantsMp3Output &&
-        !rawContentType.includes('audio/mpeg') &&
-        !rawContentType.includes('audio/mp3');
+        (!isUpstreamMp3 || (!isInline && (Boolean(req.query.bitrate) || targetUrl.includes('savetube'))));
 
       if (needsMp3Transcode) {
         let mp3Buffer: Buffer | null = mp3TranscodeCache.get(mp3CacheKey)?.buffer || null;
@@ -854,40 +1035,8 @@ async function startServer() {
           }
           const inputBuffer = Buffer.concat(chunks);
 
-          const tmpInPath = path.join(os.tmpdir(), `dz_in_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.mp4`);
           try {
-            fs.writeFileSync(tmpInPath, inputBuffer);
-            mp3Buffer = await new Promise<Buffer>((resolve, reject) => {
-              const ff = spawn(
-                'ffmpeg',
-                [
-                  '-y',
-                  '-i', tmpInPath,
-                  '-vn',
-                  '-c:a', 'libmp3lame',
-                  '-b:a', resolvedTargetBitrate,
-                  '-ar', '44100',
-                  '-f', 'mp3',
-                  'pipe:1'
-                ],
-                { stdio: ['ignore', 'pipe', 'pipe'] }
-              );
-              const outChunks: Buffer[] = [];
-              let errText = '';
-              ff.stdout.on('data', (chunk: Buffer) => outChunks.push(chunk));
-              ff.stderr.on('data', (chunk: Buffer) => {
-                if (errText.length < 1000) errText += chunk.toString('utf8');
-              });
-              ff.on('error', (err) => reject(err));
-              ff.on('close', (code) => {
-                const out = Buffer.concat(outChunks);
-                if (code === 0 && out.length > 0) {
-                  resolve(out);
-                } else {
-                  reject(new Error(`ffmpeg exited ${code}: ${errText.slice(-200)}`));
-                }
-              });
-            });
+            mp3Buffer = await ensureMp3TargetBitrate(inputBuffer, resolvedTargetBitrate);
 
             // Embed ID3 title/artist metadata if provided
             const metaTitle = typeof req.query.title === 'string' ? req.query.title.trim() : '';
@@ -918,10 +1067,6 @@ async function startServer() {
               error: 'Media ini tidak memiliki trek audio yang dapat dikonversi ke MP3.'
             });
             return;
-          } finally {
-            try {
-              if (fs.existsSync(tmpInPath)) fs.unlinkSync(tmpInPath);
-            } catch {}
           }
         } else {
           try {

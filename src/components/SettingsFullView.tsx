@@ -12,7 +12,8 @@ import {
   Server,
   ChevronRight,
   ShieldCheck,
-  Film
+  Film,
+  AlertTriangle
 } from 'lucide-react';
 import type { ServerMode } from '../types/index.ts';
 
@@ -27,6 +28,8 @@ interface SettingsFullViewProps {
   onClearHistory: () => void;
   serverMode?: ServerMode;
   onSelectServerMode?: (mode: ServerMode) => void;
+  isServer1Limited?: boolean;
+  onRefreshNeoxrStatus?: (force?: boolean, customKeyOverride?: string) => Promise<boolean | void> | void;
   isAdmin?: boolean;
   onAdminAccessChange?: (active: boolean, openPanel?: boolean) => void;
   onOpenAdmin?: () => void;
@@ -42,6 +45,8 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
   onClearHistory,
   serverMode = 'auto',
   onSelectServerMode,
+  isServer1Limited = false,
+  onRefreshNeoxrStatus,
   isAdmin = false,
   onAdminAccessChange,
   onOpenAdmin,
@@ -121,6 +126,7 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
       }
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 2000);
+      void onRefreshNeoxrStatus?.(true, trimmed);
     } catch {}
   };
 
@@ -196,55 +202,81 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
             </div>
           </div>
 
-          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 shrink-0">
-            {currentMode === 'auto' ? 'Otomatis' : currentMode === 'server1' ? 'Server 1' : 'Server 2'}
+          <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border shrink-0 ${
+            currentMode === 'server1' && isServer1Limited
+              ? 'bg-amber-100/80 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-300/70 dark:border-amber-500/30'
+              : 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30'
+          }`}>
+            {currentMode === 'auto'
+              ? 'Otomatis'
+              : currentMode === 'server1'
+                ? (isServer1Limited ? 'Server 1 • Limit' : 'Server 1')
+                : 'Server 2'}
           </span>
         </div>
 
         {/* 3 Pilihan Server Menyamping */}
         <div className="grid grid-cols-3 gap-2">
           {serverOptions.map((opt) => {
-            const isSelected = currentMode === opt.id;
+            const isLimitedServer1 = opt.id === 'server1' && isServer1Limited;
+            const isSelected = isLimitedServer1 ? false : currentMode === opt.id;
             return (
               <button
                 key={opt.id}
                 type="button"
                 onClick={() => handleSelectMode(opt.id)}
                 className={`p-2.5 sm:p-3 rounded-xl text-left border cursor-pointer flex flex-col justify-between gap-1.5 min-w-0 transition-colors ${
-                  isSelected
-                    ? 'bg-sky-50 dark:bg-cyan-950/60 border-sky-500 dark:border-cyan-400 text-slate-900 dark:text-white'
-                    : 'bg-slate-50 dark:bg-[#060e22]/90 hover:bg-slate-100 dark:hover:bg-[#0a1738] border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                  isLimitedServer1
+                    ? 'bg-slate-100/80 dark:bg-[#040a1a]/80 hover:bg-slate-100 dark:hover:bg-[#071128] border-slate-200/80 dark:border-slate-800/80 text-slate-400 dark:text-slate-500'
+                    : isSelected
+                      ? 'bg-sky-50 dark:bg-cyan-950/60 border-sky-500 dark:border-cyan-400 text-slate-900 dark:text-white'
+                      : 'bg-slate-50 dark:bg-[#060e22]/90 hover:bg-slate-100 dark:hover:bg-[#0a1738] border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
                 }`}
               >
                 <div className="flex items-center justify-between gap-1">
                   <span className={`text-xs sm:text-sm font-bold truncate ${
-                    isSelected ? 'text-sky-700 dark:text-cyan-300' : 'text-slate-900 dark:text-white'
+                    isLimitedServer1
+                      ? 'text-slate-400 dark:text-slate-500'
+                      : isSelected
+                        ? 'text-sky-700 dark:text-cyan-300'
+                        : 'text-slate-900 dark:text-white'
                   }`}>
                     {opt.label}
                   </span>
                   <span className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                    isSelected
-                      ? 'border-sky-600 dark:border-cyan-400 bg-sky-600 dark:bg-cyan-400 text-white dark:text-slate-950'
-                      : 'border-slate-300 dark:border-slate-600'
+                    isLimitedServer1
+                      ? 'border-slate-300/70 dark:border-slate-700/80 opacity-60'
+                      : isSelected
+                        ? 'border-sky-600 dark:border-cyan-400 bg-sky-600 dark:bg-cyan-400 text-white dark:text-slate-950'
+                        : 'border-slate-300 dark:border-slate-600'
                   }`}>
                     {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
                   </span>
                 </div>
 
-                <div className="space-y-1">
-                  <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                    opt.id === 'auto'
-                      ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                      : opt.id === 'server1'
-                      ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
-                      : 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300'
-                  }`}>
-                    {opt.badge}
-                  </span>
-                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-snug line-clamp-2">
-                    {opt.desc}
-                  </p>
-                </div>
+                {isLimitedServer1 ? (
+                  <div className="pt-0.5">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 border border-amber-300/80 dark:border-amber-400/40 text-amber-600 dark:text-amber-400">
+                      <AlertTriangle className="w-3 h-3 shrink-0 stroke-[2.5]" />
+                      <span className="text-[10px] font-bold">Limit</span>
+                    </span>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                      opt.id === 'auto'
+                        ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                        : opt.id === 'server1'
+                        ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300'
+                        : 'bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300'
+                    }`}>
+                      {opt.badge}
+                    </span>
+                    <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-snug line-clamp-2">
+                      {opt.desc}
+                    </p>
+                  </div>
+                )}
               </button>
             );
           })}

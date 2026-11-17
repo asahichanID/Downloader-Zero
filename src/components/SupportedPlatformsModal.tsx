@@ -58,8 +58,8 @@ const PLATFORM_CATALOG: PlatformCatalogItem[] = [
     id: 'spotify',
     name: 'Spotify',
     fullTitle: 'Spotify Music & Playlists',
-    desc: 'Unduh lagu satuan atau pilih lagu dari playlist menjadi audio MP3 lengkap dengan cover art dan metadata ID3.',
-    formats: 'MP3 320 kbps, Cover Art, ID3 Tag',
+    desc: 'Unduh lagu satuan, putar pratinjau playlist, atau unduh semua lagu sekaligus menjadi 1 arsip ZIP MP3 penuh lengkap dengan cover art dan metadata ID3.',
+    formats: 'MP3 Lagu Penuh, ZIP Playlist, Cover Art & ID3',
     renderLogo: (sizeClass, iconClass) => (
       <div className={`${sizeClass} rounded-2xl bg-[#1DB954] flex items-center justify-center shadow-md shadow-emerald-900/25`}>
         <svg className={`${iconClass} text-black fill-current`} viewBox="0 0 24 24">
