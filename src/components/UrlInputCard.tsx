@@ -29,7 +29,10 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = React.memo(({
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
-        setUrl(text.trim());
+        const trimmed = text.trim();
+        const urlMatch = trimmed.match(/https?:\/\/[^\s<>"'`]+/i);
+        const cleanUrl = urlMatch ? urlMatch[0].replace(/[),.;!?]+$/, '') : trimmed;
+        setUrl(cleanUrl);
         onClearError();
       }
     } catch {

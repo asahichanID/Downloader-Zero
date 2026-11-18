@@ -1,7 +1,7 @@
 import type { PlatformType, ServerMode, MediaFormat, MediaMetadata, AudioTrack, TeraboxFile } from '../types/index.ts';
 import * as cheerio from 'cheerio';
 import { extractTikTokPreview, resolveTikTokDownload } from './previewEngines/tiktokPreview.ts';
-import { scrapeTikTokServer2, resolveTikTokServer2 } from './server2/tiktok-s2.ts';
+import { scrapeTikTokServer2, resolveTikTokServer2, extractFirstHttpUrl } from './server2/tiktok-s2.ts';
 import { scrapeTwitterServer2 } from './server2/twitter-s2.ts';
 import {
   scrapeYouTubeServer2,
@@ -29,7 +29,7 @@ export {
 
 
 export function detectPlatform(url: string): PlatformType {
-  const trimmed = url.trim();
+  const trimmed = extractFirstHttpUrl(url);
   if (/(?:youtube\.com\/(?:watch|shorts|embed|live|post\/|channel\/[^/]+\/community|@[^/]+\/(?:community|posts))|youtu\.be\/)/i.test(trimmed)) {
     return 'youtube';
   }
@@ -239,13 +239,28 @@ export async function checkNeoxrApiKeyStatus(
 }
 
 // ----------------- TIKTOK SCRAPER (Delegated to dedicated modular server2/tiktok-s2.ts) -----------------
-async function scrapeTikTok(url: string, _apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
+async function scrapeTikTok(url: string, apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
   if (serverMode === 'server2') {
     return await scrapeTikTokServer2(url);
   }
-  // Pengambilan media pertama download: khusus mengambil thumbnail foto utuh, angka durasi, dan judul
-  // Pemakaian API download dipanggil setelah pemilihan format agar tidak dipanggil 2 kali
-  return await extractTikTokPreview(url);
+  if (serverMode === 'server1') {
+    return await scrapeNeoxr(url, 'tiktok', apiKey);
+  }
+  // Auto mode: preview engine uses shared cache & multi-tier fallback (TikWM -> TikTok Web HTML -> Official Feed -> SSSTik)
+  try {
+    return await extractTikTokPreview(url);
+  } catch (previewErr: any) {
+    console.warn('[TikTok] Preview engine failed in auto mode, falling back to Server 1:', previewErr);
+    try {
+      return await scrapeNeoxr(url, 'tiktok', apiKey);
+    } catch (neoErr: any) {
+      const neoMsg = String(neoErr?.message || '');
+      if (/limit|apikey|not found/i.test(neoMsg) && previewErr instanceof Error) {
+        throw previewErr;
+      }
+      throw neoErr;
+    }
+  }
 }
 
 // ----------------- FACEBOOK SCRAPER -----------------
@@ -682,24 +697,25 @@ async function scrapeYouTube(url: string, apiKey?: string, serverMode: ServerMod
 
   // Audio formats (64 - 320 kbps) with verified audio stream
   const audioQualities = [
-    { label: '320 kbps (Lossless Studio Fidelity)', format: 'mp3', note: 'Bitrate audio MP3 studio tertinggi' },
-    { label: '256 kbps (High Quality Audio)', format: 'mp3', note: 'Audio jernih kualitas mantap' },
-    { label: '192 kbps (Standard Audio)', format: 'mp3', note: 'Kualitas standar streaming' },
-    { label: '128 kbps (Audio Langsung)', format: 'mp3', note: 'Audio MP3 siap unduh instan' },
-    { label: '64 kbps (Voice / Low Data)', format: 'mp3', note: 'Hemat penyimpanan dan kuota' }
+    { kbps: 320, label: '320 kbps (Lossless Studio Fidelity)', note: 'Bitrate audio MP3 studio tertinggi' },
+    { kbps: 256, label: '256 kbps (High Quality Audio)', note: 'Audio jernih kualitas mantap' },
+    { kbps: 192, label: '192 kbps (Standard Audio)', note: 'Kualitas standar streaming' },
+    { kbps: 128, label: '128 kbps (Audio Langsung)', note: 'Audio MP3 siap unduh instan' },
+    { kbps: 64, label: '64 kbps (Voice / Low Data)', note: 'Hemat penyimpanan dan kuota' }
   ];
 
   audioQualities.forEach((aq, idx) => {
     formats.push({
-      id: `yt-audio-${idx}`,
+      id: `yt-audio-${aq.kbps}`,
       quality: aq.label,
-      resolution: 'Audio',
+      resolution: `${aq.kbps} kbps`,
       type: 'audio',
       extension: 'mp3',
+      filesize: duration > 0 ? `~ ${Math.max(0.2, +((duration * aq.kbps) / 8 / 1024).toFixed(1))} MB` : undefined,
       url: bestAudioUrl,
       isDirect: Boolean(bestAudioUrl),
       needsResolution: !Boolean(bestAudioUrl),
-      note: bestAudioUrl ? 'Audio siap unduh instan' : aq.note
+      note: bestAudioUrl ? `Audio ${aq.kbps} kbps siap dikonversi` : aq.note
     });
   });
 
@@ -1212,14 +1228,15 @@ async function enrichSpotifyMetadata(
   trackId: string,
   title: string,
   artist: string
-): Promise<{ genre: string; album: string; releaseDate: string; highResCover?: string; embedPreview?: string }> {
+): Promise<{ genre: string; album: string; releaseDate: string; highResCover?: string; embedPreview?: string; durationSec?: number }> {
   let genre = 'Pop';
   let album = '';
   let releaseDate = '';
   let highResCover: string | undefined = undefined;
   let embedPreview: string | undefined = undefined;
+  let durationSec: number | undefined = undefined;
 
-  // 1. Fetch official iTunes / Apple Music catalog API for accurate genre and album info (real, non-mock data)
+  // 1. Fetch official iTunes / Apple Music catalog API for accurate genre, album, and track duration info (real, non-mock data)
   try {
     const cleanSearchTitle = title.replace(/\s*-\s*.*$/, '').replace(/[\(\[].*?[\)\]]/g, '').trim();
     const query = encodeURIComponent(`${cleanSearchTitle} ${artist}`.trim());
@@ -1233,13 +1250,16 @@ async function enrichSpotifyMetadata(
         if (item.primaryGenreName) genre = item.primaryGenreName;
         if (item.collectionName) album = item.collectionName;
         if (item.releaseDate) releaseDate = item.releaseDate.slice(0, 10);
+        if (typeof item.trackTimeMillis === 'number' && item.trackTimeMillis > 0) {
+          durationSec = Math.round(item.trackTimeMillis / 1000);
+        }
       }
     }
   } catch (e) {
     console.warn('[Spotify] Genre lookup notice:', e);
   }
 
-  // 2. Fetch Spotify Embed for official high-res cover, audio preview, and track metadata
+  // 2. Fetch Spotify Embed for official high-res cover, audio preview, duration, and track metadata
   if (trackId) {
     try {
       const embedUrl = `https://open.spotify.com/embed/track/${trackId}`;
@@ -1268,7 +1288,12 @@ async function enrichSpotifyMetadata(
               album = entity.album.name;
             }
             if (!releaseDate && entity.releaseDate) {
-              releaseDate = entity.releaseDate;
+              releaseDate = typeof entity.releaseDate === 'string'
+                ? entity.releaseDate.slice(0, 10)
+                : (entity.releaseDate?.isoString?.slice(0, 10) || '');
+            }
+            if (entity.duration && Number(entity.duration) > 0) {
+              durationSec = Math.round(Number(entity.duration) / 1000);
             }
           }
         }
@@ -1278,7 +1303,7 @@ async function enrichSpotifyMetadata(
     }
   }
 
-  return { genre, album, releaseDate, highResCover, embedPreview };
+  return { genre, album, releaseDate, highResCover, embedPreview, durationSec };
 }
 
 // ----------------- SPOTIFY SCRAPER -----------------
@@ -1345,7 +1370,15 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
           if (d.artist || d.author) author = d.artist || d.author;
           if (d.thumbnail || d.cover) thumbnail = d.thumbnail || d.cover;
           if (d.preview || d.preview_url) previewUrl = d.preview || d.preview_url;
-          if (d.url || d.download || d.link) fullDownloadUrl = d.url || d.download || d.link;
+          const candidateFullUrl = d.url || d.download || d.link;
+          if (
+            typeof candidateFullUrl === 'string' &&
+            candidateFullUrl.startsWith('http') &&
+            !candidateFullUrl.includes('mp3-preview') &&
+            !candidateFullUrl.includes('mzstatic.com')
+          ) {
+            fullDownloadUrl = candidateFullUrl;
+          }
 
           // Parse duration
           if (typeof d.duration === 'string' && d.duration.includes(':')) {
@@ -1384,14 +1417,17 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
 
 
   // =========================================================================
-  // STEP 2: Lengkapi Metadata Resmi (Genre, Album, Cover HD, Pratinjau Audio)
+  // STEP 2: Lengkapi Metadata Resmi (Genre, Album, Cover HD, Pratinjau Audio, Durasi Asli)
   // =========================================================================
-  const { genre, album, releaseDate, highResCover, embedPreview } = await enrichSpotifyMetadata(
+  const { genre, album, releaseDate, highResCover, embedPreview, durationSec: enrichedDuration } = await enrichSpotifyMetadata(
     entityId,
     title,
     author
   );
 
+  if ((!duration || duration <= 35) && enrichedDuration && enrichedDuration > 0) {
+    duration = enrichedDuration;
+  }
   if (highResCover && (!thumbnail || thumbnail.includes('b273'))) {
     thumbnail = highResCover;
   }
@@ -1482,6 +1518,9 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
     } catch {}
   }
 
+  const finalDurationSec = duration || 210;
+  const estSizeMb = (kbps: number) => `~ ${Math.max(0.8, +((finalDurationSec * kbps) / 8 / 1024).toFixed(1))} MB`;
+
   // Track item single
   if (tracks.length === 0) {
     tracks.push({
@@ -1492,18 +1531,21 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
       genre,
       releaseDate,
       thumbnail,
-      duration: duration || 30,
-      durationFormatted: formatDuration(duration || 30),
-      url: fullDownloadUrl || trimmed,
+      duration: finalDurationSec,
+      durationFormatted: formatDuration(finalDurationSec),
+      url: (fullDownloadUrl && !fullDownloadUrl.includes('mp3-preview') && !fullDownloadUrl.includes('mzstatic.com')) ? fullDownloadUrl : trimmed,
       previewUrl: previewUrl || undefined,
-      filesize: '~ 8.5 MB'
+      filesize: estSizeMb(320)
     });
   }
 
   // =========================================================================
-  // STEP 4: Bangun Format Unduhan MP3 melalui Neo dengan ID3 Metadata & Cover
+  // STEP 4: Bangun Format Unduhan MP3 melalui Neo/Server 2 dengan ID3 Metadata & Cover
   // =========================================================================
-  const directMp3Url = fullDownloadUrl || trimmed;
+  const directMp3Url =
+    fullDownloadUrl && !fullDownloadUrl.includes('mp3-preview') && !fullDownloadUrl.includes('mzstatic.com')
+      ? fullDownloadUrl
+      : trimmed;
 
   formats.push({
     id: 'sp-neo-mp3-320',
@@ -1513,8 +1555,20 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
     extension: 'mp3',
     url: directMp3Url,
     isDirect: true,
-    filesize: '~ 8.5 MB',
+    filesize: estSizeMb(320),
     note: `Audio MP3 Asli dengan ID3 Cover & Genre ${genre}`
+  });
+
+  formats.push({
+    id: 'sp-neo-mp3-256',
+    quality: '256 kbps (MP3 Kualitas Tinggi)',
+    resolution: '256 kbps',
+    type: 'audio',
+    extension: 'mp3',
+    url: directMp3Url,
+    isDirect: true,
+    filesize: estSizeMb(256),
+    note: 'Bitrate tinggi 256 kbps jernih'
   });
 
   formats.push({
@@ -1525,7 +1579,7 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
     extension: 'mp3',
     url: directMp3Url,
     isDirect: true,
-    filesize: '~ 3.8 MB',
+    filesize: estSizeMb(128),
     note: 'Ukuran file lebih ringan'
   });
 
@@ -1540,8 +1594,8 @@ async function scrapeSpotify(rawUrl: string, apiKey?: string, serverMode: Server
     album: album || 'Spotify Single',
     releaseDate,
     previewUrl: previewUrl || tracks[0]?.previewUrl || '',
-    duration: duration || tracks[0]?.duration || 30,
-    durationFormatted: formatDuration(duration || tracks[0]?.duration || 30),
+    duration: duration || tracks[0]?.duration || 210,
+    durationFormatted: formatDuration(duration || tracks[0]?.duration || 210),
     formats,
     tracks,
     isAudioPlaylist: isPlaylist && tracks.length > 1,
@@ -1872,16 +1926,23 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
       });
     }
 
-    if (audioUrl && typeof audioUrl === 'string') {
-      formats.push({
-        id: 'nx-tt-audio',
-        quality: '320 kbps (Original Sound MP3)',
-        resolution: 'Audio',
-        type: 'audio',
-        extension: 'mp3',
-        url: audioUrl,
-        isDirect: true,
-        note: 'Audio musik TikTok asli'
+    const audioSourceUrl = audioUrl && typeof audioUrl === 'string' ? audioUrl : (hdUrl || sdUrl || '');
+    if (audioSourceUrl && typeof audioSourceUrl === 'string') {
+      [
+        { kbps: 320, id: 'nx-tt-audio', label: '320 kbps (Original Sound MP3)' },
+        { kbps: 256, id: 'nx-tt-audio-256', label: '256 kbps (MP3 Kualitas Tinggi)' },
+        { kbps: 128, id: 'nx-tt-audio-128', label: '128 kbps (MP3 Standar)' }
+      ].forEach((aq) => {
+        formats.push({
+          id: aq.id,
+          quality: aq.label,
+          resolution: `${aq.kbps} kbps`,
+          type: 'audio',
+          extension: 'mp3',
+          url: audioSourceUrl,
+          isDirect: true,
+          note: 'Audio musik TikTok'
+        });
       });
     }
   }
@@ -2179,7 +2240,7 @@ export async function extractMedia(
   apiKey?: string,
   serverMode: ServerMode = 'auto'
 ): Promise<MediaMetadata> {
-  let url = rawUrl.trim();
+  let url = extractFirstHttpUrl(rawUrl);
   if (!url) {
     throw new Error('Masukkan URL video atau audio yang ingin diunduh.');
   }

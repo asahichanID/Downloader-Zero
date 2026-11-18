@@ -414,13 +414,21 @@ export default function App() {
     };
   }, [berandaStage]);
 
+  const extractCleanUrl = (raw: string): string => {
+    const trimmed = (raw || '').trim();
+    const match = trimmed.match(/https?:\/\/[^\s<>"'`]+/i);
+    return match ? match[0].replace(/[),.;!?]+$/, '') : trimmed;
+  };
+
   // Handle URL change with auto platform detection (NO auto-select badge text!)
   const handleUrlChange = useCallback((newUrl: string) => {
-    setUrl(newUrl);
+    const hasShareText = /\s+https?:\/\//i.test(newUrl) || /https?:\/\/\S+\s+/i.test(newUrl);
+    const cleaned = hasShareText ? extractCleanUrl(newUrl) : newUrl;
+    setUrl(cleaned);
     setErrorMessage(null);
 
-    if (newUrl.trim()) {
-      const detected = detectPlatform(newUrl);
+    if (cleaned.trim()) {
+      const detected = detectPlatform(cleaned);
       if (detected !== 'unknown') {
         setSelectedPlatform(detected);
         if (detected === 'spotify') {
@@ -471,8 +479,12 @@ export default function App() {
     if (inline) {
       href += '&inline=1';
     }
-    const kbpsMatch = `${formatOverride?.resolution || ''} ${formatOverride?.quality || ''} ${selectedAudioQuality}`.match(/(320|256|192|128|64)/);
-    const bitrate = kbpsMatch ? `${kbpsMatch[1]}k` : (meta.platform === 'spotify' ? '320k' : '192k');
+    const bitrateMatch =
+      (formatOverride?.resolution || '').match(/(320|256|192|128|64)/) ||
+      (formatOverride?.quality || '').match(/(320|256|192|128|64)\s*k/i) ||
+      (formatOverride?.id || '').match(/(320|256|192|128|64)/) ||
+      String(selectedAudioQuality || '').match(/(320|256|192|128|64)/);
+    const bitrate = bitrateMatch ? `${bitrateMatch[1]}k` : (meta.platform === 'spotify' ? '320k' : '192k');
 
     if (meta.platform === 'spotify') {
       const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
@@ -614,10 +626,13 @@ export default function App() {
   const handleDownloadButtonClick = async () => {
     if (berandaStage !== 'idle' || isLoading) return;
 
-    const trimmed = url.trim();
+    const trimmed = extractCleanUrl(url);
     if (!trimmed) {
       setErrorMessage('Silakan tempelkan link video atau audio terlebih dahulu.');
       return;
+    }
+    if (trimmed !== url) {
+      setUrl(trimmed);
     }
 
     setErrorMessage(null);
@@ -646,7 +661,7 @@ export default function App() {
           const result = await response.json();
           if (response.ok && result && result.success && result.data) {
             meta = result.data;
-          } else if (result?.error && response.status >= 400 && response.status < 500) {
+          } else if (result?.error && response.status >= 400) {
             backendExplicitError = result.error;
           }
         }
@@ -859,7 +874,17 @@ export default function App() {
     progressSpan: number
   ): Promise<Blob | null> => {
     const dlResponse = await fetch(downloadHref);
-    if (!dlResponse.ok) return null;
+    if (!dlResponse.ok) {
+      const ctErr = (dlResponse.headers.get('content-type') || '').toLowerCase();
+      let errMsg = '';
+      if (ctErr.includes('application/json')) {
+        const j = await dlResponse.json().catch(() => null);
+        errMsg = j?.error || '';
+      } else if (ctErr.includes('text/')) {
+        errMsg = await dlResponse.text().catch(() => '');
+      }
+      throw new Error(errMsg || `Server gagal mengunduh berkas (HTTP ${dlResponse.status}).`);
+    }
     const contentType = dlResponse.headers.get('content-type') || '';
     if (contentType.includes('application/json')) return null;
 
@@ -954,8 +979,13 @@ export default function App() {
 
     try {
       const effectiveUrl = getSpotifyCanonicalTrackUrl(track, media.url);
+      const brMatch =
+        (targetFormat?.resolution || '').match(/(320|256|192|128|64)/) ||
+        (targetFormat?.id || '').match(/(320|256|192|128|64)/) ||
+        String(selectedAudioQuality || '').match(/(320|256|192|128|64)/);
+      const activeKbps = brMatch ? brMatch[1] : '320';
       const safeTitle = (track.title || 'Spotify_Track').slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const filename = `DownloaderZero_${safeTitle}_320kbps.mp3`;
+      const filename = `DownloaderZero_${safeTitle}_${activeKbps}kbps.mp3`;
       const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, track, targetFormat);
 
       const res = await fetch(downloadHref);
@@ -985,8 +1015,8 @@ export default function App() {
         thumbnail: track.thumbnail || media.thumbnail || '',
         duration: track.duration || 200,
         durationFormatted: track.durationFormatted || formatDuration(track.duration || 200),
-        quality: '320 kbps (MP3 Lagu Penuh)',
-        resolution: '320 kbps',
+        quality: `${activeKbps} kbps (MP3 Lagu Penuh)`,
+        resolution: `${activeKbps} kbps`,
         mediaType: 'audio',
         extension: 'mp3',
         filename,
@@ -1000,7 +1030,7 @@ export default function App() {
       void logDownloadActivity({
         platform: 'spotify',
         url: effectiveUrl,
-        resolution: '320 kbps',
+        resolution: `${activeKbps} kbps`,
         status: 'berhasil',
         mediaType: 'audio',
         title: `${track.artist} - ${track.title}`
@@ -1183,6 +1213,12 @@ export default function App() {
       const zipFilename = `DownloaderZero_${sanitizedPlaylist}_${successCount}Lagu.zip`;
       triggerBlobDownload(zipBlob, zipFilename);
 
+      const brZipMatch =
+        (targetFormat?.resolution || '').match(/(320|256|192|128|64)/) ||
+        (targetFormat?.id || '').match(/(320|256|192|128|64)/) ||
+        String(selectedAudioQuality || '').match(/(320|256|192|128|64)/);
+      const zipKbps = brZipMatch ? brZipMatch[1] : '320';
+
       await saveDownloadedMedia({
         sourceUrl: media.url,
         platform: 'spotify',
@@ -1191,7 +1227,7 @@ export default function App() {
         album: media.album || media.title,
         thumbnail: media.thumbnail || tracks[0]?.thumbnail || '',
         quality: `${successCount} Lagu MP3 (ZIP)`,
-        resolution: '320 kbps ZIP',
+        resolution: `${zipKbps} kbps ZIP`,
         mediaType: 'audio',
         extension: 'zip',
         filename: zipFilename,
@@ -1457,17 +1493,22 @@ export default function App() {
       const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, selectedTrack, targetFormat);
 
       let mediaBlob: Blob | null = null;
+      let proxyError: Error | null = null;
       try {
         mediaBlob = await fetchBlobWithProgress(downloadHref, 15, 70);
-      } catch (dlErr) {
-        console.warn('Proxy download notice, falling back to direct download:', dlErr);
+      } catch (dlErr: any) {
+        proxyError = dlErr instanceof Error ? dlErr : new Error(String(dlErr || 'Gagal mengunduh media.'));
+        console.warn('Proxy download notice:', dlErr);
       }
 
       setDownloadProgress(90);
       setDownloadStatusText('Menyimpan berkas ke perangkat...');
 
+      const isAudioOrSpotify = media.platform === 'spotify' || targetFormat.type === 'audio' || ext === 'mp3';
       if (mediaBlob) {
         triggerBlobDownload(mediaBlob, filename);
+      } else if (isAudioOrSpotify) {
+        throw proxyError || new Error('Gagal mengunduh audio MP3 sesuai bitrate yang dipilih dari server. Silakan coba lagi.');
       } else {
         triggerDirectDownloadFallback(effectiveUrl, filename);
       }
@@ -1487,11 +1528,11 @@ export default function App() {
           duration: effectiveDuration,
           durationFormatted: effectiveDurationFmt,
           quality: targetFormat.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
-          resolution: targetFormat.resolution || (targetFormat.type === 'audio' ? 'Audio' : selectedVideoRes),
+          resolution: targetFormat.resolution || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
           mediaType: targetFormat.type,
           extension: ext as any,
           filename,
-          filesize: targetFormat.filesize || (mediaBlob ? formatBytes(mediaBlob.size) : ''),
+          filesize: mediaBlob ? formatBytes(mediaBlob.size) : (targetFormat.filesize || ''),
           filesizeBytes: mediaBlob ? mediaBlob.size : (targetFormat.filesizeBytes || 0),
           downloadUrl: effectiveUrl,
           blob: mediaBlob || undefined

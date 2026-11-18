@@ -81,6 +81,11 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
        '1080p')
     : selectedVideoRes;
 
+  const calcAudioMb = (kbpsNum: number): string | undefined => {
+    if (!media.duration || media.duration <= 0 || isNaN(kbpsNum)) return undefined;
+    return `~ ${Math.max(0.2, +((media.duration * kbpsNum) / 8 / 1024).toFixed(1))} MB`;
+  };
+
   // Determine current active format to download
   const handleStartDownload = () => {
     if (isTerabox) {
@@ -98,17 +103,29 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
     }
 
     const effectiveType: MediaType = isSpotify ? 'audio' : selectedType;
+    const preset = audioPresets.find((p) => p.id === selectedAudioQuality);
+    const chosenKbps = preset ? preset.id : (selectedAudioQuality || '320');
+    const chosenEstSize = calcAudioMb(Number(chosenKbps));
 
     if (isTwitter) {
       if (effectiveType === 'audio' && audioFormats.length > 0) {
-        const exactTwitterAudio =
-          audioFormats.find((f) => {
-            const q = (f.quality || '').toLowerCase();
-            const id = (f.id || '').toLowerCase();
-            return q.includes(selectedAudioQuality) || id.includes(selectedAudioQuality);
-          }) || audioFormats[0];
-        if (exactTwitterAudio) {
-          onConfirmDownload(exactTwitterAudio);
+        const matchedTw = audioFormats.find((f) => {
+          const r = (f.resolution || '').toLowerCase();
+          const q = (f.quality || '').toLowerCase();
+          const id = (f.id || '').toLowerCase();
+          return r.includes(chosenKbps) || q.includes(chosenKbps) || id.includes(chosenKbps);
+        });
+        const baseTw = matchedTw || audioFormats[0];
+        if (baseTw) {
+          onConfirmDownload({
+            ...baseTw,
+            id: matchedTw ? matchedTw.id : `${baseTw.id || 'tw-audio'}-${chosenKbps}`,
+            quality: `${chosenKbps} kbps (Audio MP3)`,
+            resolution: `${chosenKbps} kbps`,
+            extension: 'mp3',
+            type: 'audio',
+            filesize: chosenEstSize || baseTw.filesize
+          });
         }
         return;
       }
@@ -133,20 +150,34 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
     }
 
     if (effectiveType === 'audio') {
-      const matchAudio = audioFormats.find((f) => {
+      const matched = audioFormats.find((f) => {
+        const r = (f.resolution || '').toLowerCase();
         const q = (f.quality || '').toLowerCase();
         const id = (f.id || '').toLowerCase();
-        return q.includes(selectedAudioQuality) || id.includes(selectedAudioQuality);
-      }) || audioFormats[0] || {
-        id: `audio-${selectedAudioQuality}`,
-        quality: `${selectedAudioQuality} kbps (Original Sound MP3)`,
-        resolution: 'Audio',
-        type: 'audio' as const,
-        extension: 'mp3' as const,
-        url: '',
-        isDirect: false,
-        needsResolution: true
-      };
+        return r.includes(chosenKbps) || q.includes(chosenKbps) || id.includes(chosenKbps);
+      });
+      const baseAudio = matched || audioFormats[0];
+      const matchAudio: MediaFormat = baseAudio
+        ? {
+            ...baseAudio,
+            id: matched ? matched.id : `${baseAudio.id || 'audio'}-${chosenKbps}`,
+            quality: `${chosenKbps} kbps (${isSpotify ? 'MP3 Lagu Penuh' : 'Audio MP3'})`,
+            resolution: `${chosenKbps} kbps`,
+            type: 'audio',
+            extension: 'mp3',
+            filesize: chosenEstSize || matched?.filesize
+          }
+        : {
+            id: `audio-${chosenKbps}`,
+            quality: `${chosenKbps} kbps (Original Sound MP3)`,
+            resolution: `${chosenKbps} kbps`,
+            type: 'audio' as const,
+            extension: 'mp3' as const,
+            url: '',
+            isDirect: false,
+            needsResolution: true,
+            filesize: chosenEstSize
+          };
       onConfirmDownload(matchAudio);
     } else {
       const targetRes = selectedVideoRes.toLowerCase();
@@ -491,6 +522,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                 <div className="space-y-2">
                   {audioPresets.map((preset) => {
                     const isSelected = selectedAudioQuality === preset.id;
+                    const estSize = calcAudioMb(Number(preset.id));
                     return (
                       <button
                         key={preset.id}
@@ -511,7 +543,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                               {preset.label}
                             </span>
                             <span className="text-[11px] text-emerald-600 dark:text-emerald-400/90 block">
-                              {preset.badge}
+                              {preset.badge}{estSize ? ` · ${estSize}` : ''}
                             </span>
                           </div>
                         </div>

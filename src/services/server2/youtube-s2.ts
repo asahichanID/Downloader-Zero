@@ -694,24 +694,35 @@ export async function resolveYouTubeServer2(
   };
 
   if (isAudio) {
-    const availableAudioQualities = (info.audio_formats || [])
-      .map((a) => Number(a.quality))
-      .filter((n) => !isNaN(n) && n > 0);
-    const targetAudioQ = availableAudioQualities[0] || 128;
+    const availableAudioQualities = [...new Set(
+      (info.audio_formats || [])
+        .map((a) => Number(a.quality))
+        .filter((n) => !isNaN(n) && n > 0)
+    )].sort((a, b) => b - a);
+    const candidateAudioQs = availableAudioQualities.length > 0 ? availableAudioQualities : [128];
 
-    let dlUrl = await callSaveTubeDownload('audio', targetAudioQ, cdn, info.key).catch(() => null);
-    if (!dlUrl) {
-      // Retry once with fresh info key/CDN in case cached key expired
-      infoCache.delete(videoId);
-      const fresh = await fetchSaveTubeInfo(canonicalUrl, videoId);
-      dlUrl = await callSaveTubeDownload('audio', targetAudioQ, fresh.cdn, fresh.info.key).catch(() => null);
-    }
+    let activeAudioCdn = cdn;
+    let activeAudioKey = info.key;
 
-    if (dlUrl) {
-      return {
-        downloadUrl: dlUrl,
-        quality: `MP3 Audio (${resolution || 'High Quality'})`
-      };
+    for (let i = 0; i < candidateAudioQs.length; i++) {
+      const q = candidateAudioQs[i];
+      let dlUrl = await callSaveTubeDownload('audio', q, activeAudioCdn, activeAudioKey).catch(() => null);
+      if (!dlUrl && i === 0) {
+        // Retry once with fresh info key/CDN in case cached key expired
+        infoCache.delete(videoId);
+        try {
+          const fresh = await fetchSaveTubeInfo(canonicalUrl, videoId);
+          activeAudioCdn = fresh.cdn;
+          activeAudioKey = fresh.info.key;
+          dlUrl = await callSaveTubeDownload('audio', q, activeAudioCdn, activeAudioKey).catch(() => null);
+        } catch {}
+      }
+      if (dlUrl) {
+        return {
+          downloadUrl: dlUrl,
+          quality: `MP3 Audio (${resolution || `${q} kbps`})`
+        };
+      }
     }
     throw new Error('Server 2 YouTube: Gagal mengonversi audio MP3.');
   }

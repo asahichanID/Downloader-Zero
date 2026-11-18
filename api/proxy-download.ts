@@ -21,7 +21,7 @@ async function ensureMp3TargetBitrateIfAvailable(inputBuffer: Buffer, targetBitr
   try {
     fs.writeFileSync(tmpInPath, inputBuffer);
 
-    const probeResult = await new Promise<{ codec?: string; bitRate?: number } | null>((resolve) => {
+    const probeResult = await new Promise<{ formatName?: string; codec?: string; bitRate?: number } | null>((resolve) => {
       const fp = spawn(
         'ffprobe',
         ['-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', tmpInPath],
@@ -36,38 +36,55 @@ async function ensureMp3TargetBitrateIfAvailable(inputBuffer: Buffer, targetBitr
           const info = JSON.parse(Buffer.concat(chunks).toString('utf8'));
           const aud = Array.isArray(info?.streams) ? info.streams.find((s: any) => s?.codec_type === 'audio') : null;
           const br = Number(aud?.bit_rate || info?.format?.bit_rate || 0);
-          resolve({ codec: aud?.codec_name, bitRate: isNaN(br) ? 0 : br });
+          resolve({ formatName: info?.format?.format_name, codec: aud?.codec_name, bitRate: isNaN(br) ? 0 : br });
         } catch {
           resolve(null);
         }
       });
     });
 
-    if (probeResult?.codec === 'mp3' && probeResult.bitRate && Math.abs(probeResult.bitRate - targetBps) <= 16000) {
+    if (
+      probeResult?.formatName === 'mp3' &&
+      probeResult?.codec === 'mp3' &&
+      probeResult.bitRate &&
+      Math.abs(probeResult.bitRate - targetBps) <= 2000
+    ) {
       return inputBuffer;
     }
 
     const bufsize = targetBps >= 256000 ? '640k' : '384k';
-    const encoded = await new Promise<Buffer>((resolve, reject) => {
-      const ff = spawn(
-        'ffmpeg',
-        [
-          '-y', '-i', tmpInPath, '-vn',
-          '-c:a', 'libmp3lame', '-b:a', targetBitrate, '-minrate', targetBitrate, '-maxrate', targetBitrate,
-          '-bufsize', bufsize, '-compression_level', '7', '-ar', '44100', '-ac', '2', '-f', 'mp3', tmpOutPath
-        ],
-        { stdio: ['ignore', 'ignore', 'ignore'] }
-      );
-      ff.on('error', (err) => reject(err));
-      ff.on('close', (code) => {
-        if (code === 0 && fs.existsSync(tmpOutPath)) resolve(fs.readFileSync(tmpOutPath));
-        else reject(new Error(`ffmpeg exited ${code}`));
+    const runFfmpeg = (useStrictMap: boolean) =>
+      new Promise<Buffer>((resolve, reject) => {
+        const ff = spawn(
+          'ffmpeg',
+          [
+            '-y', '-i', tmpInPath,
+            ...(useStrictMap ? ['-map', '0:a:0'] : []),
+            '-vn', '-map_metadata', '-1',
+            '-c:a', 'libmp3lame', '-b:a', targetBitrate, '-minrate', targetBitrate, '-maxrate', targetBitrate,
+            '-bufsize', bufsize, '-compression_level', '2', '-ar', '44100', '-ac', '2', '-f', 'mp3', tmpOutPath
+          ],
+          { stdio: ['ignore', 'ignore', 'ignore'] }
+        );
+        ff.on('error', (err) => reject(err));
+        ff.on('close', (code) => {
+          if (code === 0 && fs.existsSync(tmpOutPath)) {
+            const out = fs.readFileSync(tmpOutPath);
+            if (out.length > 0) {
+              resolve(out);
+              return;
+            }
+          }
+          reject(new Error(`ffmpeg exited ${code}`));
+        });
       });
-    });
 
-    return encoded.length > 0 ? encoded : inputBuffer;
-  } catch {
-    return inputBuffer;
+    try {
+      return await runFfmpeg(true);
+    } catch (firstErr: any) {
+      if (firstErr?.code === 'ENOENT') throw firstErr;
+      return await runFfmpeg(false);
+    }
   } finally {
     try { if (fs.existsSync(tmpInPath)) fs.unlinkSync(tmpInPath); } catch {}
     try { if (fs.existsSync(tmpOutPath)) fs.unlinkSync(tmpOutPath); } catch {}
@@ -175,8 +192,30 @@ export default async function handler(req: any, res: any) {
       let metaYear = ((query.year || req.query?.year || '') as string);
       const metaDuration = Number(query.duration || req.query?.duration || 0) || 0;
 
-      // If targetUrl is a Spotify web URL or accidentally points to a 30s mp3-preview, resolve to FULL song MP3
-      if (directAudioUrl.includes('spotify.com') || directAudioUrl.includes('spotify.link') || directAudioUrl.includes('mp3-preview')) {
+      // If targetUrl is a Spotify web URL or accidentally points to a 30s preview URL, resolve to FULL song MP3
+      const resolveViaServer2Spotify = async (spSource: string) => {
+        const s2 = await resolveSpotifyFullAudioServer2(spSource, {
+          title: metaTitle,
+          artist: metaArtist,
+          album: metaAlbum,
+          coverUrl: metaCover,
+          duration: metaDuration
+        });
+        directAudioUrl = s2.audioUrl;
+        if (!metaTitle && s2.title) metaTitle = s2.title;
+        if (!metaArtist && s2.artist) metaArtist = s2.artist;
+        if (!metaAlbum && s2.album) metaAlbum = s2.album;
+        if (!metaCover && s2.coverUrl) metaCover = s2.coverUrl;
+        if (!metaYear && s2.releaseDate) metaYear = s2.releaseDate;
+      };
+
+      let resolvedViaServer1 = false;
+      if (
+        directAudioUrl.includes('spotify.com') ||
+        directAudioUrl.includes('spotify.link') ||
+        directAudioUrl.includes('mp3-preview') ||
+        directAudioUrl.includes('mzstatic.com')
+      ) {
         let resolvedOk = false;
 
         if (reqServerMode !== 'server2') {
@@ -191,9 +230,16 @@ export default async function handler(req: any, res: any) {
             if (neoRes.ok) {
               const neoJson = await neoRes.json();
               const fullSongUrl = neoJson.data?.url || neoJson.data?.download || neoJson.data?.link;
-              if (fullSongUrl && typeof fullSongUrl === 'string' && fullSongUrl.startsWith('http') && !fullSongUrl.includes('mp3-preview')) {
+              if (
+                fullSongUrl &&
+                typeof fullSongUrl === 'string' &&
+                fullSongUrl.startsWith('http') &&
+                !fullSongUrl.includes('mp3-preview') &&
+                !fullSongUrl.includes('mzstatic.com')
+              ) {
                 directAudioUrl = fullSongUrl;
                 resolvedOk = true;
+                resolvedViaServer1 = true;
               }
             }
           } catch (e) {
@@ -203,19 +249,7 @@ export default async function handler(req: any, res: any) {
 
         if (!resolvedOk && reqServerMode !== 'server1') {
           try {
-            const s2 = await resolveSpotifyFullAudioServer2(directAudioUrl, {
-              title: metaTitle,
-              artist: metaArtist,
-              album: metaAlbum,
-              coverUrl: metaCover,
-              duration: metaDuration
-            });
-            directAudioUrl = s2.audioUrl;
-            if (!metaTitle && s2.title) metaTitle = s2.title;
-            if (!metaArtist && s2.artist) metaArtist = s2.artist;
-            if (!metaAlbum && s2.album) metaAlbum = s2.album;
-            if (!metaCover && s2.coverUrl) metaCover = s2.coverUrl;
-            if (!metaYear && s2.releaseDate) metaYear = s2.releaseDate;
+            await resolveViaServer2Spotify(directAudioUrl);
             resolvedOk = true;
           } catch (s2Err: any) {
             console.warn('[Spotify Download] Server 2 resolve error:', s2Err?.message || s2Err);
@@ -228,36 +262,56 @@ export default async function handler(req: any, res: any) {
         }
       }
 
-      // Fetch full audio stream
-      const audioRes = await fetch(directAudioUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': '*/*'
-        },
-        signal: AbortSignal.timeout(25000)
-      });
+      const fetchAudioBufferFromUrl = async (audioTarget: string): Promise<{ ok: boolean; status: number; buffer?: Buffer; errMsg?: string }> => {
+        const audioRes = await fetch(audioTarget, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': '*/*'
+          },
+          signal: AbortSignal.timeout(60000)
+        });
+        if (!audioRes.ok) {
+          return { ok: false, status: audioRes.status || 502, errMsg: 'Gagal mengunduh audio Spotify dari server sumber.' };
+        }
+        const audioCt = (audioRes.headers.get('content-type') || '').toLowerCase();
+        if (audioCt.includes('text/html')) {
+          return { ok: false, status: 502, errMsg: 'Respon audio Spotify tidak valid (HTML bukan file MP3).' };
+        }
+        const buf = Buffer.from(await audioRes.arrayBuffer());
+        if (buf.length < 10000) {
+          return { ok: false, status: 502, errMsg: 'File audio Spotify terlalu kecil atau korup.' };
+        }
+        return { ok: true, status: 200, buffer: buf };
+      };
 
-      if (!audioRes.ok) {
-        res.status(audioRes.status || 502).send('Gagal mengunduh audio Spotify dari server sumber.');
+      let fetchedAudio = await fetchAudioBufferFromUrl(directAudioUrl);
+      if (!fetchedAudio.ok && resolvedViaServer1 && reqServerMode !== 'server1') {
+        try {
+          const fallbackSource = (sourceUrl && sourceUrl.includes('spotify')) ? sourceUrl : targetUrl;
+          await resolveViaServer2Spotify(fallbackSource);
+          fetchedAudio = await fetchAudioBufferFromUrl(directAudioUrl);
+        } catch {}
+      }
+
+      if (!fetchedAudio.ok || !fetchedAudio.buffer) {
+        res.status(fetchedAudio.status || 502).send(fetchedAudio.errMsg || 'Gagal mengunduh audio Spotify dari server sumber.');
         return;
       }
 
-      const audioCt = (audioRes.headers.get('content-type') || '').toLowerCase();
-      if (audioCt.includes('text/html')) {
-        res.status(502).send('Respon audio Spotify tidak valid (HTML bukan file MP3).');
-        return;
-      }
-
-      const audioArrayBuffer = await audioRes.arrayBuffer();
-      let rawAudioBuffer: Buffer = Buffer.from(audioArrayBuffer);
-      if (rawAudioBuffer.length < 10000) {
-        res.status(502).send('File audio Spotify terlalu kecil atau korup.');
-        return;
-      }
+      let rawAudioBuffer: Buffer = fetchedAudio.buffer;
 
       const targetSpotifyBitrate = normalizeTargetBitrate(query.bitrate || req.query?.bitrate, '320k');
       if (!isInline) {
-        rawAudioBuffer = await ensureMp3TargetBitrateIfAvailable(rawAudioBuffer, targetSpotifyBitrate);
+        try {
+          rawAudioBuffer = await ensureMp3TargetBitrateIfAvailable(rawAudioBuffer, targetSpotifyBitrate);
+        } catch (encErr: any) {
+          if (encErr?.code === 'ENOENT') {
+            console.warn('[api/proxy-download] ffmpeg binary unavailable, streaming upstream Spotify audio');
+          } else {
+            res.status(502).send(`Gagal mengonversi audio Spotify ke ${targetSpotifyBitrate} CBR.`);
+            return;
+          }
+        }
       }
 
       // Fetch Cover Art buffer if cover URL is provided
@@ -541,6 +595,55 @@ export default async function handler(req: any, res: any) {
     }
 
     const rawContentType = remoteRes.headers.get('content-type') || '';
+    const wantsMp3Output = sanitizedFilename.toLowerCase().endsWith('.mp3');
+    const isUpstreamMp3 = rawContentType.includes('audio/mpeg') || rawContentType.includes('audio/mp3');
+    if (wantsMp3Output && (!isUpstreamMp3 || !isInline)) {
+      const targetMp3Bitrate = normalizeTargetBitrate(query.bitrate || req.query?.bitrate, '192k');
+      const chunks: Buffer[] = [Buffer.from(firstChunk)];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(Buffer.from(value));
+      }
+      let mp3Buffer: Buffer = Buffer.from(Buffer.concat(chunks));
+      try {
+        mp3Buffer = await ensureMp3TargetBitrateIfAvailable(mp3Buffer, targetMp3Bitrate);
+        const metaTitle = typeof query.title === 'string' ? query.title.trim() : '';
+        const metaArtist = typeof query.artist === 'string' ? query.artist.trim() : '';
+        if (metaTitle || metaArtist) {
+          try {
+            const tagged = NodeID3.write(
+              {
+                title: metaTitle || 'Audio DownloaderZero',
+                artist: metaArtist || (platform ? platform.toUpperCase() : 'DownloaderZero')
+              },
+              mp3Buffer
+            );
+            if (tagged && tagged.length > 0) mp3Buffer = Buffer.from(tagged);
+          } catch {}
+        }
+      } catch (encErr: any) {
+        if (encErr?.code !== 'ENOENT') {
+          res.status(422).json({ success: false, error: 'Media ini tidak memiliki trek audio yang dapat dikonversi ke MP3.' });
+          return;
+        }
+      }
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader(
+        'Content-Disposition',
+        isInline
+          ? `inline; filename="${sanitizedFilename}"`
+          : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
+      );
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges');
+      res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Length', mp3Buffer.length);
+      res.send(mp3Buffer);
+      return;
+    }
 
     // Determine proper MIME type instead of generic octet-stream
     let mimeType = 'application/octet-stream';

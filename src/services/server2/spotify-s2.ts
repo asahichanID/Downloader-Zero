@@ -123,19 +123,21 @@ async function enrichFromItunes(
   releaseDate: string;
   artworkUrl: string;
   previewUrl: string;
+  durationSec: number;
 }> {
   let genre = 'Pop';
   let album = '';
   let releaseDate = '';
   let artworkUrl = '';
   let previewUrl = '';
+  let durationSec = 0;
 
   const cleanTitle = cleanText(title)
     .replace(/[\(\[].*?[\)\]]/g, '')
     .trim();
   const primaryArtist = cleanText(artist).split(',')[0].trim();
   if (!cleanTitle) {
-    return { genre, album, releaseDate, artworkUrl, previewUrl };
+    return { genre, album, releaseDate, artworkUrl, previewUrl, durationSec };
   }
 
   try {
@@ -157,11 +159,14 @@ async function enrichFromItunes(
         if (typeof item.previewUrl === 'string' && item.previewUrl.startsWith('http')) {
           previewUrl = item.previewUrl;
         }
+        if (typeof item.trackTimeMillis === 'number' && item.trackTimeMillis > 0) {
+          durationSec = Math.round(item.trackTimeMillis / 1000);
+        }
       }
     }
   } catch {}
 
-  return { genre, album, releaseDate, artworkUrl, previewUrl };
+  return { genre, album, releaseDate, artworkUrl, previewUrl, durationSec };
 }
 
 /**
@@ -364,6 +369,7 @@ export async function scrapeSpotifyServer2(rawUrl: string): Promise<MediaMetadat
   let releaseDate = embed.releaseDate;
   let thumbnail = embed.thumbnail;
   let previewUrl = embed.previewUrl;
+  let resolvedDurationSec = embed.durationSec || 0;
 
   if (!isCollection || embed.tracks.length <= 1) {
     const itunes = await enrichFromItunes(embed.title, embed.author);
@@ -374,6 +380,9 @@ export async function scrapeSpotifyServer2(rawUrl: string): Promise<MediaMetadat
     if (itunes.releaseDate && !releaseDate) releaseDate = itunes.releaseDate;
     if (itunes.artworkUrl && !thumbnail) thumbnail = itunes.artworkUrl;
     if (itunes.previewUrl && !previewUrl) previewUrl = itunes.previewUrl;
+    if (itunes.durationSec > 0 && resolvedDurationSec <= 0) {
+      resolvedDurationSec = itunes.durationSec;
+    }
   }
 
   const tracks: AudioTrack[] =
@@ -393,23 +402,27 @@ export async function scrapeSpotifyServer2(rawUrl: string): Promise<MediaMetadat
             genre,
             releaseDate,
             thumbnail,
-            duration: embed.durationSec || 210,
-            durationFormatted: formatDuration(embed.durationSec || 210),
+            duration: resolvedDurationSec || 210,
+            durationFormatted: formatDuration(resolvedDurationSec || 210),
             url: embed.canonicalUrl,
             previewUrl: previewUrl || undefined,
             filesize:
-              embed.durationSec > 0
-                ? `~ ${Math.max(2.2, +(embed.durationSec * 0.04).toFixed(1))} MB`
+              resolvedDurationSec > 0
+                ? `~ ${Math.max(1.2, +((resolvedDurationSec * 320) / 8 / 1024).toFixed(1))} MB`
                 : '~ 8.2 MB'
           }
         ];
 
   // For full-song download, formats always point to canonical Spotify track/entity URL (resolved cleanly on server),
-  // NEVER to 30-second previewUrl.
-  const fullDownloadTarget = tracks.length === 1 ? tracks[0].url : embed.canonicalUrl;
+  // NEVER to 30-second previewUrl or mzstatic previews.
+  const rawTarget = tracks.length === 1 ? tracks[0].url : embed.canonicalUrl;
+  const fullDownloadTarget =
+    rawTarget && !rawTarget.includes('mp3-preview') && !rawTarget.includes('mzstatic.com')
+      ? rawTarget
+      : embed.canonicalUrl;
 
-  const estDurationSec = embed.durationSec || tracks[0]?.duration || 210;
-  const estimateMb = (kbps: number) => `~ ${Math.max(1.2, +((estDurationSec * kbps) / 8 / 1024).toFixed(1))} MB`;
+  const estDurationSec = resolvedDurationSec || tracks[0]?.duration || 210;
+  const estimateMb = (kbps: number) => `~ ${Math.max(0.8, +((estDurationSec * kbps) / 8 / 1024).toFixed(1))} MB`;
 
   const formats: MediaFormat[] = [
     {
@@ -463,8 +476,8 @@ export async function scrapeSpotifyServer2(rawUrl: string): Promise<MediaMetadat
     album,
     releaseDate,
     previewUrl: previewUrl || tracks[0]?.previewUrl || '',
-    duration: embed.durationSec || tracks[0]?.duration || 210,
-    durationFormatted: formatDuration(embed.durationSec || tracks[0]?.duration || 210),
+    duration: resolvedDurationSec || tracks[0]?.duration || 210,
+    durationFormatted: formatDuration(resolvedDurationSec || tracks[0]?.duration || 210),
     formats,
     tracks,
     isAudioPlaylist: isCollection && tracks.length > 1,
@@ -573,8 +586,8 @@ async function searchYouTubeAudioCandidates(
           const vChannel = cleanText(v.ownerText?.runs?.[0]?.text || v.longBylineText?.runs?.[0]?.text);
           const vDur = parseYouTubeDurationText(v.lengthText?.simpleText);
 
-          // Skip livestreams or ultra-short clips when real song duration > 60s
-          if (!vDur || (targetDurationSec > 60 && vDur < 45)) return;
+          // Skip livestreams or ultra-short <45s clips when duration is unknown or full song > 60s
+          if (!vDur || (targetDurationSec === 0 && vDur < 45) || (targetDurationSec > 60 && vDur < 45)) return;
           // Skip multi-hour compilations
           if (vDur > 1500 && (!targetDurationSec || targetDurationSec < 900)) return;
 
@@ -682,6 +695,16 @@ export async function resolveSpotifyFullAudioServer2(
     } catch {}
   }
 
+  if ((!title || !durationSec) && title) {
+    try {
+      const itunes = await enrichFromItunes(title, artist);
+      if (itunes.durationSec > 0 && !durationSec) durationSec = itunes.durationSec;
+      if (itunes.album && !album) album = itunes.album;
+      if (itunes.artworkUrl && !coverUrl) coverUrl = itunes.artworkUrl;
+      if (itunes.releaseDate && !releaseDate) releaseDate = itunes.releaseDate;
+    } catch {}
+  }
+
   if (!title) {
     throw new Error('Server 2 Spotify: Judul lagu tidak ditemukan untuk mencari audio penuh.');
   }
@@ -692,20 +715,45 @@ export async function resolveSpotifyFullAudioServer2(
     throw new Error(`Server 2 Spotify: Sumber lagu penuh untuk "${title}" tidak ditemukan.`);
   }
 
-  // 3. Resolve best matching candidate to direct MP3 CDN via SaveTube multi-CDN
+  // 3. Resolve best matching candidate to direct MP3 CDN via SaveTube multi-CDN and verify CDN health
   for (const cand of candidates.slice(0, 3)) {
     try {
       const ytUrl = `https://www.youtube.com/watch?v=${cand.videoId}`;
       const resolved = await resolveYouTubeServer2(ytUrl, 'yt-s2-audio-320', '320 kbps', 'audio');
-      if (resolved?.downloadUrl && resolved.downloadUrl.startsWith('http')) {
-        return {
-          audioUrl: resolved.downloadUrl,
-          title: title || 'Spotify Track',
-          artist: artist || 'Spotify Artist',
-          album: album || 'Spotify Music',
-          coverUrl,
-          releaseDate
-        };
+      const dlUrl = resolved?.downloadUrl;
+      if (dlUrl && dlUrl.startsWith('http') && !dlUrl.includes('mp3-preview') && !dlUrl.includes('mzstatic.com')) {
+        let healthy = true;
+        try {
+          const probe = await fetch(dlUrl, {
+            method: 'GET',
+            headers: {
+              'User-Agent': DESKTOP_UA,
+              'Range': 'bytes=0-1023'
+            },
+            signal: AbortSignal.timeout(6000)
+          });
+          if (probe.status >= 400 && probe.status !== 416) {
+            healthy = false;
+          }
+          const ct = (probe.headers.get('content-type') || '').toLowerCase();
+          if (ct.includes('text/html')) {
+            healthy = false;
+          }
+        } catch {
+          // Allow proxy-download to attempt full fetch if range probe hits transient timeout
+          healthy = true;
+        }
+
+        if (healthy) {
+          return {
+            audioUrl: dlUrl,
+            title: title || 'Spotify Track',
+            artist: artist || 'Spotify Artist',
+            album: album || 'Spotify Music',
+            coverUrl,
+            releaseDate
+          };
+        }
       }
     } catch (e: any) {
       console.warn(`[Server 2 Spotify] Candidate ${cand.videoId} resolve failed:`, e?.message || e);
