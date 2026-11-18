@@ -50,8 +50,8 @@ export const MediaResult: React.FC<MediaResultProps> = ({
     const resTag = fmt.resolution || (fmt.quality.includes('2K') ? '2K' : fmt.quality.includes('4K') ? '4K' : fmt.quality.split(' ')[0]);
     const filename = `DownloaderZero_${sanitizedTitle}_${resTag}.${ext}`;
 
+    let targetDownloadUrl = fmt.url;
     try {
-      let targetDownloadUrl = fmt.url;
       let jobId = fmt.jobId;
 
       // If format requires async conversion job (e.g. YouTube loader)
@@ -148,7 +148,16 @@ export const MediaResult: React.FC<MediaResultProps> = ({
       setDownloadProgress(40);
       setDownloadStatusText('Mengalirkan data berkas asli...');
 
-      const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(targetDownloadUrl)}&filename=${encodeURIComponent(filename)}`;
+      const kbpsMatch = `${fmt.resolution || ''} ${fmt.quality || ''} ${fmt.id || ''}`.match(/(320|256|192|128|64)/);
+      const bitrate = kbpsMatch ? `${kbpsMatch[1]}k` : (media.platform === 'spotify' ? '320k' : '192k');
+      let proxyUrl = `/api/proxy-download?url=${encodeURIComponent(targetDownloadUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(media.platform)}&sourceUrl=${encodeURIComponent(media.url)}`;
+      if (fmt.type === 'audio' || ext.toLowerCase() === 'mp3' || media.platform === 'spotify') {
+        proxyUrl += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(media.title || '')}&artist=${encodeURIComponent(media.author || '')}`;
+        if (media.platform === 'spotify') {
+          const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
+          proxyUrl += `&album=${encodeURIComponent(media.album || '')}&cover=${encodeURIComponent(media.thumbnail || '')}&duration=${media.duration || 0}&apiKey=${encodeURIComponent(customKey)}`;
+        }
+      }
 
       // Fetch file as Blob with streaming progress so browser saves directly to disk
       const response = await fetch(proxyUrl);
@@ -223,7 +232,7 @@ export const MediaResult: React.FC<MediaResultProps> = ({
       console.warn('Blob download fallback to hidden iframe:', err);
       // Fallback: trigger hidden iframe download so browser handles it natively without opening any tab
       setDownloadStatusText('Mengalihkan ke download manager peramban...');
-      triggerHiddenIframeDownload(fmt.url, filename);
+      triggerHiddenIframeDownload(targetDownloadUrl, filename, fmt);
       setDownloadProgress(100);
       setDownloadSuccess(`Berkas "${filename}" sedang diunduh oleh peramban Anda.`);
       setTimeout(() => {
@@ -250,8 +259,17 @@ export const MediaResult: React.FC<MediaResultProps> = ({
   };
 
   // Helper for hidden iframe download fallback (never navigates away or opens a new tab)
-  const triggerHiddenIframeDownload = (url: string, filename: string) => {
-    const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+  const triggerHiddenIframeDownload = (url: string, filename: string, fmt?: MediaFormat) => {
+    const kbpsMatch = `${fmt?.resolution || ''} ${fmt?.quality || ''} ${fmt?.id || ''}`.match(/(320|256|192|128|64)/);
+    const bitrate = kbpsMatch ? `${kbpsMatch[1]}k` : (media.platform === 'spotify' ? '320k' : '192k');
+    let proxyUrl = `/api/proxy-download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(media.platform)}&sourceUrl=${encodeURIComponent(media.url)}`;
+    if (fmt?.type === 'audio' || filename.toLowerCase().endsWith('.mp3') || media.platform === 'spotify') {
+      proxyUrl += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(media.title || '')}&artist=${encodeURIComponent(media.author || '')}`;
+      if (media.platform === 'spotify') {
+        const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
+        proxyUrl += `&album=${encodeURIComponent(media.album || '')}&cover=${encodeURIComponent(media.thumbnail || '')}&duration=${media.duration || 0}&apiKey=${encodeURIComponent(customKey)}`;
+      }
+    }
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
     iframe.src = proxyUrl;

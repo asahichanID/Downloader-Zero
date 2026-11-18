@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import NodeID3 from 'node-id3';
+import ffmpegStaticPath from 'ffmpeg-static';
 import { extractMedia, detectPlatform, resolveTikTokDownload, resolveYouTubeServer2, resolveSpotifyFullAudioServer2, checkNeoxrApiKeyStatus } from './src/services/scraper.ts';
 import {
   isSafePublicUrl,
@@ -108,45 +109,72 @@ async function startServer() {
     return ALLOWED_MP3_BITRATES.has(withSuffix) ? withSuffix : fallback;
   };
 
-  // Probes input audio buffer and encodes genuine CBR MP3 at requested bitrate (e.g. 320k CBR)
+  const getFfmpegCandidates = (): string[] => {
+    const list: string[] = [];
+    if (typeof ffmpegStaticPath === 'string' && ffmpegStaticPath.trim()) {
+      const staticBin = ffmpegStaticPath.trim();
+      if (fs.existsSync(staticBin)) {
+        try {
+          fs.chmodSync(staticBin, 0o755);
+        } catch {}
+        list.push(staticBin);
+      }
+    }
+    for (const sysPath of ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']) {
+      if (fs.existsSync(sysPath) && !list.includes(sysPath)) {
+        list.push(sysPath);
+      }
+    }
+    if (!list.includes('ffmpeg')) {
+      list.push('ffmpeg');
+    }
+    return list;
+  };
+
+  // Probes input audio buffer via ffmpeg and encodes genuine CBR MP3 at requested bitrate (e.g. 320k CBR)
   // so Android/desktop music players display exact bitrate badge (320kbps) & filesize.
   const ensureMp3TargetBitrate = async (inputBuffer: Buffer, targetBitrate: string): Promise<Buffer> => {
     const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const tmpInPath = path.join(os.tmpdir(), `dz_in_${uid}.media`);
     const tmpOutPath = path.join(os.tmpdir(), `dz_out_${uid}.mp3`);
     const targetBps = parseInt(targetBitrate, 10) * 1000;
+    const ffmpegBins = getFfmpegCandidates();
+
+    const probeWithFfmpeg = async (bin: string): Promise<{ formatName?: string; codec?: string; bitRate?: number } | null> => {
+      return await new Promise((resolve) => {
+        const fp = spawn(bin, ['-hide_banner', '-i', tmpInPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+        let infoText = '';
+        fp.stderr.on('data', (c: Buffer) => {
+          if (infoText.length < 4000) infoText += c.toString('utf8');
+        });
+        fp.on('error', () => resolve(null));
+        fp.on('close', () => {
+          const fmtMatch = infoText.match(/Input #0,\s*([a-zA-Z0-9_,]+),/i);
+          const audMatch = infoText.match(/Stream #\d+:\d+[^\n]*Audio:\s*([a-zA-Z0-9_]+)[^\n]*?(\d+)\s*kb\/s/i);
+          if (!fmtMatch && !audMatch) {
+            resolve(null);
+            return;
+          }
+          const formatName = fmtMatch?.[1]?.toLowerCase().split(',')[0]?.trim();
+          const codec = audMatch?.[1]?.toLowerCase();
+          const kbps = audMatch?.[2] ? Number(audMatch[2]) : 0;
+          resolve({
+            formatName,
+            codec,
+            bitRate: !isNaN(kbps) && kbps > 0 ? kbps * 1000 : 0
+          });
+        });
+      });
+    };
 
     try {
       fs.writeFileSync(tmpInPath, inputBuffer);
 
-      // Probe current format, codec & bitrate (~40ms) so exact matching CBR MP3 passes through untouched
-      const probeResult = await new Promise<{ formatName?: string; codec?: string; bitRate?: number } | null>((resolve) => {
-        const fp = spawn(
-          'ffprobe',
-          ['-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', tmpInPath],
-          { stdio: ['ignore', 'pipe', 'ignore'] }
-        );
-        const chunks: Buffer[] = [];
-        fp.stdout.on('data', (c: Buffer) => chunks.push(c));
-        fp.on('error', () => resolve(null));
-        fp.on('close', (code) => {
-          if (code !== 0) return resolve(null);
-          try {
-            const info = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-            const aud = Array.isArray(info?.streams)
-              ? info.streams.find((s: any) => s?.codec_type === 'audio')
-              : null;
-            const br = Number(aud?.bit_rate || info?.format?.bit_rate || 0);
-            resolve({
-              formatName: info?.format?.format_name,
-              codec: aud?.codec_name,
-              bitRate: isNaN(br) ? 0 : br
-            });
-          } catch {
-            resolve(null);
-          }
-        });
-      });
+      let probeResult: { formatName?: string; codec?: string; bitRate?: number } | null = null;
+      for (const bin of ffmpegBins) {
+        probeResult = await probeWithFfmpeg(bin);
+        if (probeResult) break;
+      }
 
       if (
         probeResult?.formatName === 'mp3' &&
@@ -158,7 +186,7 @@ async function startServer() {
       }
 
       const bufsize = targetBps >= 256000 ? '640k' : '384k';
-      const runFfmpeg = (useStrictMap: boolean) =>
+      const runFfmpegWithBin = (bin: string, useStrictMap: boolean) =>
         new Promise<Buffer>((resolve, reject) => {
           const args = [
             '-y',
@@ -171,13 +199,14 @@ async function startServer() {
             '-minrate', targetBitrate,
             '-maxrate', targetBitrate,
             '-bufsize', bufsize,
+            '-write_xing', '0',
             '-compression_level', '2',
             '-ar', '44100',
             '-ac', '2',
             '-f', 'mp3',
             tmpOutPath
           ];
-          const ff = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+          const ff = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
           let errText = '';
           ff.stderr.on('data', (chunk: Buffer) => {
             if (errText.length < 800) errText += chunk.toString('utf8');
@@ -195,15 +224,25 @@ async function startServer() {
           });
         });
 
-      let encoded: Buffer;
-      try {
-        encoded = await runFfmpeg(true);
-      } catch (firstErr: any) {
-        if (firstErr?.code === 'ENOENT') throw firstErr;
-        encoded = await runFfmpeg(false);
+      let lastErr: any = null;
+      for (const bin of ffmpegBins) {
+        try {
+          return await runFfmpegWithBin(bin, true);
+        } catch (firstErr: any) {
+          lastErr = firstErr;
+          if (firstErr?.code === 'ENOENT' || firstErr?.code === 'EACCES') {
+            continue;
+          }
+          try {
+            return await runFfmpegWithBin(bin, false);
+          } catch (secondErr: any) {
+            lastErr = secondErr;
+            break;
+          }
+        }
       }
 
-      return encoded;
+      throw lastErr || new Error('Gagal menjalankan encoder audio MP3.');
     } finally {
       try {
         if (fs.existsSync(tmpInPath)) fs.unlinkSync(tmpInPath);
@@ -703,7 +742,7 @@ async function startServer() {
         };
 
         let fetchedAudio = await fetchAudioBufferFromUrl(directAudioUrl);
-        if (!fetchedAudio.ok && resolvedViaServer1 && reqServerMode !== 'server1') {
+        if (!fetchedAudio.ok && reqServerMode !== 'server1' && (resolvedViaServer1 || (sourceUrl && sourceUrl.includes('spotify')))) {
           try {
             const fallbackSource = (sourceUrl && sourceUrl.includes('spotify')) ? sourceUrl : targetUrl;
             await resolveViaServer2Spotify(fallbackSource);
@@ -726,13 +765,9 @@ async function startServer() {
           try {
             rawAudioBuffer = await ensureMp3TargetBitrate(rawAudioBuffer, targetSpotifyBitrate);
           } catch (encErr: any) {
-            if (encErr?.code === 'ENOENT') {
-              console.warn('[Spotify Download] ffmpeg binary unavailable, streaming upstream audio');
-            } else {
-              console.error('[Spotify Download] MP3 bitrate transcode failed:', encErr?.message || encErr);
-              res.status(502).send(`Gagal mengonversi audio Spotify ke ${targetSpotifyBitrate} CBR.`);
-              return;
-            }
+            console.error('[Spotify Download] MP3 bitrate transcode failed:', encErr?.message || encErr);
+            res.status(502).send(`Gagal mengonversi audio Spotify ke ${targetSpotifyBitrate} CBR.`);
+            return;
           }
         }
 
@@ -779,7 +814,7 @@ async function startServer() {
         let finalMp3Buffer: Buffer = rawAudioBuffer;
         try {
           const tagged = NodeID3.write(tags, rawAudioBuffer);
-          if (tagged && tagged.length > 0) {
+          if (Buffer.isBuffer(tagged) && tagged.length > 0) {
             finalMp3Buffer = tagged;
             console.log(`[Spotify Download] ✅ ${targetSpotifyBitrate} MP3 + ID3 & Cover ready! Size: ${finalMp3Buffer.length} bytes`);
           }
@@ -800,10 +835,11 @@ async function startServer() {
             : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
         );
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges, X-Process-Id, X-Cache-Lifetime');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges, X-Process-Id, X-Cache-Lifetime, X-Audio-Bitrate');
         res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
         res.setHeader('X-Process-Id', processKey);
         res.setHeader('X-Cache-Lifetime', '15s');
+        res.setHeader('X-Audio-Bitrate', isInline ? 'preview' : targetSpotifyBitrate);
 
         if (rangeHeader) {
           const totalLen = finalMp3Buffer.length;
@@ -916,9 +952,10 @@ async function startServer() {
             : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
         );
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges, X-Audio-Bitrate');
         res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
         res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Audio-Bitrate', resolvedTargetBitrate);
 
         if (rangeHeader) {
           const totalLen = mp3Buffer.length;

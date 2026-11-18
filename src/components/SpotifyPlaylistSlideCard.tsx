@@ -74,7 +74,7 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
     if (streamUrl && streamUrl.startsWith('http')) {
       const audio = new Audio();
       // Stream audio cleanly
-      audio.src = `/api/proxy-download?url=${encodeURIComponent(streamUrl)}&filename=preview_${currentIndex}.mp3`;
+      audio.src = `/api/proxy-download?url=${encodeURIComponent(streamUrl)}&filename=preview_${currentIndex}.mp3&platform=spotify&inline=1`;
       audio.preload = 'metadata';
 
       audio.onloadedmetadata = () => {
@@ -172,14 +172,19 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
         for (let i = 0; i < tracks.length; i++) {
           if (isCancelled) return;
           const trk = tracks[i];
-          const rawUrl = trk.previewUrl || trk.url;
+          const trackId = trk.id?.replace(/^sp-track-/, '') || '';
+          const rawUrl = trk.url?.startsWith('http') && !trk.url.includes('mp3-preview')
+            ? trk.url
+            : (trackId ? `https://open.spotify.com/track/${trackId}` : (trk.previewUrl || trk.url));
           const sanitizedSong = `${(i + 1).toString().padStart(2, '0')}_${trk.artist}_${trk.title}`
             .slice(0, 40)
             .replace(/[^a-zA-Z0-9_-]/g, '_');
           const filename = `${sanitizedSong}.mp3`;
 
           try {
-            const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(rawUrl)}&filename=${encodeURIComponent(filename)}`;
+            const trackCover = trk.thumbnail || media.thumbnail || '';
+            const trackAlbum = trk.album || media.album || media.title || '';
+            const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(rawUrl)}&filename=${encodeURIComponent(filename)}&platform=spotify&sourceUrl=${encodeURIComponent(rawUrl)}&bitrate=320k&title=${encodeURIComponent(trk.title || '')}&artist=${encodeURIComponent(trk.artist || '')}&album=${encodeURIComponent(trackAlbum)}&cover=${encodeURIComponent(trackCover)}&duration=${trk.duration || 0}`;
             const res = await fetch(proxyUrl);
             if (res.ok) {
               const b = await res.blob();
@@ -288,9 +293,14 @@ export const SpotifyPlaylistSlideCard: React.FC<SpotifyPlaylistSlideCardProps> =
         .slice(0, 35)
         .replace(/[^a-zA-Z0-9_-]/g, '_');
       const filename = `DownloaderZero_${sanitizedSong}.mp3`;
-      const dlUrl = trk.previewUrl || trk.url;
+      const trackId = trk.id?.replace(/^sp-track-/, '') || '';
+      const dlUrl = trk.url?.startsWith('http') && !trk.url.includes('mp3-preview')
+        ? trk.url
+        : (trackId ? `https://open.spotify.com/track/${trackId}` : (trk.previewUrl || trk.url));
+      const trackCover = trk.thumbnail || media.thumbnail || '';
+      const trackAlbum = trk.album || media.album || media.title || '';
 
-      const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(dlUrl)}&filename=${encodeURIComponent(filename)}`;
+      const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(dlUrl)}&filename=${encodeURIComponent(filename)}&platform=spotify&sourceUrl=${encodeURIComponent(dlUrl)}&bitrate=320k&title=${encodeURIComponent(trk.title || '')}&artist=${encodeURIComponent(trk.artist || '')}&album=${encodeURIComponent(trackAlbum)}&cover=${encodeURIComponent(trackCover)}&duration=${trk.duration || 0}`;
       const res = await fetch(proxyUrl);
       if (!res.ok) throw new Error('Gagal mengunduh audio lagu.');
 

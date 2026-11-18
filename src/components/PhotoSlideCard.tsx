@@ -114,7 +114,7 @@ export const PhotoSlideCard: React.FC<PhotoSlideCardProps> = ({ media }) => {
       if (audioFormat?.url) {
         try {
           setZipProgress('Menambahkan audio musik TikTok...');
-          const audioProxy = `/api/proxy-download?url=${encodeURIComponent(audioFormat.url)}&filename=Audio_TikTok.mp3`;
+          const audioProxy = `/api/proxy-download?url=${encodeURIComponent(audioFormat.url)}&filename=Audio_TikTok.mp3&platform=${encodeURIComponent(media.platform)}&sourceUrl=${encodeURIComponent(media.url)}&bitrate=320k`;
           const aRes = await fetch(audioProxy);
           if (aRes.ok) {
             const aBlob = await aRes.blob();

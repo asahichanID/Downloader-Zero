@@ -1589,11 +1589,14 @@ export default function App() {
     const streamUrl = item.downloadUrl || item.sourceUrl;
 
     let downloadHref = `/api/proxy-download?url=${encodeURIComponent(streamUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl)}&server=${encodeURIComponent(serverMode)}`;
+    const kbpsMatch = `${item.resolution || ''} ${item.quality || ''}`.match(/(320|256|192|128|64)/);
     if (item.platform === 'spotify') {
       const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
-      const kbpsMatch = `${item.resolution || ''} ${item.quality || ''}`.match(/(320|256|192|128|64)/);
       const bitrate = kbpsMatch ? `${kbpsMatch[1]}k` : '320k';
       downloadHref += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(item.title || '')}&artist=${encodeURIComponent(item.artist || item.author || '')}&album=${encodeURIComponent(item.album || '')}&cover=${encodeURIComponent(item.thumbnail || '')}&duration=${item.duration || 0}&apiKey=${encodeURIComponent(customKey)}`;
+    } else if (item.mediaType === 'audio' || ext.toLowerCase() === 'mp3') {
+      const bitrate = kbpsMatch ? `${kbpsMatch[1]}k` : '192k';
+      downloadHref += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(item.title || '')}&artist=${encodeURIComponent(item.artist || item.author || '')}`;
     }
 
     const a = document.createElement('a');

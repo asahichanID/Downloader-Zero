@@ -110,7 +110,9 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
     const target = item.downloadUrl || item.sourceUrl || '';
     if (!target) return '';
     const filename = item.filename || `audio.${item.extension || 'mp3'}`;
-    return `/api/proxy-download?url=${encodeURIComponent(target)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl || '')}&inline=1`;
+    const kbpsMatch = `${item.resolution || ''} ${item.quality || ''}`.match(/(320|256|192|128|64)/);
+    const bitrate = kbpsMatch ? `${kbpsMatch[1]}k` : (item.platform === 'spotify' ? '320k' : '192k');
+    return `/api/proxy-download?url=${encodeURIComponent(target)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl || '')}&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(item.title || '')}&artist=${encodeURIComponent(item.artist || item.author || '')}&album=${encodeURIComponent(item.album || '')}&cover=${encodeURIComponent(item.thumbnail || '')}&duration=${item.duration || 0}&inline=1`;
   }, [item]);
 
   const activeAudioUrl = useMemo(() => {

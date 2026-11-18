@@ -109,7 +109,7 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
     }
 
     const audio = new Audio();
-    audio.src = `/api/proxy-download?url=${encodeURIComponent(streamUrl)}&filename=preview.mp3`;
+    audio.src = `/api/proxy-download?url=${encodeURIComponent(streamUrl)}&filename=preview.mp3&platform=spotify&inline=1`;
     audio.onplaying = () => setIsPlayingPreview(true);
     audio.onpause = () => setIsPlayingPreview(false);
     audio.onended = () => {
@@ -174,7 +174,9 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
 
       setTrackProgress((prev) => ({ ...prev, [trk.id]: 65 }));
 
-      const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(finalAudioUrl)}&filename=${encodeURIComponent(filename)}&apiKey=${encodeURIComponent(customKey)}`;
+      const trackCover = trk.thumbnail || media.thumbnail || '';
+      const trackAlbum = trk.album || media.album || media.title || '';
+      const proxyUrl = `/api/proxy-download?url=${encodeURIComponent(finalAudioUrl)}&filename=${encodeURIComponent(filename)}&platform=spotify&sourceUrl=${encodeURIComponent(trackUrl)}&bitrate=320k&title=${encodeURIComponent(trk.title || '')}&artist=${encodeURIComponent(trk.artist || '')}&album=${encodeURIComponent(trackAlbum)}&cover=${encodeURIComponent(trackCover)}&duration=${trk.duration || 0}&apiKey=${encodeURIComponent(customKey)}`;
       const response = await fetch(proxyUrl);
 
       if (!response.ok) {
@@ -303,7 +305,9 @@ export const SpotifyPlaylistModal: React.FC<SpotifyPlaylistModalProps> = ({
         const songFilename = `${songName}.mp3`;
 
         try {
-          const res = await fetch(`/api/proxy-download?url=${encodeURIComponent(targetUrl)}&filename=${encodeURIComponent(songFilename)}&apiKey=${encodeURIComponent(customKey)}`);
+          const trackCover = trk.thumbnail || media.thumbnail || '';
+          const trackAlbum = trk.album || media.album || media.title || '';
+          const res = await fetch(`/api/proxy-download?url=${encodeURIComponent(targetUrl)}&filename=${encodeURIComponent(songFilename)}&platform=spotify&sourceUrl=${encodeURIComponent(trackUrl)}&bitrate=320k&title=${encodeURIComponent(trk.title || '')}&artist=${encodeURIComponent(trk.artist || '')}&album=${encodeURIComponent(trackAlbum)}&cover=${encodeURIComponent(trackCover)}&duration=${trk.duration || 0}&apiKey=${encodeURIComponent(customKey)}`);
           if (res.ok) {
             const blob = await res.blob();
             folder.file(songFilename, blob);

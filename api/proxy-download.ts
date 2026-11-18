@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
 import NodeID3 from 'node-id3';
+import ffmpegStaticPath from 'ffmpeg-static';
 import { extractMedia, detectPlatform, resolveYouTubeServer2, resolveSpotifyFullAudioServer2 } from './_utils/scraper.ts';
 
 const ALLOWED_MP3_BITRATES = new Set(['320k', '256k', '192k', '128k', '64k']);
@@ -12,36 +13,70 @@ function normalizeTargetBitrate(raw: unknown, fallback = '320k'): string {
   return ALLOWED_MP3_BITRATES.has(withSuffix) ? withSuffix : fallback;
 }
 
-async function ensureMp3TargetBitrateIfAvailable(inputBuffer: Buffer, targetBitrate: string): Promise<Buffer> {
+function getFfmpegCandidates(): string[] {
+  const list: string[] = [];
+  if (typeof ffmpegStaticPath === 'string' && ffmpegStaticPath.trim()) {
+    const staticBin = ffmpegStaticPath.trim();
+    if (fs.existsSync(staticBin)) {
+      try {
+        fs.chmodSync(staticBin, 0o755);
+      } catch {}
+      list.push(staticBin);
+    }
+  }
+  for (const sysPath of ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']) {
+    if (fs.existsSync(sysPath) && !list.includes(sysPath)) {
+      list.push(sysPath);
+    }
+  }
+  if (!list.includes('ffmpeg')) {
+    list.push('ffmpeg');
+  }
+  return list;
+}
+
+async function ensureMp3TargetBitrate(inputBuffer: Buffer, targetBitrate: string): Promise<Buffer> {
   const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const tmpInPath = path.join(os.tmpdir(), `dz_api_in_${uid}.media`);
   const tmpOutPath = path.join(os.tmpdir(), `dz_api_out_${uid}.mp3`);
   const targetBps = parseInt(targetBitrate, 10) * 1000;
+  const ffmpegBins = getFfmpegCandidates();
+
+  const probeWithFfmpeg = async (bin: string): Promise<{ formatName?: string; codec?: string; bitRate?: number } | null> => {
+    return await new Promise((resolve) => {
+      const fp = spawn(bin, ['-hide_banner', '-i', tmpInPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+      let infoText = '';
+      fp.stderr.on('data', (c: Buffer) => {
+        if (infoText.length < 4000) infoText += c.toString('utf8');
+      });
+      fp.on('error', () => resolve(null));
+      fp.on('close', () => {
+        const fmtMatch = infoText.match(/Input #0,\s*([a-zA-Z0-9_,]+),/i);
+        const audMatch = infoText.match(/Stream #\d+:\d+[^\n]*Audio:\s*([a-zA-Z0-9_]+)[^\n]*?(\d+)\s*kb\/s/i);
+        if (!fmtMatch && !audMatch) {
+          resolve(null);
+          return;
+        }
+        const formatName = fmtMatch?.[1]?.toLowerCase().split(',')[0]?.trim();
+        const codec = audMatch?.[1]?.toLowerCase();
+        const kbps = audMatch?.[2] ? Number(audMatch[2]) : 0;
+        resolve({
+          formatName,
+          codec,
+          bitRate: !isNaN(kbps) && kbps > 0 ? kbps * 1000 : 0
+        });
+      });
+    });
+  };
 
   try {
     fs.writeFileSync(tmpInPath, inputBuffer);
 
-    const probeResult = await new Promise<{ formatName?: string; codec?: string; bitRate?: number } | null>((resolve) => {
-      const fp = spawn(
-        'ffprobe',
-        ['-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', tmpInPath],
-        { stdio: ['ignore', 'pipe', 'ignore'] }
-      );
-      const chunks: Buffer[] = [];
-      fp.stdout.on('data', (c: Buffer) => chunks.push(c));
-      fp.on('error', () => resolve(null));
-      fp.on('close', (code) => {
-        if (code !== 0) return resolve(null);
-        try {
-          const info = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-          const aud = Array.isArray(info?.streams) ? info.streams.find((s: any) => s?.codec_type === 'audio') : null;
-          const br = Number(aud?.bit_rate || info?.format?.bit_rate || 0);
-          resolve({ formatName: info?.format?.format_name, codec: aud?.codec_name, bitRate: isNaN(br) ? 0 : br });
-        } catch {
-          resolve(null);
-        }
-      });
-    });
+    let probeResult: { formatName?: string; codec?: string; bitRate?: number } | null = null;
+    for (const bin of ffmpegBins) {
+      probeResult = await probeWithFfmpeg(bin);
+      if (probeResult) break;
+    }
 
     if (
       probeResult?.formatName === 'mp3' &&
@@ -53,19 +88,23 @@ async function ensureMp3TargetBitrateIfAvailable(inputBuffer: Buffer, targetBitr
     }
 
     const bufsize = targetBps >= 256000 ? '640k' : '384k';
-    const runFfmpeg = (useStrictMap: boolean) =>
+    const runFfmpegWithBin = (bin: string, useStrictMap: boolean) =>
       new Promise<Buffer>((resolve, reject) => {
         const ff = spawn(
-          'ffmpeg',
+          bin,
           [
             '-y', '-i', tmpInPath,
             ...(useStrictMap ? ['-map', '0:a:0'] : []),
             '-vn', '-map_metadata', '-1',
             '-c:a', 'libmp3lame', '-b:a', targetBitrate, '-minrate', targetBitrate, '-maxrate', targetBitrate,
-            '-bufsize', bufsize, '-compression_level', '2', '-ar', '44100', '-ac', '2', '-f', 'mp3', tmpOutPath
+            '-bufsize', bufsize, '-write_xing', '0', '-compression_level', '2', '-ar', '44100', '-ac', '2', '-f', 'mp3', tmpOutPath
           ],
-          { stdio: ['ignore', 'ignore', 'ignore'] }
+          { stdio: ['ignore', 'ignore', 'pipe'] }
         );
+        let errText = '';
+        ff.stderr.on('data', (chunk: Buffer) => {
+          if (errText.length < 800) errText += chunk.toString('utf8');
+        });
         ff.on('error', (err) => reject(err));
         ff.on('close', (code) => {
           if (code === 0 && fs.existsSync(tmpOutPath)) {
@@ -75,16 +114,29 @@ async function ensureMp3TargetBitrateIfAvailable(inputBuffer: Buffer, targetBitr
               return;
             }
           }
-          reject(new Error(`ffmpeg exited ${code}`));
+          reject(new Error(`ffmpeg exited ${code}: ${errText.slice(-200)}`));
         });
       });
 
-    try {
-      return await runFfmpeg(true);
-    } catch (firstErr: any) {
-      if (firstErr?.code === 'ENOENT') throw firstErr;
-      return await runFfmpeg(false);
+    let lastErr: any = null;
+    for (const bin of ffmpegBins) {
+      try {
+        return await runFfmpegWithBin(bin, true);
+      } catch (firstErr: any) {
+        lastErr = firstErr;
+        if (firstErr?.code === 'ENOENT' || firstErr?.code === 'EACCES') {
+          continue;
+        }
+        try {
+          return await runFfmpegWithBin(bin, false);
+        } catch (secondErr: any) {
+          lastErr = secondErr;
+          break;
+        }
+      }
     }
+
+    throw lastErr || new Error('Gagal menjalankan encoder audio MP3.');
   } finally {
     try { if (fs.existsSync(tmpInPath)) fs.unlinkSync(tmpInPath); } catch {}
     try { if (fs.existsSync(tmpOutPath)) fs.unlinkSync(tmpOutPath); } catch {}
@@ -285,7 +337,7 @@ export default async function handler(req: any, res: any) {
       };
 
       let fetchedAudio = await fetchAudioBufferFromUrl(directAudioUrl);
-      if (!fetchedAudio.ok && resolvedViaServer1 && reqServerMode !== 'server1') {
+      if (!fetchedAudio.ok && reqServerMode !== 'server1' && (resolvedViaServer1 || (sourceUrl && sourceUrl.includes('spotify')))) {
         try {
           const fallbackSource = (sourceUrl && sourceUrl.includes('spotify')) ? sourceUrl : targetUrl;
           await resolveViaServer2Spotify(fallbackSource);
@@ -303,14 +355,11 @@ export default async function handler(req: any, res: any) {
       const targetSpotifyBitrate = normalizeTargetBitrate(query.bitrate || req.query?.bitrate, '320k');
       if (!isInline) {
         try {
-          rawAudioBuffer = await ensureMp3TargetBitrateIfAvailable(rawAudioBuffer, targetSpotifyBitrate);
+          rawAudioBuffer = await ensureMp3TargetBitrate(rawAudioBuffer, targetSpotifyBitrate);
         } catch (encErr: any) {
-          if (encErr?.code === 'ENOENT') {
-            console.warn('[api/proxy-download] ffmpeg binary unavailable, streaming upstream Spotify audio');
-          } else {
-            res.status(502).send(`Gagal mengonversi audio Spotify ke ${targetSpotifyBitrate} CBR.`);
-            return;
-          }
+          console.error('[api/proxy-download] Spotify MP3 bitrate transcode failed:', encErr?.message || encErr);
+          res.status(502).send(`Gagal mengonversi audio Spotify ke ${targetSpotifyBitrate} CBR.`);
+          return;
         }
       }
 
@@ -355,7 +404,7 @@ export default async function handler(req: any, res: any) {
       let finalMp3Buffer: Buffer = rawAudioBuffer;
       try {
         const tagged = NodeID3.write(tags, rawAudioBuffer);
-        if (tagged && tagged.length > 0) {
+        if (Buffer.isBuffer(tagged) && tagged.length > 0) {
           finalMp3Buffer = tagged;
         }
       } catch (id3Err) {
@@ -375,10 +424,11 @@ export default async function handler(req: any, res: any) {
           : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
       );
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges, X-Process-Id, X-Cache-Lifetime');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges, X-Process-Id, X-Cache-Lifetime, X-Audio-Bitrate');
       res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
       res.setHeader('X-Process-Id', processKey);
       res.setHeader('X-Cache-Lifetime', '15s');
+      res.setHeader('X-Audio-Bitrate', isInline ? 'preview' : targetSpotifyBitrate);
 
       if (rangeHeader) {
         const totalLen = finalMp3Buffer.length;
@@ -607,7 +657,7 @@ export default async function handler(req: any, res: any) {
       }
       let mp3Buffer: Buffer = Buffer.from(Buffer.concat(chunks));
       try {
-        mp3Buffer = await ensureMp3TargetBitrateIfAvailable(mp3Buffer, targetMp3Bitrate);
+        mp3Buffer = await ensureMp3TargetBitrate(mp3Buffer, targetMp3Bitrate);
         const metaTitle = typeof query.title === 'string' ? query.title.trim() : '';
         const metaArtist = typeof query.artist === 'string' ? query.artist.trim() : '';
         if (metaTitle || metaArtist) {
@@ -619,14 +669,13 @@ export default async function handler(req: any, res: any) {
               },
               mp3Buffer
             );
-            if (tagged && tagged.length > 0) mp3Buffer = Buffer.from(tagged);
+            if (Buffer.isBuffer(tagged) && tagged.length > 0) mp3Buffer = Buffer.from(tagged);
           } catch {}
         }
       } catch (encErr: any) {
-        if (encErr?.code !== 'ENOENT') {
-          res.status(422).json({ success: false, error: 'Media ini tidak memiliki trek audio yang dapat dikonversi ke MP3.' });
-          return;
-        }
+        console.warn('[api/proxy-download] MP3 transcode error:', encErr?.message || encErr);
+        res.status(422).json({ success: false, error: 'Media ini tidak memiliki trek audio yang dapat dikonversi ke MP3.' });
+        return;
       }
       res.setHeader('Content-Type', 'audio/mpeg');
       res.setHeader('Accept-Ranges', 'bytes');
@@ -637,9 +686,10 @@ export default async function handler(req: any, res: any) {
           : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
       );
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges, X-Audio-Bitrate');
       res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
       res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Audio-Bitrate', targetMp3Bitrate);
       res.setHeader('Content-Length', mp3Buffer.length);
       res.send(mp3Buffer);
       return;

@@ -2,7 +2,7 @@ import type { MediaMetadata, MediaFormat, ServerMode } from '../types/index.ts';
 
 const DEFAULT_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes fallback when CDN URL has no explicit expiry
 const EXPIRY_SAFETY_BUFFER_MS = 45 * 1000; // Refresh 45s before actual CDN expiry
-const SESSION_STORAGE_KEY = 'dz_media_result_cache_v1';
+const SESSION_STORAGE_KEY = 'dz_media_result_cache_v2';
 
 export interface CachedExtractEntry {
   key: string;
