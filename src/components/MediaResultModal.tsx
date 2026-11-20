@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { X, Download, Loader2, CheckCircle2, Film, Music, Clock, User, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { MediaMetadata, MediaFormat, MediaType } from '../types/index.ts';
-import animeMascot from '../assets/images/anime_mascot_hero_1792123758844.jpg';
+
+const BANNER_IMAGE_CDN = 'https://cdn.jsdelivr.net/gh/asahichanID/media@main/banner_dz.png';
 
 interface MediaResultModalProps {
   isOpen: boolean;
@@ -25,7 +26,7 @@ export const MediaResultModal: React.FC<MediaResultModalProps> = ({
 }) => {
   const formats = media.formats.filter((f) => f.type === activeFilter);
   const displayFormats = formats.length > 0 ? formats : media.formats;
-  const thumbnail = (media.thumbnail && media.thumbnail.trim()) ? media.thumbnail : animeMascot;
+  const thumbnail = (media.thumbnail && media.thumbnail.trim()) ? media.thumbnail : '/banner_dz.png';
 
   return (
     <AnimatePresence>
@@ -70,7 +71,14 @@ export const MediaResultModal: React.FC<MediaResultModalProps> = ({
                 alt={media.title || 'Media thumbnail'}
                 className="w-24 h-16 rounded-xl object-cover shrink-0 border border-slate-300 dark:border-cyan-500/30 bg-slate-100 dark:bg-slate-900"
                 onError={(e) => {
-                  (e.target as HTMLElement).setAttribute('src', animeMascot);
+                  const img = e.currentTarget;
+                  if (!img.dataset.localFallback) {
+                    img.dataset.localFallback = '1';
+                    img.src = '/banner_dz.png';
+                  } else if (!img.dataset.cdnFallback) {
+                    img.dataset.cdnFallback = '1';
+                    img.src = BANNER_IMAGE_CDN;
+                  }
                 }}
               />
               <div className="flex-1 min-w-0">

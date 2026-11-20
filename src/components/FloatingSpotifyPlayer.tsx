@@ -280,7 +280,14 @@ export const FloatingSpotifyPlayer: React.FC<FloatingSpotifyPlayerProps> = React
                   decoding="async"
                   className="w-full h-full object-cover select-none"
                   onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).src = '/banner_dz.png';
+                    const img = e.currentTarget;
+                    if (!img.dataset.localFallback) {
+                      img.dataset.localFallback = '1';
+                      img.src = '/banner_dz.png';
+                    } else if (!img.dataset.cdnFallback) {
+                      img.dataset.cdnFallback = '1';
+                      img.src = 'https://cdn.jsdelivr.net/gh/asahichanID/media@main/banner_dz.png';
+                    }
                   }}
                 />
               ) : (

@@ -32,7 +32,14 @@ export interface MediaFormat {
   jobId?: string; // for async polling like loader.to
   isDirect: boolean;
   needsResolution?: boolean; // When true, resolves exact stream API on-demand upon format selection
+  dashAudioUrl?: string; // Optional paired DASH audio stream URL for server-side muxing
   note?: string; // e.g., 'No Watermark', 'Original Audio', 'Lossless'
+}
+
+export interface PhotoResolutionVariant {
+  resolution: string; // e.g., 'Asli HD', '1080p', '720p', '480p'
+  label: string;
+  images: string[];
 }
 
 export interface TeraboxFile {
@@ -67,6 +74,7 @@ export interface MediaMetadata {
   comments?: number | string;
   formats: MediaFormat[];
   images?: string[];
+  photoVariants?: PhotoResolutionVariant[];
   isPhotoSlide?: boolean;
   tracks?: AudioTrack[];
   isAudioPlaylist?: boolean;

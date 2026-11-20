@@ -1,7 +1,8 @@
 import React from 'react';
 import { Play, Clock, HardDrive, ChevronRight } from 'lucide-react';
-import animeMascot from '../assets/images/anime_mascot_hero_1792123758844.jpg';
 import type { MediaMetadata } from '../types/index.ts';
+
+const BANNER_IMAGE_CDN = 'https://cdn.jsdelivr.net/gh/asahichanID/media@main/banner_dz.png';
 
 interface VideoPreviewCardProps {
   media: MediaMetadata | null;
@@ -21,7 +22,7 @@ export const VideoPreviewCard: React.FC<VideoPreviewCardProps> = ({
 
   const title = media.title || 'Video';
   const duration = media.durationFormatted || 'Durasi: --:--';
-  const thumbnail = (media.thumbnail && media.thumbnail.trim()) ? media.thumbnail : animeMascot;
+  const thumbnail = (media.thumbnail && media.thumbnail.trim()) ? media.thumbnail : '/banner_dz.png';
 
   // Find format corresponding to selectedResolution
   const matchedFormat = media.formats?.find((f) => {
@@ -54,7 +55,14 @@ export const VideoPreviewCard: React.FC<VideoPreviewCardProps> = ({
           alt={title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
           onError={(e) => {
-            (e.target as HTMLElement).setAttribute('src', animeMascot);
+            const img = e.currentTarget;
+            if (!img.dataset.localFallback) {
+              img.dataset.localFallback = '1';
+              img.src = '/banner_dz.png';
+            } else if (!img.dataset.cdnFallback) {
+              img.dataset.cdnFallback = '1';
+              img.src = BANNER_IMAGE_CDN;
+            }
           }}
         />
         {/* Dark overlay */}

@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
 import bannerImage from '../assets/images/banner_dz.png';
 
+const BANNER_IMAGE_CDN = 'https://cdn.jsdelivr.net/gh/asahichanID/media@main/banner_dz.png';
+const BANNER_VIDEO_CDN = 'https://cdn.jsdelivr.net/gh/asahichanID/media@main/banner_dz.mp4';
+
 interface BannerDZProps {
   paused?: boolean;
   alwaysPlay?: boolean;
@@ -9,6 +12,7 @@ interface BannerDZProps {
 
 export const BannerDZ: React.FC<BannerDZProps> = React.memo(({ paused = false, alwaysPlay = true }) => {
   const [showVideo, setShowVideo] = useState<boolean>(false);
+  const [videoSrc, setVideoSrc] = useState<string>('/banner_eksperimen.mp4');
   const [isInView, setIsInView] = useState<boolean>(true);
   const [isTabVisible, setIsTabVisible] = useState<boolean>(() =>
     typeof document !== 'undefined' ? !document.hidden : true
@@ -90,6 +94,13 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({ paused = false, a
             src={bannerImage}
             alt="DownloaderZero Banner"
             decoding="async"
+            onError={(e) => {
+              const img = e.currentTarget;
+              if (!img.dataset.cdnFallback) {
+                img.dataset.cdnFallback = '1';
+                img.src = BANNER_IMAGE_CDN;
+              }
+            }}
             className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center will-change-[opacity] transition-opacity duration-500 ease-in-out ${
               showVideo ? 'opacity-0' : 'opacity-100'
             }`}
@@ -99,12 +110,18 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({ paused = false, a
           {/* Banner MP4 Video (Paused cleanly whenever scrolled out, hidden, or in modal/other tabs) */}
           <video
             ref={videoRef}
-            src="/banner_eksperimen.mp4"
+            src={videoSrc}
             muted
             playsInline
             preload="metadata"
             onEnded={() => setShowVideo(false)}
-            onError={() => setShowVideo(false)}
+            onError={() => {
+              if (videoSrc !== BANNER_VIDEO_CDN) {
+                setVideoSrc(BANNER_VIDEO_CDN);
+              } else {
+                setShowVideo(false);
+              }
+            }}
             className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center will-change-[opacity] transition-opacity duration-500 ease-in-out ${
               showVideo ? 'opacity-100' : 'opacity-0'
             }`}

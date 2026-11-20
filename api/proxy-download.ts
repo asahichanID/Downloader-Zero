@@ -143,8 +143,62 @@ async function ensureMp3TargetBitrate(inputBuffer: Buffer, targetBitrate: string
   }
 }
 
+async function muxVideoAndAudioToMp4(videoBuffer: Buffer, audioBuffer: Buffer | null): Promise<Buffer> {
+  const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const tmpVidPath = path.join(os.tmpdir(), `dz_api_mux_v_${uid}.mp4`);
+  const tmpAudPath = path.join(os.tmpdir(), `dz_api_mux_a_${uid}.m4a`);
+  const tmpOutPath = path.join(os.tmpdir(), `dz_api_mux_o_${uid}.mp4`);
+  const ffmpegBins = getFfmpegCandidates();
+
+  try {
+    fs.writeFileSync(tmpVidPath, videoBuffer);
+    if (audioBuffer) {
+      fs.writeFileSync(tmpAudPath, audioBuffer);
+    }
+
+    const muxArgs = audioBuffer
+      ? ['-y', '-i', tmpVidPath, '-i', tmpAudPath, '-c', 'copy', '-movflags', '+faststart', '-f', 'mp4', tmpOutPath]
+      : ['-y', '-i', tmpVidPath, '-c', 'copy', '-movflags', '+faststart', '-f', 'mp4', tmpOutPath];
+
+    let lastErr: any = null;
+    for (const bin of ffmpegBins) {
+      try {
+        return await new Promise<Buffer>((resolve, reject) => {
+          const ff = spawn(bin, muxArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+          let errText = '';
+          ff.stderr.on('data', (chunk: Buffer) => {
+            if (errText.length < 800) errText += chunk.toString('utf8');
+          });
+          ff.on('error', (err) => reject(err));
+          ff.on('close', (code) => {
+            if (code === 0 && fs.existsSync(tmpOutPath)) {
+              const out = fs.readFileSync(tmpOutPath);
+              if (out.length > 0) {
+                resolve(out);
+                return;
+              }
+            }
+            reject(new Error(`ffmpeg mux exited ${code}: ${errText.slice(-200)}`));
+          });
+        });
+      } catch (err: any) {
+        lastErr = err;
+        if (err?.code === 'ENOENT' || err?.code === 'EACCES') continue;
+        break;
+      }
+    }
+    throw lastErr || new Error('Gagal menggabungkan trek video dan audio MP4.');
+  } finally {
+    try { if (fs.existsSync(tmpVidPath)) fs.unlinkSync(tmpVidPath); } catch {}
+    try { if (fs.existsSync(tmpAudPath)) fs.unlinkSync(tmpAudPath); } catch {}
+    try { if (fs.existsSync(tmpOutPath)) fs.unlinkSync(tmpOutPath); } catch {}
+  }
+}
+
 // In-memory process cache for Spotify MP3 files (automatically purged 15 seconds after completion)
 const spotifyProcessCache = new Map<string, { buffer: Buffer; timestamp: number }>();
+// Short-lived cache for DASH video+audio muxed MP4 streams
+const dashMuxCache = new Map<string, { buffer: Buffer; timestamp: number }>();
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -166,7 +220,7 @@ export default async function handler(req: any, res: any) {
     const urlParamIdx = rawReqUrl.indexOf('url=');
     if (urlParamIdx !== -1) {
       let extracted = rawReqUrl.slice(urlParamIdx + 4);
-      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate|duration)=/);
+      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate|duration|audioUrl)=/);
       if (nextParamMatch && nextParamMatch.index !== undefined) {
         extracted = extracted.slice(0, nextParamMatch.index);
       }
@@ -221,6 +275,15 @@ export default async function handler(req: any, res: any) {
 
     if (!targetUrl || typeof targetUrl !== 'string' || !/^https?:\/\//i.test(targetUrl)) {
       res.status(400).send('Target URL tidak valid.');
+      return;
+    }
+
+    let audioUrl = ((query.audioUrl || req.query?.audioUrl || '') as string).trim();
+    if (audioUrl && (audioUrl.startsWith('http%3A') || audioUrl.startsWith('https%3A'))) {
+      try { audioUrl = decodeURIComponent(audioUrl); } catch {}
+    }
+    if (audioUrl && !/^https?:\/\//i.test(audioUrl)) {
+      res.status(400).send('Audio URL tidak valid.');
       return;
     }
 
@@ -474,10 +537,10 @@ export default async function handler(req: any, res: any) {
       platformReferer = '';
     } else if (targetUrl.includes('tiktok.com')) {
       platformReferer = 'https://www.tiktok.com/';
+    } else if (platform === 'instagram' || targetUrl.includes('instagram') || targetUrl.includes('cdninstagram')) {
+      platformReferer = 'https://www.instagram.com/';
     } else if (targetUrl.includes('facebook') || targetUrl.includes('fbcdn')) {
       platformReferer = 'https://www.facebook.com/';
-    } else if (targetUrl.includes('instagram') || targetUrl.includes('cdninstagram')) {
-      platformReferer = 'https://www.instagram.com/';
     } else if (targetUrl.includes('savetube')) {
       platformReferer = 'https://save-tube.com/';
     } else if (
@@ -542,6 +605,78 @@ export default async function handler(req: any, res: any) {
         throw err;
       }
     };
+
+    const wantsMp3OutputEarly = sanitizedFilename.toLowerCase().endsWith('.mp3');
+    const isCmfvVideo = /\.cmfv(\?|$)/i.test(targetUrl);
+    if ((audioUrl || isCmfvVideo) && !wantsMp3OutputEarly) {
+      const muxKey = `${targetUrl}::${audioUrl || 'silent'}`;
+      let muxedMp4: Buffer | null = dashMuxCache.get(muxKey)?.buffer || null;
+
+      if (!muxedMp4) {
+        const fetchFullStreamBuffer = async (streamUrl: string): Promise<Buffer> => {
+          for (const cfg of fetchCandidateConfigs) {
+            try {
+              const candidate = await fetchWithHeaderTimeout(streamUrl, { ...cfg.headers }, 20000);
+              if (candidate.ok && candidate.body) {
+                const buf = Buffer.from(await candidate.arrayBuffer());
+                if (buf.length > 200) {
+                  const headStr = buf.subarray(0, 64).toString('utf8').trim();
+                  if (!headStr.startsWith('<!DOCTYPE') && !headStr.startsWith('<html') && !headStr.startsWith('{"error')) {
+                    return buf;
+                  }
+                }
+              }
+            } catch {}
+          }
+          throw new Error('Gagal mengunduh stream media sumber untuk penggabungan resolusi.');
+        };
+
+        const [vidBuf, audBuf] = await Promise.all([
+          fetchFullStreamBuffer(targetUrl),
+          audioUrl ? fetchFullStreamBuffer(audioUrl) : Promise.resolve(null)
+        ]);
+
+        muxedMp4 = await muxVideoAndAudioToMp4(vidBuf, audBuf);
+        dashMuxCache.set(muxKey, { buffer: muxedMp4, timestamp: Date.now() });
+        setTimeout(() => {
+          dashMuxCache.delete(muxKey);
+        }, 90000);
+      }
+
+      res.setHeader('Content-Type', 'video/mp4');
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader(
+        'Content-Disposition',
+        isInline
+          ? `inline; filename="${sanitizedFilename}"`
+          : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
+      );
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges');
+      res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      if (rangeHeader) {
+        const totalLen = muxedMp4.length;
+        const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+        if (match) {
+          const start = match[1] ? parseInt(match[1], 10) : 0;
+          const end = match[2] ? Math.min(parseInt(match[2], 10), totalLen - 1) : totalLen - 1;
+          if (!isNaN(start) && !isNaN(end) && start <= end && start < totalLen) {
+            const sliced = muxedMp4.subarray(start, end + 1);
+            res.status(206);
+            res.setHeader('Content-Range', `bytes ${start}-${end}/${totalLen}`);
+            res.setHeader('Content-Length', sliced.length);
+            res.send(sliced);
+            return;
+          }
+        }
+      }
+
+      res.setHeader('Content-Length', muxedMp4.length);
+      res.send(muxedMp4);
+      return;
+    }
 
     let remoteRes: globalThis.Response | null = null;
     let lastStatus = 0;

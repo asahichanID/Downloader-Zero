@@ -13,6 +13,14 @@ import {
   scrapeSpotifyServer2,
   resolveSpotifyFullAudioServer2
 } from './server2/spotify-s2.ts';
+import {
+  scrapeInstagramServer2,
+  resolveInstagramServer2
+} from './server2/instagram-s2.ts';
+import {
+  scrapePinterestServer2,
+  resolvePinterestServer2
+} from './server2/pinterest-s2.ts';
 
 export {
   resolveTikTokDownload,
@@ -24,7 +32,11 @@ export {
   scrapeYouTubePost,
   isYouTubePostUrl,
   scrapeSpotifyServer2,
-  resolveSpotifyFullAudioServer2
+  resolveSpotifyFullAudioServer2,
+  scrapeInstagramServer2,
+  resolveInstagramServer2,
+  scrapePinterestServer2,
+  resolvePinterestServer2
 };
 
 
@@ -842,178 +854,20 @@ async function scrapeInstagramServer1(target: string, apiKey?: string): Promise<
   };
 }
 
-async function scrapeInstagramServer2(target: string, shortcode: string): Promise<MediaMetadata> {
-  let title = 'Instagram Reel / Post';
-  let author = 'Instagram Creator';
-  let thumbnail = '';
-  let likes: number | string | undefined = undefined;
-  let comments: number | string | undefined = undefined;
-  let views: number | string | undefined = undefined;
-  const formats: MediaFormat[] = [];
-  let images: string[] = [];
-
-  // Attempt 2a: Embed captioned page parser
-  if (shortcode) {
-    try {
-      const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`;
-      const embedRes = await fetch(embedUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        },
-        signal: AbortSignal.timeout(7000)
-      });
-
-      if (embedRes.ok) {
-        const html = await embedRes.text();
-        const $ = cheerio.load(html);
-        const userText = $('.UsernameText').first().text().trim();
-        if (userText) author = userText;
-        const captionText = $('.Caption').first().text().trim();
-        if (captionText) title = captionText.slice(0, 120);
-        const likesMatch = html.match(/([\d,\.KMB]+)\s+likes/i) || html.match(/"edge_media_preview_like":\{"count":(\d+)/);
-        if (likesMatch?.[1]) likes = likesMatch[1];
-        const commentsMatch = html.match(/([\d,\.KMB]+)\s+comments/i) || html.match(/"edge_media_to_comment":\{"count":(\d+)/);
-        if (commentsMatch?.[1]) comments = commentsMatch[1];
-        const viewsMatch = html.match(/"video_view_count":(\d+)/);
-        if (viewsMatch?.[1]) views = viewsMatch[1];
-
-        const cdnMatches = [...html.matchAll(/https:\/\/[^"'\s\\]*(?:cdninstagram\.com|fbcdn\.net)\/[^"'\s\\]+/gi)]
-          .map((m) => m[0].replace(/\\u0026/g, '&').replace(/\\/g, ''))
-          .filter((u) => !u.includes('rsrc.php'));
-
-        const mp4s = cdnMatches.filter((u) => u.includes('.mp4'));
-        const jpgs = cdnMatches.filter((u) => u.includes('.jpg') || u.includes('.webp'));
-
-        if (mp4s.length > 0) {
-          formats.push({
-            id: 'ig-embed-vid',
-            quality: '1080p HD Video MP4',
-            resolution: '1080p',
-            type: 'video',
-            extension: 'mp4',
-            url: mp4s[0],
-            isDirect: true,
-            note: 'Video Instagram Direct CDN'
-          });
-        }
-
-        if (jpgs.length > 0) {
-          images = [...new Set(jpgs)];
-          if (!thumbnail) thumbnail = images[0];
-          if (formats.length === 0) {
-            formats.push({
-              id: 'ig-embed-photo',
-              quality: 'HD Foto Instagram',
-              resolution: 'HD Foto',
-              type: 'photos',
-              extension: 'jpg',
-              url: images[0],
-              isDirect: true,
-              note: 'Foto Instagram Resolusi Penuh'
-            });
-          }
-        }
-      }
-    } catch (embedErr) {
-      console.warn('[Instagram] Server 2 embed notice:', embedErr);
-    }
-  }
-
-  // Attempt 2b: fdown.co.in alternative endpoint
-  if (formats.length === 0) {
-    try {
-      const res = await fetch('https://fdown.co.in/ajax', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': 'https://fdown.co.in',
-          'Referer': 'https://fdown.co.in/',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
-        body: JSON.stringify({ url: target }),
-        signal: AbortSignal.timeout(7000)
-      });
-      if (res.ok) {
-        const d = await res.json();
-        if (d.success && d.links) {
-          if (d.title) title = d.title;
-          if (d.thumbnail) thumbnail = d.thumbnail;
-          for (const [k, v] of Object.entries(d.links)) {
-            if (typeof v === 'string' && v.startsWith('http') && !v.includes('instagram.com/p/')) {
-              formats.push({
-                id: `ig-fdown-${k}`,
-                quality: '1080p HD Video MP4',
-                resolution: '1080p',
-                type: 'video',
-                extension: 'mp4',
-                url: v,
-                isDirect: true,
-                note: 'Video Instagram Jernih'
-              });
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('[Instagram] Server 2 fdown notice:', e);
-    }
-  }
-
-  const videoFmt = formats.find((f) => f.type === 'video');
-  if (videoFmt && !formats.some((f) => f.type === 'audio')) {
-    formats.push({
-      id: 'ig-audio',
-      quality: '320 kbps MP3 Audio',
-      resolution: 'Audio',
-      type: 'audio',
-      extension: 'mp3',
-      url: videoFmt.url,
-      isDirect: false,
-      note: 'Ekstrak audio dari video Instagram'
-    });
-  }
-
-  if (formats.length === 0) {
-    throw new Error('Server 2 tidak dapat mengekstrak media Instagram.');
-  }
-
-  return {
-    id: shortcode || `ig-${Date.now()}`,
-    url: target,
-    platform: 'instagram',
-    title: title || 'Instagram Reel',
-    author,
-    thumbnail: thumbnail || (images[0] || 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=800'),
-    duration: 30,
-    durationFormatted: '00:30',
-    views,
-    likes,
-    comments,
-    formats,
-    images: images.length > 0 ? images : undefined,
-    isPhotoSlide: images.length > 1,
-    source: 'Server 2 Engine',
-    createdAt: new Date().toISOString()
-  };
-}
-
 async function scrapeInstagram(url: string, apiKey?: string, serverMode: ServerMode = 'auto'): Promise<MediaMetadata> {
   const target = await resolveRedirectUrl(url);
-  const shortcodeMatch = target.match(/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i);
-  const shortcode = shortcodeMatch ? shortcodeMatch[1] : '';
 
   if (serverMode === 'server1') {
     return await scrapeInstagramServer1(target, apiKey);
   }
   if (serverMode === 'server2') {
-    return await scrapeInstagramServer2(target, shortcode);
+    return await scrapeInstagramServer2(target);
   }
   try {
     return await scrapeInstagramServer1(target, apiKey);
   } catch (err) {
     console.warn('[Instagram] Server 1 failed, switching to Server 2:', err);
-    return await scrapeInstagramServer2(target, shortcode);
+    return await scrapeInstagramServer2(target);
   }
 }
 
@@ -1105,103 +959,6 @@ async function scrapePinterestServer1(url: string, apiKey?: string): Promise<Med
     images: images.length > 0 ? images : undefined,
     isPhotoSlide: images.length > 1,
     source: 'Server 1 Engine',
-    createdAt: new Date().toISOString()
-  };
-}
-
-async function scrapePinterestServer2(url: string): Promise<MediaMetadata> {
-  let title = 'Pinterest Media';
-  let author = 'Pinterest Creator';
-  let thumbnail = '';
-  const formats: MediaFormat[] = [];
-  let images: string[] = [];
-
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9'
-    },
-    signal: AbortSignal.timeout(8000)
-  });
-
-  if (!response.ok) throw new Error(`Server 2 Pinterest HTTP ${response.status}`);
-  const html = await response.text();
-  const $ = cheerio.load(html);
-
-  const pageTitle = $('title').text() || $('meta[property="og:title"]').attr('content');
-  if (pageTitle) {
-    title = pageTitle.replace(/\s*\|\s*Pinterest.*$/i, '').trim() || 'Pinterest Pin';
-  }
-
-  const pwsJson = $('#__PWS_DATA__').html();
-  if (pwsJson) {
-    try {
-      const pwsData = JSON.parse(pwsJson);
-      const extracted = extractAllMediaUrls(pwsData);
-      for (const v of extracted.videos) {
-        formats.push({
-          id: `pin-vid-${formats.length}`,
-          quality: '1080p Full HD Video',
-          resolution: '1080p',
-          type: 'video',
-          extension: 'mp4',
-          url: v,
-          isDirect: true,
-          note: 'Video Pinterest Resolusi Asli'
-        });
-      }
-      for (const img of extracted.images) {
-        const origImg = img.replace(/\/(?:236x|474x|564x|736x)\//i, '/originals/');
-        if (!images.includes(origImg)) images.push(origImg);
-      }
-    } catch {}
-  }
-
-  const origMatches = [...html.matchAll(/https:\/\/[^"'\s\\]+\.pinimg\.com\/originals\/[^"'\s\\]+/gi)]
-    .map((m) => m[0].replace(/\\/g, '').replace(/["')\];,].*$/, ''))
-    .filter((u) => /\.(jpg|jpeg|png|webp)/i.test(u));
-
-  for (const orig of origMatches) {
-    if (!images.includes(orig)) images.push(orig);
-  }
-
-  if (images.length > 0) {
-    if (!thumbnail) thumbnail = images[0];
-    formats.push({
-      id: 'pin-photo-orig',
-      quality: 'Ultra HD 4K Original (Resolusi Asli)',
-      resolution: '4K Foto',
-      type: 'photos',
-      extension: images[0].endsWith('.png') ? 'png' : 'jpg',
-      url: images[0],
-      isDirect: true,
-      note: 'Gambar asli resolusi penuh tanpa kompresi'
-    });
-  }
-
-  if (formats.length === 0) {
-    throw new Error('Server 2 tidak dapat menemukan media Pinterest.');
-  }
-
-  const pinLikesMatch = html.match(/"reaction_counts":\{"1":(\d+)/) || html.match(/"repin_count":(\d+)/);
-  const pinCommentsMatch = html.match(/"comment_count":(\d+)/);
-
-  return {
-    id: `pin-${Date.now()}`,
-    url,
-    platform: 'pinterest',
-    title,
-    author,
-    thumbnail: thumbnail || (images[0] || ''),
-    duration: 15,
-    durationFormatted: '00:15',
-    likes: pinLikesMatch?.[1],
-    comments: pinCommentsMatch?.[1],
-    formats,
-    images: images.length > 0 ? images : undefined,
-    isPhotoSlide: images.length > 1,
-    source: 'Server 2 Engine',
     createdAt: new Date().toISOString()
   };
 }

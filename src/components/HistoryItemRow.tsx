@@ -247,10 +247,16 @@ export const HistoryItemRow: React.FC<HistoryItemRowProps> = React.memo(({
               crossOrigin="anonymous"
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
               onError={(e) => {
-                if (ytMatch && !(e.currentTarget as HTMLImageElement).src.includes('mqdefault')) {
-                  (e.currentTarget as HTMLImageElement).src = `https://i.ytimg.com/vi/${ytMatch[1]}/mqdefault.jpg`;
-                } else {
-                  (e.currentTarget as HTMLImageElement).src = '/banner_dz.png';
+                const img = e.currentTarget;
+                if (ytMatch && !img.src.includes('mqdefault') && !img.dataset.ytMq) {
+                  img.dataset.ytMq = '1';
+                  img.src = `https://i.ytimg.com/vi/${ytMatch[1]}/mqdefault.jpg`;
+                } else if (!img.dataset.localFallback) {
+                  img.dataset.localFallback = '1';
+                  img.src = '/banner_dz.png';
+                } else if (!img.dataset.cdnFallback) {
+                  img.dataset.cdnFallback = '1';
+                  img.src = 'https://cdn.jsdelivr.net/gh/asahichanID/media@main/banner_dz.png';
                 }
               }}
             />

@@ -1,4 +1,4 @@
-import { detectPlatform, resolveTikTokDownload, resolveYouTubeServer2 } from './_utils/scraper.ts';
+import { detectPlatform, resolveTikTokDownload, resolveYouTubeServer2, resolveInstagramServer2, resolvePinterestServer2 } from './_utils/scraper.ts';
 
 function normalizeLoaderFormat(raw: string | undefined): string {
   if (!raw) return '1080';
@@ -65,6 +65,66 @@ export default async function handler(req: any, res: any) {
         res.status(502).json({
           success: false,
           error: ttErr.message || 'Gagal menyiapkan unduhan TikTok dari server yang dipilih.'
+        });
+        return;
+      }
+    }
+
+    // 1b. Instagram on-demand resolution
+    if (platform === 'instagram' || detectPlatform(url) === 'instagram') {
+      try {
+        const igType = (type === 'audio' || type === 'photos' || type === 'video')
+          ? type
+          : (format === 'mp3' ? 'audio' : 'video');
+        const resolved = await resolveInstagramServer2(
+          url,
+          resolution || format || '1080p',
+          igType
+        );
+        res.json({
+          success: true,
+          id: null,
+          downloadUrl: resolved.downloadUrl,
+          dashAudioUrl: resolved.dashAudioUrl,
+          format: resolution || format || '1080p',
+          text: `Siap diunduh (${resolved.quality || 'Kualitas Pilihan'})!`
+        });
+        return;
+      } catch (igErr: any) {
+        console.error('[api/start-job] Instagram resolution error:', igErr.message);
+        res.status(502).json({
+          success: false,
+          error: igErr.message || 'Gagal menyiapkan unduhan Instagram.'
+        });
+        return;
+      }
+    }
+
+    // 1c. Pinterest Server 2 on-demand resolution
+    if ((platform === 'pinterest' || detectPlatform(url) === 'pinterest') && (serverMode !== 'server1' || String(formatId || '').startsWith('pin-s2-'))) {
+      try {
+        const pinType = (type === 'audio' || type === 'photos' || type === 'video')
+          ? type
+          : (format === 'mp3' ? 'audio' : 'video');
+        const resolved = await resolvePinterestServer2(
+          url,
+          resolution || format || '720p',
+          pinType
+        );
+        res.json({
+          success: true,
+          id: null,
+          downloadUrl: resolved.downloadUrl,
+          dashAudioUrl: resolved.dashAudioUrl,
+          format: resolved.resolution || resolution || format || '720p',
+          text: `Siap diunduh (${resolved.quality || 'Kualitas Pilihan'})!`
+        });
+        return;
+      } catch (pinErr: any) {
+        console.error('[api/start-job] Pinterest resolution error:', pinErr.message);
+        res.status(502).json({
+          success: false,
+          error: pinErr.message || 'Gagal menyiapkan unduhan Pinterest.'
         });
         return;
       }

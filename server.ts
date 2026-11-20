@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import NodeID3 from 'node-id3';
 import ffmpegStaticPath from 'ffmpeg-static';
-import { extractMedia, detectPlatform, resolveTikTokDownload, resolveYouTubeServer2, resolveSpotifyFullAudioServer2, checkNeoxrApiKeyStatus } from './src/services/scraper.ts';
+import { extractMedia, detectPlatform, resolveTikTokDownload, resolveYouTubeServer2, resolveSpotifyFullAudioServer2, resolveInstagramServer2, resolvePinterestServer2, checkNeoxrApiKeyStatus } from './src/services/scraper.ts';
 import {
   isSafePublicUrl,
   createRateLimiter,
@@ -101,6 +101,8 @@ async function startServer() {
   const spotifyProcessCache = new Map<string, { buffer: Buffer; timestamp: number }>();
   // Short-lived cache for ffmpeg-extracted MP3 audio (preview -> download instant reuse)
   const mp3TranscodeCache = new Map<string, { buffer: Buffer; timestamp: number }>();
+  // Short-lived cache for DASH video+audio muxed MP4 streams (preview -> download instant reuse)
+  const dashMuxCache = new Map<string, { buffer: Buffer; timestamp: number }>();
 
   const ALLOWED_MP3_BITRATES = new Set(['320k', '256k', '192k', '128k', '64k']);
   const normalizeTargetBitrate = (raw: unknown, fallback = '192k'): string => {
@@ -253,6 +255,59 @@ async function startServer() {
     }
   };
 
+  // Remuxes separate DASH video + audio MP4 tracks (or a single fragmented .cmfv video track) cleanly without re-encoding (-c copy +faststart)
+  const muxVideoAndAudioToMp4 = async (videoBuffer: Buffer, audioBuffer: Buffer | null): Promise<Buffer> => {
+    const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const tmpVidPath = path.join(os.tmpdir(), `dz_mux_v_${uid}.mp4`);
+    const tmpAudPath = path.join(os.tmpdir(), `dz_mux_a_${uid}.m4a`);
+    const tmpOutPath = path.join(os.tmpdir(), `dz_mux_o_${uid}.mp4`);
+    const ffmpegBins = getFfmpegCandidates();
+
+    try {
+      fs.writeFileSync(tmpVidPath, videoBuffer);
+      if (audioBuffer) {
+        fs.writeFileSync(tmpAudPath, audioBuffer);
+      }
+
+      const muxArgs = audioBuffer
+        ? ['-y', '-i', tmpVidPath, '-i', tmpAudPath, '-c', 'copy', '-movflags', '+faststart', '-f', 'mp4', tmpOutPath]
+        : ['-y', '-i', tmpVidPath, '-c', 'copy', '-movflags', '+faststart', '-f', 'mp4', tmpOutPath];
+
+      let lastErr: any = null;
+      for (const bin of ffmpegBins) {
+        try {
+          return await new Promise<Buffer>((resolve, reject) => {
+            const ff = spawn(bin, muxArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+            let errText = '';
+            ff.stderr.on('data', (chunk: Buffer) => {
+              if (errText.length < 800) errText += chunk.toString('utf8');
+            });
+            ff.on('error', (err) => reject(err));
+            ff.on('close', (code) => {
+              if (code === 0 && fs.existsSync(tmpOutPath)) {
+                const out = fs.readFileSync(tmpOutPath);
+                if (out.length > 0) {
+                  resolve(out);
+                  return;
+                }
+              }
+              reject(new Error(`ffmpeg mux exited ${code}: ${errText.slice(-200)}`));
+            });
+          });
+        } catch (err: any) {
+          lastErr = err;
+          if (err?.code === 'ENOENT' || err?.code === 'EACCES') continue;
+          break;
+        }
+      }
+      throw lastErr || new Error('Gagal menggabungkan trek video dan audio MP4.');
+    } finally {
+      try { if (fs.existsSync(tmpVidPath)) fs.unlinkSync(tmpVidPath); } catch {}
+      try { if (fs.existsSync(tmpAudPath)) fs.unlinkSync(tmpAudPath); } catch {}
+      try { if (fs.existsSync(tmpOutPath)) fs.unlinkSync(tmpOutPath); } catch {}
+    }
+  };
+
   // 1. Health check & Security Shield status
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({
@@ -367,6 +422,66 @@ async function startServer() {
           res.status(502).json({
             success: false,
             error: ttErr.message || 'Gagal menyiapkan unduhan TikTok dari server yang dipilih.'
+          });
+          return;
+        }
+      }
+
+      // 1b. Instagram on-demand resolution
+      if (platform === 'instagram' || detectPlatform(url) === 'instagram') {
+        try {
+          const igType = (type === 'audio' || type === 'photos' || type === 'video')
+            ? type
+            : (format === 'mp3' ? 'audio' : 'video');
+          const resolved = await resolveInstagramServer2(
+            url,
+            resolution || format || '1080p',
+            igType
+          );
+          res.json({
+            success: true,
+            id: null,
+            downloadUrl: resolved.downloadUrl,
+            dashAudioUrl: resolved.dashAudioUrl,
+            format: resolution || format || '1080p',
+            text: `Siap diunduh (${resolved.quality || 'Kualitas Pilihan'})!`
+          });
+          return;
+        } catch (igErr: any) {
+          console.error('[server] Instagram resolution error:', igErr.message);
+          res.status(502).json({
+            success: false,
+            error: igErr.message || 'Gagal menyiapkan unduhan Instagram.'
+          });
+          return;
+        }
+      }
+
+      // 1c. Pinterest Server 2 on-demand resolution (video resolution tiers & audio)
+      if ((platform === 'pinterest' || detectPlatform(url) === 'pinterest') && (serverMode !== 'server1' || String(formatId || '').startsWith('pin-s2-'))) {
+        try {
+          const pinType = (type === 'audio' || type === 'photos' || type === 'video')
+            ? type
+            : (format === 'mp3' ? 'audio' : 'video');
+          const resolved = await resolvePinterestServer2(
+            url,
+            resolution || format || '720p',
+            pinType
+          );
+          res.json({
+            success: true,
+            id: null,
+            downloadUrl: resolved.downloadUrl,
+            dashAudioUrl: resolved.dashAudioUrl,
+            format: resolved.resolution || resolution || format || '720p',
+            text: `Siap diunduh (${resolved.quality || 'Kualitas Pilihan'})!`
+          });
+          return;
+        } catch (pinErr: any) {
+          console.error('[server] Pinterest resolution error:', pinErr.message);
+          res.status(502).json({
+            success: false,
+            error: pinErr.message || 'Gagal menyiapkan unduhan Pinterest.'
           });
           return;
         }
@@ -560,7 +675,7 @@ async function startServer() {
       const urlParamIdx = rawReqUrl.indexOf('url=');
       if (urlParamIdx !== -1) {
         let extracted = rawReqUrl.slice(urlParamIdx + 4);
-        const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate|duration)=/);
+        const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate|duration|audioUrl)=/);
         if (nextParamMatch && nextParamMatch.index !== undefined) {
           extracted = extracted.slice(0, nextParamMatch.index);
         }
@@ -628,6 +743,19 @@ async function startServer() {
       if (sourceUrl && !isSafePublicUrl(sourceUrl).safe) {
         res.status(400).send('Source URL tidak valid atau diblokir.');
         return;
+      }
+
+      let audioUrl = typeof req.query?.audioUrl === 'string' ? req.query.audioUrl.trim() : '';
+      if (audioUrl && (audioUrl.startsWith('http%3A') || audioUrl.startsWith('https%3A'))) {
+        try {
+          audioUrl = decodeURIComponent(audioUrl);
+        } catch {}
+      }
+      if (audioUrl) {
+        if (!/^https?:\/\//i.test(audioUrl) || !isSafePublicUrl(audioUrl).safe) {
+          res.status(400).send('Audio URL tidak valid atau diblokir.');
+          return;
+        }
       }
 
       const isSpotify =
@@ -886,10 +1014,10 @@ async function startServer() {
         platformReferer = ''; // Empty Referer ensures TikTok CDN serves at maximum bitrate without 503
       } else if (targetUrl.includes('tiktok.com')) {
         platformReferer = 'https://www.tiktok.com/';
+      } else if (platform === 'instagram' || targetUrl.includes('instagram') || targetUrl.includes('cdninstagram')) {
+        platformReferer = 'https://www.instagram.com/';
       } else if (targetUrl.includes('facebook') || targetUrl.includes('fbcdn')) {
         platformReferer = 'https://www.facebook.com/';
-      } else if (targetUrl.includes('instagram') || targetUrl.includes('cdninstagram')) {
-        platformReferer = 'https://www.instagram.com/';
       } else if (targetUrl.includes('savetube')) {
         platformReferer = 'https://save-tube.com/';
       } else if (
@@ -1002,6 +1130,78 @@ async function startServer() {
           throw err;
         }
       };
+
+      // Handle paired DASH Video + Audio MP4 muxing (Instagram/Pinterest Server 2) OR single fragmented .cmfv MP4 remux
+      const isCmfvVideo = /\.cmfv(\?|$)/i.test(targetUrl);
+      if ((audioUrl || isCmfvVideo) && !wantsMp3Output) {
+        const muxKey = `${targetUrl}::${audioUrl || 'silent'}`;
+        let muxedMp4: Buffer | null = dashMuxCache.get(muxKey)?.buffer || null;
+
+        if (!muxedMp4) {
+          const fetchFullStreamBuffer = async (streamUrl: string): Promise<Buffer> => {
+            for (const cfg of fetchCandidateConfigs) {
+              try {
+                const candidate = await fetchWithHeaderTimeout(streamUrl, { ...cfg.headers }, 20000);
+                if (candidate.ok && candidate.body) {
+                  const buf = Buffer.from(await candidate.arrayBuffer());
+                  if (buf.length > 200) {
+                    const headStr = buf.subarray(0, 64).toString('utf8').trim();
+                    if (!headStr.startsWith('<!DOCTYPE') && !headStr.startsWith('<html') && !headStr.startsWith('{"error')) {
+                      return buf;
+                    }
+                  }
+                }
+              } catch {}
+            }
+            throw new Error('Gagal mengunduh stream media sumber untuk penggabungan resolusi.');
+          };
+
+          const [vidBuf, audBuf] = await Promise.all([
+            fetchFullStreamBuffer(targetUrl),
+            audioUrl ? fetchFullStreamBuffer(audioUrl) : Promise.resolve(null)
+          ]);
+
+          muxedMp4 = await muxVideoAndAudioToMp4(vidBuf, audBuf);
+          dashMuxCache.set(muxKey, { buffer: muxedMp4, timestamp: Date.now() });
+          setTimeout(() => {
+            dashMuxCache.delete(muxKey);
+          }, 90000);
+        }
+
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader(
+          'Content-Disposition',
+          isInline
+            ? `inline; filename="${sanitizedFilename}"`
+            : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
+        );
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges');
+        res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+
+        if (rangeHeader) {
+          const totalLen = muxedMp4.length;
+          const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+          if (match) {
+            const start = match[1] ? parseInt(match[1], 10) : 0;
+            const end = match[2] ? Math.min(parseInt(match[2], 10), totalLen - 1) : totalLen - 1;
+            if (!isNaN(start) && !isNaN(end) && start <= end && start < totalLen) {
+              const sliced = muxedMp4.subarray(start, end + 1);
+              res.status(206);
+              res.setHeader('Content-Range', `bytes ${start}-${end}/${totalLen}`);
+              res.setHeader('Content-Length', sliced.length);
+              res.send(sliced);
+              return;
+            }
+          }
+        }
+
+        res.setHeader('Content-Length', muxedMp4.length);
+        res.send(muxedMp4);
+        return;
+      }
 
       let response: globalThis.Response | null = null;
       let lastStatus = 0;

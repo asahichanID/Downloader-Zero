@@ -51,6 +51,7 @@ interface BerandaResultViewProps {
   spotifyPlayTrigger?: number;
   spotifyTrackStatuses?: Record<string, 'downloading' | 'done' | 'error'>;
   photoDownloadStatuses?: Record<number, 'downloading' | 'done' | 'error'>;
+  onOpenVideoFormatModal?: () => void;
   onSelectSpotifyTrack: (track: AudioTrack) => void;
   onDownloadSingleSpotifyTrack?: (track: AudioTrack) => void;
   onDownloadAllSpotifyZip?: () => void;
@@ -292,6 +293,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
   spotifyPlayTrigger = 0,
   spotifyTrackStatuses = {},
   photoDownloadStatuses = {},
+  onOpenVideoFormatModal,
   onSelectSpotifyTrack,
   onDownloadSingleSpotifyTrack,
   onDownloadAllSpotifyZip,
@@ -588,7 +590,15 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
 
   const qualitySummary = isTerabox
     ? `${teraboxFiles.length} File · ${selectedTeraboxFileIds.length} Dipilih`
-    : `${format.resolution || format.quality}${format.filesize ? ` · ${format.filesize}` : ''}`;
+    : effectiveMediaType === 'photos'
+      ? `Ultra HD${activePhotos.length > 1 ? ` · ${activePhotos.length} Foto` : ''}`
+      : `${format.resolution || format.quality}${format.filesize ? ` · ${format.filesize}` : ''}`;
+
+  const topBarFormatLabel = isTerabox
+    ? `${teraboxFiles.length} File`
+    : effectiveMediaType === 'photos'
+      ? 'Ultra HD'
+      : (format.resolution || format.quality);
 
   return (
     <div className="w-full space-y-5 sm:space-y-6 dz-animate-enter">
@@ -609,7 +619,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
         <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums truncate">
           <span className="text-sky-600 dark:text-cyan-400 font-bold">{platformLabel}</span>
           <span aria-hidden="true">·</span>
-          <span className="truncate">{isTerabox ? `${teraboxFiles.length} File` : (format.resolution || format.quality)}</span>
+          <span className="truncate">{topBarFormatLabel}</span>
           {displayDuration && displayDuration !== '00:00' && (
             <>
               <span aria-hidden="true">·</span>
@@ -804,6 +814,20 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
                 );
               })()}
             </>
+          )}
+
+          {/* Optional Mixed Carousel Video Selector */}
+          {media.formats.some((f) => f.type === 'video') && onOpenVideoFormatModal && (
+            <div className="flex flex-wrap items-center justify-end gap-2.5 px-3.5 py-2.5 rounded-2xl bg-white/95 dark:bg-[#091635]/95 border border-slate-200 dark:border-blue-500/20 shadow-sm">
+              <button
+                type="button"
+                onClick={onOpenVideoFormatModal}
+                className="px-3 py-1.5 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 dark:bg-cyan-500/15 dark:hover:bg-cyan-500/25 border border-blue-500/30 dark:border-cyan-400/30 text-blue-700 dark:text-cyan-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Film className="w-3.5 h-3.5" />
+                <span>Pilih Video Slide</span>
+              </button>
+            </div>
           )}
         </div>
       )}

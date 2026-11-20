@@ -498,6 +498,8 @@ export default function App() {
       href += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(tTitle)}&artist=${encodeURIComponent(tArtist)}&album=${encodeURIComponent(tAlbum)}&genre=${encodeURIComponent(tGenre)}&year=${encodeURIComponent(tYear)}&cover=${encodeURIComponent(tCover)}&duration=${tDuration}&apiKey=${encodeURIComponent(customKey)}`;
     } else if (formatOverride?.type === 'audio' || filename.toLowerCase().endsWith('.mp3')) {
       href += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(meta.title || '')}&artist=${encodeURIComponent(meta.author || '')}`;
+    } else if (formatOverride?.dashAudioUrl && formatOverride.dashAudioUrl.startsWith('http')) {
+      href += `&audioUrl=${encodeURIComponent(formatOverride.dashAudioUrl)}`;
     }
     return href;
   };
@@ -579,11 +581,11 @@ export default function App() {
       if (topTwitterVideo?.resolution) {
         setSelectedVideoRes(topTwitterVideo.resolution);
       }
-    } else if (meta.platform === 'youtube') {
-      const ytVideos = meta.formats.filter((f) => f.type === 'video' && f.resolution);
-      if (ytVideos.length > 0) {
+    } else if (meta.platform === 'youtube' || meta.platform === 'instagram' || meta.platform === 'pinterest') {
+      const resVideos = meta.formats.filter((f) => f.type === 'video' && f.resolution);
+      if (resVideos.length > 0) {
         const curLower = selectedVideoRes.toLowerCase();
-        const curMatch = ytVideos.find((f) => {
+        const curMatch = resVideos.find((f) => {
           const r = (f.resolution || '').toLowerCase();
           if (r === curLower) return true;
           if ((r === '4k' || r.includes('2160')) && (curLower === '4k' || curLower.includes('2160'))) return true;
@@ -593,12 +595,12 @@ export default function App() {
         if (curMatch?.resolution) {
           setSelectedVideoRes(curMatch.resolution);
         } else {
-          const fallbackYt =
-            ytVideos.find((f) => f.resolution === '1080p') ||
-            ytVideos.find((f) => f.resolution === '720p') ||
-            ytVideos[0];
-          if (fallbackYt?.resolution) {
-            setSelectedVideoRes(fallbackYt.resolution);
+          const fallbackRes =
+            resVideos.find((f) => f.resolution === '1080p') ||
+            resVideos.find((f) => f.resolution === '720p') ||
+            resVideos[0];
+          if (fallbackRes?.resolution) {
+            setSelectedVideoRes(fallbackRes.resolution);
           }
         }
       }
@@ -729,6 +731,7 @@ export default function App() {
     setDownloadStatusText(`Menyiapkan pratinjau ${targetFormat.quality || targetFormat.resolution}...`);
 
     try {
+      let resolvedFormat: MediaFormat = targetFormat;
       let finalUrl = targetFormat.url;
       let jobId = targetFormat.jobId;
       let startJobError = '';
@@ -757,6 +760,13 @@ export default function App() {
             const startData = await startRes.json();
             if (startRes.ok && startData.downloadUrl) {
               finalUrl = startData.downloadUrl;
+              resolvedFormat = {
+                ...resolvedFormat,
+                url: finalUrl,
+                ...(typeof startData.dashAudioUrl === 'string' && startData.dashAudioUrl.startsWith('http')
+                  ? { dashAudioUrl: startData.dashAudioUrl }
+                  : {})
+              };
             } else if (startRes.ok && startData.id) {
               jobId = startData.id;
             } else if (startData?.error) {
@@ -830,10 +840,10 @@ export default function App() {
         throw new Error(startJobError || 'Tautan media tidak tersedia dari server sumber saat ini.');
       }
 
-      setCachedPrepared(mediaData.url, targetFormat, serverMode, customKey, mediaData, finalUrl);
+      setCachedPrepared(mediaData.url, resolvedFormat, serverMode, customKey, mediaData, finalUrl);
       setDownloadProgress(95);
       setDownloadStatusText('Memuat pratinjau...');
-      enterPreviewStage(mediaData, targetFormat, finalUrl);
+      enterPreviewStage(mediaData, resolvedFormat, finalUrl);
     } catch (err: any) {
       console.error('Prepare preview error:', err);
       void logDownloadActivity({
@@ -1058,7 +1068,9 @@ export default function App() {
 
       const sanitizedTitle = (media.title || 'Media_Foto').slice(0, 35).replace(/[^a-zA-Z0-9_-]/g, '_');
       const serialTag = String(slideNumber).padStart(2, '0');
-      const filename = `DownloaderZero_${sanitizedTitle}_foto_${serialTag}.${ext}`;
+      const activePhotoResLabel = 'Ultra HD';
+      const activeResSlug = 'Ultra_HD';
+      const filename = `DownloaderZero_${sanitizedTitle}_foto_${serialTag}_${activeResSlug}.${ext}`;
       const downloadHref = buildProxyHref(photoUrl, filename, media, false);
 
       const res = await fetch(downloadHref);
@@ -1085,8 +1097,8 @@ export default function App() {
         title: `${media.title || 'Foto Slide'} (Foto #${slideNumber})`,
         author: media.author || media.platform,
         thumbnail: photoUrl || media.thumbnail || '',
-        quality: `Foto #${slideNumber} HD`,
-        resolution: `Foto #${slideNumber}`,
+        quality: `Foto #${slideNumber} · ${activePhotoResLabel}`,
+        resolution: `Foto #${slideNumber} (${activePhotoResLabel})`,
         mediaType: 'photos',
         extension: ext,
         filename,
@@ -1100,7 +1112,7 @@ export default function App() {
       void logDownloadActivity({
         platform: media.platform,
         url: media.url,
-        resolution: `Foto #${slideNumber} HD`,
+        resolution: `Foto #${slideNumber} ${activePhotoResLabel}`,
         status: 'berhasil',
         mediaType: 'photos',
         title: `${media.title || 'Foto Slide'} #${slideNumber}`
@@ -1378,18 +1390,21 @@ export default function App() {
         return;
       }
 
-      // CASE B: Photo Slideshow (2+ images -> ZIP, 1 image -> JPG/PNG)
-      if (targetFormat.type === 'photos' && media.images && media.images.length > 1) {
-        const total = media.images.length;
+      // CASE B: Photo Slideshow (2+ images -> ZIP, 1 image -> JPG/PNG, automatic Ultra HD)
+      const activePhotoSlideImages = media.images;
+      const activePhotoResLabel = 'Ultra HD';
+
+      if (targetFormat.type === 'photos' && activePhotoSlideImages && activePhotoSlideImages.length > 1) {
+        const total = activePhotoSlideImages.length;
         const zip = new JSZip();
         const sanitizedTitle = (media.title || 'Media_Photos').slice(0, 30).replace(/[^a-zA-Z0-9_-]/g, '_');
         const folder = zip.folder(sanitizedTitle) || zip;
 
         let downloadedPhotoCount = 0;
         for (let i = 0; i < total; i++) {
-          setDownloadStatusText(`Mengunduh foto ${i + 1} dari ${total}...`);
+          setDownloadStatusText(`Mengunduh foto ${i + 1} dari ${total} (${activePhotoResLabel})...`);
           setDownloadProgress(10 + Math.round(((i + 1) / total) * 70));
-          const imgUrl = media.images[i];
+          const imgUrl = activePhotoSlideImages[i];
           const isPng = /\.(png)(?:[?#]|$)/i.test(imgUrl);
           const photoExt = isPng ? 'png' : 'jpg';
           const photoEntryName = `${sanitizedTitle}_foto_${String(i + 1).padStart(2, '0')}.${photoExt}`;
@@ -1418,7 +1433,8 @@ export default function App() {
           compression: 'DEFLATE',
           compressionOptions: { level: 6 }
         });
-        const zipFilename = `DownloaderZero_${sanitizedTitle}_Semua_Foto.zip`;
+        const resSlug = activePhotoResLabel.replace(/\s+/g, '_');
+        const zipFilename = `DownloaderZero_${sanitizedTitle}_${resSlug}_Semua_Foto.zip`;
         triggerBlobDownload(zipBlob, zipFilename);
 
         await saveDownloadedMedia({
@@ -1426,15 +1442,15 @@ export default function App() {
           platform: media.platform,
           title: `${media.title || 'Slide Foto'} (${total} Foto)`,
           author: media.author || media.platform,
-          thumbnail: media.thumbnail || media.images[0] || '',
-          quality: `${total} Foto HD (ZIP)`,
-          resolution: 'HD Foto',
+          thumbnail: media.thumbnail || activePhotoSlideImages[0] || '',
+          quality: `${total} Foto · ${activePhotoResLabel} (ZIP)`,
+          resolution: activePhotoResLabel,
           mediaType: 'photos',
           extension: 'zip',
           filename: zipFilename,
           filesize: formatBytes(zipBlob.size),
           filesizeBytes: zipBlob.size,
-          downloadUrl: media.images[0],
+          downloadUrl: activePhotoSlideImages[0],
           blob: zipBlob
         }).catch(() => {});
 
@@ -1442,7 +1458,7 @@ export default function App() {
         void logDownloadActivity({
           platform: media.platform,
           url: media.url,
-          resolution: `${total} Foto HD (ZIP)`,
+          resolution: `${total} Foto ${activePhotoResLabel} (ZIP)`,
           status: 'berhasil',
           mediaType: 'photos',
           title: media.title || 'Slide Foto'
@@ -1474,7 +1490,7 @@ export default function App() {
             ? selectedTrack.url
             : `https://open.spotify.com/track/${trackId || selectedTrack.id}`;
       } else if (targetFormat.type === 'photos') {
-        const singlePhotoUrl = (media.images && media.images[0]) || resolvedUrl;
+        const singlePhotoUrl = (activePhotoSlideImages && activePhotoSlideImages[0]) || resolvedUrl;
         if (singlePhotoUrl && singlePhotoUrl.startsWith('http')) {
           effectiveUrl = singlePhotoUrl;
         }
@@ -1486,11 +1502,19 @@ export default function App() {
           ? (/\.(png)(?:[?#]|$)/i.test(effectiveUrl) ? 'png' : 'jpg')
           : rawExt;
       const sanitizedTitle = effectiveTitle.slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const rawResTag = targetFormat.resolution || targetFormat.quality.split(' ')[0] || (targetFormat.type === 'audio' ? 'Audio' : targetFormat.type === 'photos' ? 'HD_Foto' : '1080p');
+      const rawResTag =
+        targetFormat.type === 'photos'
+          ? 'Ultra_HD'
+          : (targetFormat.resolution || targetFormat.quality.split(' ')[0] || (targetFormat.type === 'audio' ? 'Audio' : '1080p'));
       const resTag = rawResTag.replace(/\s+/g, '_');
       const filename = `DownloaderZero_${sanitizedTitle}_${resTag}.${ext}`;
 
-      const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, selectedTrack, targetFormat);
+      const effectiveFormatForHistory: MediaFormat =
+        targetFormat.type === 'photos'
+          ? { ...targetFormat, resolution: 'Ultra HD', quality: 'Foto Ultra HD' }
+          : targetFormat;
+
+      const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, selectedTrack, effectiveFormatForHistory);
 
       let mediaBlob: Blob | null = null;
       let proxyError: Error | null = null;
@@ -1527,8 +1551,8 @@ export default function App() {
           thumbnail: finalThumbnail,
           duration: effectiveDuration,
           durationFormatted: effectiveDurationFmt,
-          quality: targetFormat.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
-          resolution: targetFormat.resolution || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
+          quality: effectiveFormatForHistory.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
+          resolution: effectiveFormatForHistory.resolution || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
           mediaType: targetFormat.type,
           extension: ext as any,
           filename,
@@ -1729,6 +1753,10 @@ export default function App() {
                 spotifyPlayTrigger={spotifyPlayTrigger}
                 spotifyTrackStatuses={spotifyTrackStatuses}
                 photoDownloadStatuses={photoDownloadStatuses}
+                onOpenVideoFormatModal={() => {
+                  setBerandaStage('idle');
+                  setIsFormatModalOpen(true);
+                }}
                 onSelectSpotifyTrack={handleSelectSpotifyTrack}
                 onDownloadSingleSpotifyTrack={handleDownloadSingleSpotifyTrack}
                 onDownloadAllSpotifyZip={handleDownloadAllSpotifyZip}

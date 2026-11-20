@@ -71,9 +71,9 @@ const PLATFORM_CATALOG: PlatformCatalogItem[] = [
   {
     id: 'pinterest',
     name: 'Pinterest',
-    fullTitle: 'Pinterest Pins & Video',
-    desc: 'Simpan video pin berdurasi penuh maupun foto resolusi asli (original) langsung dari tautan Pinterest.',
-    formats: 'MP4 HD, JPG Original, MP3 Audio',
+    fullTitle: 'Pinterest Pins, Video & Slides',
+    desc: 'Simpan video pin sesuai resolusi yang dipilih serta foto satuan maupun slide carousel otomatis resolusi Ultra HD asli langsung dari Pinterest.',
+    formats: 'MP4 Multi-Resolusi, Foto & Slide Ultra HD, MP3 Audio',
     renderLogo: (sizeClass, iconClass) => (
       <div className={`${sizeClass} rounded-2xl bg-[#E60023] flex items-center justify-center shadow-md shadow-red-900/25`}>
         <svg className={`${iconClass} text-white fill-current`} viewBox="0 0 24 24">

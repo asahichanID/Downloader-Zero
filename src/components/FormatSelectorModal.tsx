@@ -60,6 +60,14 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
     media.platform === 'youtube' &&
     videoFormats.length > 0 &&
     (Boolean(media.source?.includes('Server 2')) || videoFormats.some((f) => f.id.startsWith('yt-s2-')));
+  const isInstagramServer2 =
+    media.platform === 'instagram' &&
+    videoFormats.length > 0 &&
+    (Boolean(media.source?.includes('Server 2')) || videoFormats.some((f) => f.id.startsWith('ig-s2-')));
+  const isPinterestServer2 =
+    media.platform === 'pinterest' &&
+    videoFormats.length > 0 &&
+    (Boolean(media.source?.includes('Server 2')) || videoFormats.some((f) => f.id.startsWith('pin-s2-')));
 
   const isSameResolution = (a: string, b: string): boolean => {
     const na = a.toLowerCase().trim();
@@ -79,6 +87,20 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
        videoFormats.find((vf) => isSameResolution(vf.resolution || '', '1080p'))?.resolution ||
        videoFormats[0]?.resolution ||
        '1080p')
+    : selectedVideoRes;
+
+  const activeInstagramRes = isInstagramServer2
+    ? (videoFormats.find((vf) => isSameResolution(vf.resolution || '', selectedVideoRes))?.resolution ||
+       videoFormats.find((vf) => isSameResolution(vf.resolution || '', '1080p'))?.resolution ||
+       videoFormats[0]?.resolution ||
+       '1080p')
+    : selectedVideoRes;
+
+  const activePinterestRes = isPinterestServer2
+    ? (videoFormats.find((vf) => isSameResolution(vf.resolution || '', selectedVideoRes))?.resolution ||
+       videoFormats.find((vf) => isSameResolution(vf.resolution || '', '720p'))?.resolution ||
+       videoFormats[0]?.resolution ||
+       '720p')
     : selectedVideoRes;
 
   const calcAudioMb = (kbpsNum: number): string | undefined => {
@@ -145,6 +167,26 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
         videoFormats[0];
       if (exactYtFormat) {
         onConfirmDownload(exactYtFormat);
+      }
+      return;
+    }
+
+    if (isInstagramServer2 && effectiveType === 'video') {
+      const exactIgFormat =
+        videoFormats.find((f) => isSameResolution(f.resolution || '', activeInstagramRes)) ||
+        videoFormats[0];
+      if (exactIgFormat) {
+        onConfirmDownload(exactIgFormat);
+      }
+      return;
+    }
+
+    if (isPinterestServer2 && effectiveType === 'video') {
+      const exactPinFormat =
+        videoFormats.find((f) => isSameResolution(f.resolution || '', activePinterestRes)) ||
+        videoFormats[0];
+      if (exactPinFormat) {
+        onConfirmDownload(exactPinFormat);
       }
       return;
     }
@@ -250,7 +292,13 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
       : (isSpotify || selectedType === 'audio' ? '03:30' : '01:00'));
 
   const hasTwitterAudio = isTwitter && audioFormats.length > 0;
-  const effectiveType: MediaType = isSpotify ? 'audio' : (isTwitter && !hasTwitterAudio) ? 'video' : selectedType;
+  const hasInstagramAudio = !isInstagramServer2 || audioFormats.length > 0;
+  const hasPinterestAudio = !isPinterestServer2 || audioFormats.length > 0;
+  const hideAudioTab =
+    (isTwitter && !hasTwitterAudio) ||
+    (isInstagramServer2 && !hasInstagramAudio) ||
+    (isPinterestServer2 && !hasPinterestAudio);
+  const effectiveType: MediaType = isSpotify ? 'audio' : hideAudioTab ? 'video' : selectedType;
 
   return (
     <div
@@ -273,7 +321,7 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                     ? 'Siap Unduh File'
                     : isSpotify
                       ? 'Pilih Kualitas Audio'
-                      : (isTwitter && !hasTwitterAudio)
+                      : hideAudioTab
                         ? 'Pilih Resolusi Video'
                         : 'Pilih Format & Kualitas'}
                 </span>
@@ -287,7 +335,11 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                       ? (hasTwitterAudio
                           ? 'Pilih resolusi video asli atau ekstrak audio MP3 dari postingan X'
                           : 'Menampilkan resolusi asli yang tersedia dari postingan X')
-                      : 'Sesuaikan resolusi video atau bitrate audio yang ingin disimpan'}
+                      : isInstagramServer2
+                        ? 'Menampilkan resolusi asli yang tersedia dari Instagram Server 2'
+                        : isPinterestServer2
+                          ? 'Menampilkan resolusi asli yang tersedia dari Pinterest Server 2'
+                          : 'Sesuaikan resolusi video atau bitrate audio yang ingin disimpan'}
               </p>
             </div>
             <button
@@ -322,10 +374,16 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                     crossOrigin="anonymous"
                     className="w-full h-full object-cover"
                     onError={(e) => {
-                      if (ytMatch && !(e.currentTarget as HTMLImageElement).src.includes('mqdefault')) {
-                        (e.currentTarget as HTMLImageElement).src = `https://i.ytimg.com/vi/${ytMatch[1]}/mqdefault.jpg`;
-                      } else {
-                        (e.currentTarget as HTMLImageElement).src = '/banner_dz.png';
+                      const img = e.currentTarget;
+                      if (ytMatch && !img.src.includes('mqdefault') && !img.dataset.ytMq) {
+                        img.dataset.ytMq = '1';
+                        img.src = `https://i.ytimg.com/vi/${ytMatch[1]}/mqdefault.jpg`;
+                      } else if (!img.dataset.localFallback) {
+                        img.dataset.localFallback = '1';
+                        img.src = '/banner_dz.png';
+                      } else if (!img.dataset.cdnFallback) {
+                        img.dataset.cdnFallback = '1';
+                        img.src = 'https://cdn.jsdelivr.net/gh/asahichanID/media@main/banner_dz.png';
                       }
                     }}
                   />
@@ -353,8 +411,8 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
               </div>
             </div>
 
-            {/* Segmented Type Switcher: Hidden for TeraBox (files), Spotify (audio only), and silent Twitter GIFs */}
-            {!isTerabox && !isSpotify && (!isTwitter || hasTwitterAudio) && (
+            {/* Segmented Type Switcher: Hidden for TeraBox (files), Spotify (audio only), and silent videos */}
+            {!isTerabox && !isSpotify && !hideAudioTab && (
               <div>
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 block">
                   Tipe Unduhan
@@ -400,7 +458,11 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                     ? 'Resolusi Asli Tersedia (Server 2)'
                     : isYouTubeServer2
                       ? 'Resolusi Tersedia (YouTube Server 2)'
-                      : 'Pilih Resolusi Video'}
+                      : isInstagramServer2
+                        ? 'Resolusi Tersedia (Instagram Server 2)'
+                        : isPinterestServer2
+                          ? 'Resolusi Tersedia (Pinterest Server 2)'
+                          : 'Pilih Resolusi Video'}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {isTwitter
@@ -443,19 +505,27 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                           </button>
                         );
                       })
-                    : isYouTubeServer2
+                    : (isYouTubeServer2 || isInstagramServer2 || isPinterestServer2)
                       ? videoFormats.map((fmt) => {
                           const resLabel = fmt.resolution || 'HD';
-                          const isSelected = isSameResolution(resLabel, activeYoutubeRes);
-                          const badgeText =
-                            resLabel === '4K' ? 'Ultra 4K (2160p)'
-                              : resLabel === '2K' ? '2K QHD (1440p)'
-                              : resLabel === '1080p' ? 'Full HD · Populer'
-                              : resLabel === '720p' ? 'HD · Cepat'
-                              : resLabel === '480p' ? 'SD · Hemat Data'
+                          const activeResTarget = isInstagramServer2
+                            ? activeInstagramRes
+                            : isPinterestServer2
+                              ? activePinterestRes
+                              : activeYoutubeRes;
+                          const isSelected = isSameResolution(resLabel, activeResTarget);
+                          const baseTierText =
+                            resLabel === '4K' ? 'Ultra 4K'
+                              : resLabel === '2K' ? '2K QHD'
+                              : resLabel === '1080p' ? 'Full HD'
+                              : resLabel === '720p' ? 'HD'
+                              : resLabel === '640p' ? 'HD'
+                              : resLabel === '540p' ? 'qHD'
+                              : resLabel === '480p' ? 'SD'
                               : resLabel === '360p' ? 'Ringan'
-                              : resLabel === '240p' ? 'Mobile Ringan'
+                              : resLabel === '240p' ? 'Hemat Data'
                               : (fmt.quality || 'MP4 Video');
+                          const badgeText = fmt.filesize ? `${baseTierText} · ${fmt.filesize}` : baseTierText;
                           return (
                             <button
                               key={fmt.id}
