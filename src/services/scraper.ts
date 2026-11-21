@@ -1653,8 +1653,11 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
       }
     }
 
-    const hdUrl = d.video || d.video_hd || d.hdplay || d.nowm || d.play || d.url || d.download || d.link || d.hd;
-    const sdUrl = d.videoWM || d.video_wm || d.wm || d.watermark || d.sd;
+    const hdUrl = d.video_hd || d.hd || d.hdplay || d.video || d.nowm || d.play || d.url || d.download || d.link;
+    const sdNoWmUrl = d.video || d.nowm || d.play || d.sd;
+    const wmFallbackUrl = d.videoWM || d.video_wm || d.wm || d.watermark;
+    const sdUrl = (sdNoWmUrl && sdNoWmUrl !== hdUrl) ? sdNoWmUrl : wmFallbackUrl;
+    const isSdWatermarked = Boolean(sdUrl && sdUrl === wmFallbackUrl && sdUrl !== sdNoWmUrl);
     const audioUrl = d.audio || d.music || d.sound || d.audio_url || d.mp3;
 
     if (hdUrl && typeof hdUrl === 'string') {
@@ -1673,13 +1676,13 @@ async function scrapeNeoxr(targetUrl: string, platform: PlatformType, apiKey?: s
     if (sdUrl && typeof sdUrl === 'string' && sdUrl !== hdUrl) {
       formats.push({
         id: 'nx-tt-sd',
-        quality: '720p HD (Dengan Watermark)',
+        quality: isSdWatermarked ? '720p HD (Dengan Watermark)' : '720p HD (Tanpa Watermark)',
         resolution: '720p',
         type: 'video',
         extension: 'mp4',
         url: sdUrl,
         isDirect: true,
-        note: 'Format asli TikTok'
+        note: isSdWatermarked ? 'Format cadangan TikTok' : 'Format HD tanpa watermark'
       });
     }
 

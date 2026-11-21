@@ -224,19 +224,45 @@ async function fetchTikTokWebHtmlData(targetUrl: string, awemeId: string): Promi
             .filter((u: string) => typeof u === 'string' && u.startsWith('http'))
         : [];
 
-      const bitrateGears: Array<{ bitRate: number; url: string; size?: number }> = Array.isArray(item.video?.bitrateInfo)
+      const isBytevc1OrHevc = (codecType?: string, gearName?: string): boolean => {
+        const sig = `${codecType || ''} ${gearName || ''}`.toLowerCase();
+        if (/h265|hevc|hvc1|hev1|bytevc1|av1|av01/.test(sig)) return true;
+        if (/h264|avc/.test(sig)) return false;
+        return /_\d*1$/.test((gearName || '').trim());
+      };
+
+      const bitrateGears: Array<{ bitRate: number; url: string; size?: number; height: number; isH264: boolean }> = Array.isArray(item.video?.bitrateInfo)
         ? item.video.bitrateInfo
-            .map((g: any) => ({
-              bitRate: Number(g?.Bitrate || 0),
-              url: g?.PlayAddr?.UrlList?.find((u: string) => typeof u === 'string' && u.startsWith('http')) || '',
-              size: Number(g?.PlayAddr?.DataSize || 0) || undefined
-            }))
+            .map((g: any) => {
+              const urlList: string[] = Array.isArray(g?.PlayAddr?.UrlList) ? g.PlayAddr.UrlList : [];
+              const bestCandidateUrl =
+                urlList.find((u: string) => typeof u === 'string' && u.startsWith('http') && !u.includes('webapp-prime.tiktok.com')) ||
+                urlList.find((u: string) => typeof u === 'string' && u.startsWith('http')) ||
+                '';
+              return {
+                bitRate: Number(g?.Bitrate || 0),
+                url: bestCandidateUrl,
+                size: Number(g?.PlayAddr?.DataSize || 0) || undefined,
+                height: Number(g?.PlayAddr?.Height || 0),
+                isH264: !isBytevc1OrHevc(g?.CodecType, g?.GearName)
+              };
+            })
             .filter((g: any) => Boolean(g.url))
-            .sort((a: any, b: any) => b.bitRate - a.bitRate)
+            .sort((a: any, b: any) => {
+              if (b.height !== a.height) return b.height - a.height;
+              if (a.isH264 !== b.isH264) return a.isH264 ? -1 : 1;
+              return b.bitRate - a.bitRate;
+            })
         : [];
 
-      const hdUrl = bitrateGears[0]?.url || item.video?.playAddr || item.video?.downloadAddr || '';
-      const sdUrl = bitrateGears[bitrateGears.length - 1]?.url || item.video?.playAddr || hdUrl;
+      const h264Gears = bitrateGears.filter((g) => g.isH264);
+      const topH264 = h264Gears[0];
+      const topAny = bitrateGears[0];
+      const hdGear = topH264 && topAny && topH264.height >= topAny.height ? topH264 : (topAny || topH264);
+      const sdGear = h264Gears[h264Gears.length - 1] || bitrateGears[bitrateGears.length - 1];
+
+      const hdUrl = hdGear?.url || item.video?.playAddr || item.video?.downloadAddr || '';
+      const sdUrl = sdGear?.url || item.video?.playAddr || hdUrl;
       const musicUrl = item.music?.playUrl || '';
 
       if (!hdUrl && !sdUrl && imgs.length === 0 && !musicUrl) continue;
@@ -250,8 +276,8 @@ async function fetchTikTokWebHtmlData(targetUrl: string, awemeId: string): Promi
         duration: Number(item.video?.duration || 0),
         play: sdUrl,
         hdplay: hdUrl,
-        size: bitrateGears[bitrateGears.length - 1]?.size,
-        hd_size: bitrateGears[0]?.size,
+        size: sdGear?.size,
+        hd_size: hdGear?.size,
         music: musicUrl,
         music_info: item.music
           ? {
@@ -403,9 +429,26 @@ function convertOfficialFeedToTikWMData(item: any, awemeId: string): TikWMData |
         .filter((u: string) => typeof u === 'string' && u.startsWith('http'))
     : [];
   const gears: any[] = Array.isArray(item.video?.bit_rate) ? item.video.bit_rate : [];
-  const sortedGears = [...gears].sort((a, b) => Number(b?.bit_rate || 0) - Number(a?.bit_rate || 0));
-  const hdUrl = sortedGears[0]?.play_addr?.url_list?.[0] || item.video?.play_addr?.url_list?.[0] || '';
-  const sdUrl = sortedGears[sortedGears.length - 1]?.play_addr?.url_list?.[0] || hdUrl;
+  const normalizedGears = gears
+    .map((g: any) => ({
+      bitRate: Number(g?.bit_rate || 0),
+      height: Number(g?.play_addr?.height || 0),
+      url: g?.play_addr?.url_list?.find((u: string) => typeof u === 'string' && u.startsWith('http')) || '',
+      isH264:
+        Number(g?.is_bytevc1 || 0) === 0 &&
+        !/h265|hevc|hvc1|hev1|bytevc1|av1|av01/i.test(`${g?.codec_type || ''} ${g?.gear_name || ''}`)
+    }))
+    .filter((g: any) => Boolean(g.url))
+    .sort((a: any, b: any) => {
+      if (b.height !== a.height) return b.height - a.height;
+      if (a.isH264 !== b.isH264) return a.isH264 ? -1 : 1;
+      return b.bitRate - a.bitRate;
+    });
+  const h264Gears = normalizedGears.filter((g) => g.isH264);
+  const topH264 = h264Gears[0];
+  const topAny = normalizedGears[0];
+  const hdUrl = (topH264 && topAny && topH264.height >= topAny.height ? topH264.url : topAny?.url) || item.video?.play_addr?.url_list?.[0] || '';
+  const sdUrl = h264Gears[h264Gears.length - 1]?.url || normalizedGears[normalizedGears.length - 1]?.url || hdUrl;
   const musicUrl = item.music?.play_url?.url_list?.[0] || '';
 
   if (!hdUrl && !sdUrl && imgs.length === 0 && !musicUrl) return null;
@@ -495,22 +538,7 @@ export async function getCachedOrFetchTikTokData(rawUrl: string): Promise<TikWMD
       lastError = e?.message || 'Koneksi ke endpoint TikWM gagal';
     }
 
-    // 2. Web HTML __UNIVERSAL_DATA_FOR_REHYDRATION__ (handles videos & photo carousels without rate limit)
-    const webData = await fetchTikTokWebHtmlData(cleanedUrl, awemeId);
-    if (webData) {
-      storeCachedTikTokEntry(
-        [
-          webData.id ? `id:${webData.id}` : '',
-          awemeId ? `id:${awemeId}` : '',
-          `url:${cleanedUrl}`,
-          `url:${target}`
-        ],
-        webData
-      );
-      return webData;
-    }
-
-    // 3. Official TikTok mobile feed gateway (handles gzip & photo carousels)
+    // 2. Official TikTok mobile feed gateway (cookie-free CDN URLs, handles gzip & photo carousels)
     if (awemeId) {
       const feedItem = await fetchOfficialTikTokFeed(awemeId);
       const converted = convertOfficialFeedToTikWMData(feedItem, awemeId);
@@ -526,6 +554,21 @@ export async function getCachedOrFetchTikTokData(rawUrl: string): Promise<TikWMD
         );
         return converted;
       }
+    }
+
+    // 3. Web HTML __UNIVERSAL_DATA_FOR_REHYDRATION__ (handles videos & photo carousels without rate limit)
+    const webData = await fetchTikTokWebHtmlData(cleanedUrl, awemeId);
+    if (webData) {
+      storeCachedTikTokEntry(
+        [
+          webData.id ? `id:${webData.id}` : '',
+          awemeId ? `id:${awemeId}` : '',
+          `url:${cleanedUrl}`,
+          `url:${target}`
+        ],
+        webData
+      );
+      return webData;
     }
 
     // 4. SSSTik fallback with live token extraction
@@ -663,6 +706,41 @@ export async function resolveTikTokServer2(
   const standardPlayUrl = ensureAbsoluteUrl(data.play);
   const wmPlayUrl = ensureAbsoluteUrl(data.wmplay);
 
+  const pickOfficialFeedStream = async (awemeIdStr: string, preferLowBitrate: boolean): Promise<string> => {
+    if (!awemeIdStr) return '';
+    const officialItem = await fetchOfficialTikTokFeed(awemeIdStr);
+    const gears: any[] = Array.isArray(officialItem?.video?.bit_rate) ? officialItem.video.bit_rate : [];
+    const mapped = gears
+      .map((g: any) => ({
+        bitRate: Number(g?.bit_rate || 0),
+        height: Number(g?.play_addr?.height || 0),
+        url: g?.play_addr?.url_list?.find((u: string) => typeof u === 'string' && u.startsWith('http')) || '',
+        isH264:
+          Number(g?.is_bytevc1 || 0) === 0 &&
+          !/h265|hevc|hvc1|hev1|bytevc1|av1|av01/i.test(`${g?.codec_type || ''} ${g?.gear_name || ''}`)
+      }))
+      .filter((g: any) => Boolean(g.url));
+    if (mapped.length === 0) {
+      return officialItem?.video?.play_addr?.url_list?.[0] || '';
+    }
+    const h264Only = mapped.filter((g) => g.isH264);
+    if (preferLowBitrate) {
+      const pool = (h264Only.length > 0 ? h264Only : mapped).sort((a, b) => a.bitRate - b.bitRate);
+      return pool[0]?.url || '';
+    }
+    mapped.sort((a, b) => {
+      if (b.height !== a.height) return b.height - a.height;
+      if (a.isH264 !== b.isH264) return a.isH264 ? -1 : 1;
+      return b.bitRate - a.bitRate;
+    });
+    const best = mapped[0];
+    const bestH264 = h264Only.sort((a, b) => b.height - a.height || b.bitRate - a.bitRate)[0];
+    if (bestH264 && best && bestH264.height >= best.height) {
+      return bestH264.url;
+    }
+    return best?.url || '';
+  };
+
   // Strategy A1: 4K Ultra HD (2160p) -> Master highest-bitrate unwatermarked stream
   if (is4K) {
     if (hdPlayUrl && hdPlayUrl.startsWith('http')) {
@@ -673,9 +751,8 @@ export async function resolveTikTokServer2(
     }
 
     if (data.id) {
-      const officialItem = await fetchOfficialTikTokFeed(data.id);
-      const topGear = officialItem?.video?.bit_rate?.[0]?.play_addr?.url_list?.[0];
-      if (topGear && typeof topGear === 'string' && topGear.startsWith('http')) {
+      const topGear = await pickOfficialFeedStream(data.id, false);
+      if (topGear && topGear.startsWith('http')) {
         return {
           downloadUrl: topGear,
           quality: '4K Ultra HD (2160p Master Stream)'
@@ -701,10 +778,8 @@ export async function resolveTikTokServer2(
     }
 
     if (data.id) {
-      const officialItem = await fetchOfficialTikTokFeed(data.id);
-      const bitRates = officialItem?.video?.bit_rate;
-      const gear = bitRates?.[0]?.play_addr?.url_list?.[0];
-      if (gear && typeof gear === 'string' && gear.startsWith('http')) {
+      const gear = await pickOfficialFeedStream(data.id, false);
+      if (gear && gear.startsWith('http')) {
         return {
           downloadUrl: gear,
           quality: '2K Quad HD (1440p Master Stream)'
@@ -730,10 +805,8 @@ export async function resolveTikTokServer2(
     }
 
     if (data.id) {
-      const officialItem = await fetchOfficialTikTokFeed(data.id);
-      const bitRates = officialItem?.video?.bit_rate;
-      const gear = bitRates?.[0]?.play_addr?.url_list?.[0];
-      if (gear && typeof gear === 'string' && gear.startsWith('http')) {
+      const gear = await pickOfficialFeedStream(data.id, false);
+      if (gear && gear.startsWith('http')) {
         return {
           downloadUrl: gear,
           quality: '1080p Full HD (High Bitrate)'
@@ -749,7 +822,7 @@ export async function resolveTikTokServer2(
     }
   }
 
-  // Strategy B: 720p HD Standard -> Standard compressed stream
+  // Strategy B: 720p HD Standard -> Standard H.264 stream first
   if (is720p) {
     if (standardPlayUrl && standardPlayUrl.startsWith('http')) {
       return {
@@ -765,26 +838,22 @@ export async function resolveTikTokServer2(
     }
   }
 
-  // Strategy C: 480p / 360p SD -> Data saving
+  // Strategy C: 480p / 360p SD -> Data saving H.264 stream
   if (is480p) {
-    if (data.id) {
-      const officialItem = await fetchOfficialTikTokFeed(data.id);
-      const bitRates = officialItem?.video?.bit_rate;
-      if (Array.isArray(bitRates) && bitRates.length > 1) {
-        const lowerGear = bitRates[bitRates.length - 1]?.play_addr?.url_list?.[0];
-        if (lowerGear && typeof lowerGear === 'string' && lowerGear.startsWith('http')) {
-          return {
-            downloadUrl: lowerGear,
-            quality: '480p SD (Hemat Kuota)'
-          };
-        }
-      }
-    }
     if (standardPlayUrl && standardPlayUrl.startsWith('http')) {
       return {
         downloadUrl: standardPlayUrl,
         quality: '480p SD (Tanpa Watermark)'
       };
+    }
+    if (data.id) {
+      const lowerGear = await pickOfficialFeedStream(data.id, true);
+      if (lowerGear && lowerGear.startsWith('http')) {
+        return {
+          downloadUrl: lowerGear,
+          quality: '480p SD (Hemat Kuota)'
+        };
+      }
     }
   }
 

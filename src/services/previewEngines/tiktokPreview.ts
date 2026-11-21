@@ -235,22 +235,33 @@ export async function resolveTikTokServer1(
 
   const json = await res.json();
   if (!json || !json.status || !json.data) {
-    throw new Error('Server 1 tidak dapat menemukan stream video TikTok.');
+    throw new Error(json?.msg || json?.message || 'Server 1 tidak dapat menemukan stream video TikTok.');
   }
 
-  const d = json.data;
+  const d = Array.isArray(json.data) ? json.data[0] : json.data;
+  if (!d) {
+    throw new Error('Server 1 tidak dapat menemukan stream video TikTok.');
+  }
   const isAudio = type === 'audio';
 
   if (isAudio) {
-    const audioUrl = d.audio || d.music || d.sound;
+    const audioUrl = d.audio || d.music || d.sound || d.audio_url || d.mp3;
     if (audioUrl && typeof audioUrl === 'string' && audioUrl.startsWith('http')) {
       return { downloadUrl: audioUrl, quality: '320 kbps MP3' };
     }
+    const vidForAudio = d.video || d.video_hd || d.nowm || d.play || d.url || d.download;
+    if (vidForAudio && typeof vidForAudio === 'string' && vidForAudio.startsWith('http')) {
+      return { downloadUrl: vidForAudio, quality: '320 kbps MP3 (Ekstrak Audio)' };
+    }
   }
 
-  const vidUrl = d.video || d.video_hd || d.nowm || d.url || d.download;
+  const resLower = String(_resolution || '').toLowerCase();
+  const preferLower = resLower.includes('480') || resLower.includes('360') || resLower.includes('720');
+  const vidUrl = preferLower
+    ? (d.video || d.nowm || d.play || d.sd || d.video_hd || d.hd || d.url || d.download)
+    : (d.video_hd || d.hd || d.hdplay || d.video || d.nowm || d.play || d.url || d.download);
   if (vidUrl && typeof vidUrl === 'string' && vidUrl.startsWith('http')) {
-    return { downloadUrl: vidUrl, quality: 'Full HD' };
+    return { downloadUrl: vidUrl, quality: preferLower ? '720p HD (Tanpa Watermark)' : '1080p Full HD (Tanpa Watermark)' };
   }
 
   throw new Error('Server 1 tidak menghasilkan link unduhan yang valid.');

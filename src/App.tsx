@@ -1529,10 +1529,15 @@ export default function App() {
       setDownloadStatusText('Menyimpan berkas ke perangkat...');
 
       const isAudioOrSpotify = media.platform === 'spotify' || targetFormat.type === 'audio' || ext === 'mp3';
+      const requiresNormalizedProxy = isAudioOrSpotify || (media.platform === 'tiktok' && ext === 'mp4');
       if (mediaBlob) {
         triggerBlobDownload(mediaBlob, filename);
-      } else if (isAudioOrSpotify) {
-        throw proxyError || new Error('Gagal mengunduh audio MP3 sesuai bitrate yang dipilih dari server. Silakan coba lagi.');
+      } else if (requiresNormalizedProxy) {
+        throw proxyError || new Error(
+          isAudioOrSpotify
+            ? 'Gagal mengunduh audio MP3 sesuai bitrate yang dipilih dari server. Silakan coba lagi.'
+            : 'Gagal memproses video TikTok dari server agar kompatibel di galeri dan WhatsApp. Silakan coba lagi.'
+        );
       } else {
         triggerDirectDownloadFallback(effectiveUrl, filename);
       }

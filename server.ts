@@ -103,6 +103,9 @@ async function startServer() {
   const mp3TranscodeCache = new Map<string, { buffer: Buffer; timestamp: number }>();
   // Short-lived cache for DASH video+audio muxed MP4 streams (preview -> download instant reuse)
   const dashMuxCache = new Map<string, { buffer: Buffer; timestamp: number }>();
+  // Short-lived cache + inflight dedup for normalized WhatsApp/Gallery-compatible TikTok MP4s
+  const tiktokMp4Cache = new Map<string, { buffer: Buffer; timestamp: number }>();
+  const tiktokMp4Inflight = new Map<string, Promise<Buffer>>();
 
   const ALLOWED_MP3_BITRATES = new Set(['320k', '256k', '192k', '128k', '64k']);
   const normalizeTargetBitrate = (raw: unknown, fallback = '192k'): string => {
@@ -304,6 +307,154 @@ async function startServer() {
     } finally {
       try { if (fs.existsSync(tmpVidPath)) fs.unlinkSync(tmpVidPath); } catch {}
       try { if (fs.existsSync(tmpAudPath)) fs.unlinkSync(tmpAudPath); } catch {}
+      try { if (fs.existsSync(tmpOutPath)) fs.unlinkSync(tmpOutPath); } catch {}
+    }
+  };
+
+  // Normalizes TikTok MP4 videos to universal H.264 (avc1, yuv420p) + AAC-LC (mp4a) + mp42 (+faststart)
+  // so Android Galleries render cleanly with zero visual corruption and WhatsApp/social apps never reject as "file rusak".
+  const normalizeTikTokMp4ForCompat = async (inputBuffer: Buffer): Promise<Buffer> => {
+    const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const tmpInPath = path.join(os.tmpdir(), `dz_tt_in_${uid}.mp4`);
+    const tmpOutPath = path.join(os.tmpdir(), `dz_tt_out_${uid}.mp4`);
+    const ffmpegBins = getFfmpegCandidates();
+
+    const runSpawn = (bin: string, args: string[], collectStderr = true): Promise<{ code: number; stderr: string }> =>
+      new Promise((resolve, reject) => {
+        const ff = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+        let errText = '';
+        ff.stderr.on('data', (chunk: Buffer) => {
+          if (collectStderr && errText.length < 16000) {
+            errText += chunk.toString('utf8');
+          }
+        });
+        ff.on('error', (err) => reject(err));
+        ff.on('close', (code) => resolve({ code: code ?? -1, stderr: errText }));
+      });
+
+    try {
+      fs.writeFileSync(tmpInPath, inputBuffer);
+
+      let workingBin = ffmpegBins[0] || 'ffmpeg';
+      let probeStderr = '';
+      for (const bin of ffmpegBins) {
+        try {
+          const probeRes = await runSpawn(bin, ['-hide_banner', '-i', tmpInPath], true);
+          if (/Input #0,|Stream #0:/i.test(probeRes.stderr)) {
+            workingBin = bin;
+            probeStderr = probeRes.stderr;
+            break;
+          }
+        } catch {}
+      }
+
+      if (!probeStderr) {
+        throw new Error('Berkas video TikTok tidak dapat dibaca atau rusak dari sumber.');
+      }
+
+      const vMatch = probeStderr.match(/Stream #0:\d+[^\n]*?Video:\s*([^\n]+)/i);
+      if (!vMatch?.[1]) {
+        throw new Error('Stream video tidak ditemukan dalam berkas TikTok.');
+      }
+      const vLine = vMatch[1];
+      const vCodec = vLine.split(/[\s(,]+/)[0].toLowerCase();
+      const vProfile = (vLine.match(/^[^(]+\(([^)]+)\)/)?.[1] || '').toLowerCase();
+      const dimMatch = vLine.match(/\b(\d{2,5})x(\d{2,5})\b/);
+      const width = dimMatch ? Number(dimMatch[1]) : 0;
+      const height = dimMatch ? Number(dimMatch[2]) : 0;
+      const pixFmt = (vLine.match(/\b(yuv[a-z0-9_]+|nv12|nv21|rgb\d+|gbrp[a-z0-9_]*)\b/i)?.[1] || '').toLowerCase();
+      const vBitrateMatch = vLine.match(/(\d+)\s*kb\/s/i);
+      const vBitrateKbps = vBitrateMatch ? Number(vBitrateMatch[1]) : 0;
+
+      const durMatch = probeStderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/i);
+      const durationSec = durMatch
+        ? Number(durMatch[1]) * 3600 + Number(durMatch[2]) * 60 + Number(durMatch[3])
+        : 0;
+
+      const aMatch = probeStderr.match(/Stream #0:\d+[^\n]*?Audio:\s*([^\n]+)/i);
+      const hasAudio = Boolean(aMatch?.[1]);
+      const aLine = aMatch?.[1] || '';
+      const aCodec = hasAudio ? aLine.split(/[\s(,]+/)[0].toLowerCase() : '';
+      const aProfile = hasAudio ? (aLine.match(/^[^(]+\(([^)]+)\)/)?.[1] || '').toLowerCase() : '';
+      const aSr = hasAudio ? Number(aLine.match(/\b(\d{4,6})\s*Hz/i)?.[1] || 0) : 0;
+      const isStereoOrMono = /\b(stereo|mono|2 channels|1 channels)\b/i.test(aLine);
+      const isStandardAacLc =
+        aCodec === 'aac' &&
+        (aProfile === '' || aProfile === 'lc') &&
+        (aSr === 44100 || aSr === 48000) &&
+        isStereoOrMono;
+
+      const isStandardH264 =
+        vCodec === 'h264' &&
+        pixFmt === 'yuv420p' &&
+        !/high\s*10|4:?2:?2|4:?4:?4/i.test(vProfile) &&
+        width > 0 &&
+        height > 0 &&
+        width % 2 === 0 &&
+        height % 2 === 0;
+
+      // Path 1: Video is already 8-bit yuv420p H.264 -> remux container + normalize audio to AAC-LC & verify bitstream
+      if (isStandardH264) {
+        const remuxArgs = [
+          '-y', '-fflags', '+genpts', '-i', tmpInPath,
+          '-map', '0:v:0', ...(hasAudio ? ['-map', '0:a:0'] : []),
+          '-c:v', 'copy',
+          ...(hasAudio
+            ? (isStandardAacLc
+                ? ['-c:a', 'copy']
+                : ['-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', '128k', '-ar', '44100', '-ac', '2'])
+            : []),
+          '-movflags', '+faststart', '-brand', 'mp42', '-map_metadata', '-1', '-avoid_negative_ts', 'make_zero',
+          '-f', 'mp4', tmpOutPath
+        ];
+        const remuxRes = await runSpawn(workingBin, remuxArgs, true);
+        if (remuxRes.code === 0 && fs.existsSync(tmpOutPath)) {
+          const outStat = fs.statSync(tmpOutPath);
+          if (outStat.size > 1024) {
+            let hasBitstreamCorruption = false;
+            if (outStat.size <= 60 * 1024 * 1024) {
+              const verifyRes = await runSpawn(workingBin, ['-v', 'error', '-i', tmpOutPath, '-f', 'null', '-'], true);
+              if (/corrupt decoded frame|concealing .* errors|non-existing PPS|Missing reference picture|Invalid NAL unit|moov atom not found|error while decoding MB/i.test(verifyRes.stderr)) {
+                hasBitstreamCorruption = true;
+              }
+            }
+            if (!hasBitstreamCorruption) {
+              return fs.readFileSync(tmpOutPath);
+            }
+          }
+        }
+        try { if (fs.existsSync(tmpOutPath)) fs.unlinkSync(tmpOutPath); } catch {}
+      }
+
+      // Path 2: Transcode HEVC/ByteVC1/AV1/10-bit/odd-dim/corrupt stream -> universal H.264 High@4.1 yuv420p + AAC-LC
+      const estSrcKbps = vBitrateKbps > 0
+        ? vBitrateKbps
+        : Math.max(500, Math.round((inputBuffer.length * 8) / Math.max(1, durationSec || 15) / 1000));
+      const capKbps = Math.min(4500, Math.max(1500, Math.round(estSrcKbps * 1.8)));
+      const preset = durationSec > 90 ? 'ultrafast' : 'superfast';
+
+      const transcodeArgs = [
+        '-y', '-fflags', '+genpts', '-i', tmpInPath,
+        '-map', '0:v:0', ...(hasAudio ? ['-map', '0:a:0'] : []),
+        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-c:v', 'libx264', '-profile:v', 'high', '-level', '4.1', '-pix_fmt', 'yuv420p',
+        '-preset', preset, '-crf', '23', '-maxrate', `${capKbps}k`, '-bufsize', `${capKbps * 2}k`,
+        '-g', '60', '-sc_threshold', '0',
+        ...(hasAudio ? ['-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', '128k', '-ar', '44100', '-ac', '2'] : []),
+        '-movflags', '+faststart', '-brand', 'mp42', '-map_metadata', '-1', '-avoid_negative_ts', 'make_zero',
+        '-f', 'mp4', tmpOutPath
+      ];
+
+      const encRes = await runSpawn(workingBin, transcodeArgs, true);
+      if (encRes.code === 0 && fs.existsSync(tmpOutPath)) {
+        const out = fs.readFileSync(tmpOutPath);
+        if (out.length > 1024) {
+          return out;
+        }
+      }
+      throw new Error(`Konversi kompatibilitas MP4 TikTok gagal (${encRes.stderr.slice(-200)})`);
+    } finally {
+      try { if (fs.existsSync(tmpInPath)) fs.unlinkSync(tmpInPath); } catch {}
       try { if (fs.existsSync(tmpOutPath)) fs.unlinkSync(tmpOutPath); } catch {}
     }
   };
@@ -1203,6 +1354,168 @@ async function startServer() {
         return;
       }
 
+      const isImageOutput = /\.(jpg|jpeg|png|webp|gif)$/i.test(sanitizedFilename);
+      const isTikTokMp4 =
+        !wantsMp3Output &&
+        !isImageOutput &&
+        !audioUrl &&
+        !isCmfvVideo &&
+        (platform === 'tiktok' ||
+          detectPlatform(sourceUrl) === 'tiktok' ||
+          targetUrl.includes('tiktokcdn') ||
+          targetUrl.includes('tikwm.com')) &&
+        (sanitizedFilename.toLowerCase().endsWith('.mp4') || /\.mp4(\?|$)/i.test(targetUrl));
+
+      const sendMp4BufferResponse = (mp4Buffer: Buffer) => {
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader(
+          'Content-Disposition',
+          isInline
+            ? `inline; filename="${sanitizedFilename}"`
+            : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
+        );
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges');
+        res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+
+        if (rangeHeader) {
+          const totalLen = mp4Buffer.length;
+          const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+          if (match) {
+            const start = match[1] ? parseInt(match[1], 10) : 0;
+            const end = match[2] ? Math.min(parseInt(match[2], 10), totalLen - 1) : totalLen - 1;
+            if (!isNaN(start) && !isNaN(end) && start <= end && start < totalLen) {
+              const sliced = mp4Buffer.subarray(start, end + 1);
+              res.status(206);
+              res.setHeader('Content-Range', `bytes ${start}-${end}/${totalLen}`);
+              res.setHeader('Content-Length', sliced.length);
+              res.send(sliced);
+              return;
+            }
+          }
+        }
+
+        res.setHeader('Content-Length', mp4Buffer.length);
+        res.send(mp4Buffer);
+      };
+
+      const tryReResolveFreshUrl = async (): Promise<string> => {
+        if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) return '';
+        try {
+          console.log(`[proxy-download] Attempting on-the-fly re-resolution for ${platform || 'media'} (${sourceUrl})...`);
+          const reKey = typeof req.query.apiKey === 'string' && req.query.apiKey.trim() ? req.query.apiKey.trim() : undefined;
+          const reServer = req.query.server === 'server1' || req.query.server === 'server2' || req.query.server === 'auto' ? req.query.server : 'auto';
+          if (platform === 'tiktok' || detectPlatform(sourceUrl) === 'tiktok') {
+            const fnLower = sanitizedFilename.toLowerCase();
+            const resTag = fnLower.includes('4k') ? '4K' : fnLower.includes('2k') ? '2K' : fnLower.includes('720') ? '720p' : fnLower.includes('480') ? '480p' : '1080p';
+            const resolvedTt = await resolveTikTokDownload(
+              sourceUrl,
+              wantsMp3Output ? 'tt-audio' : `tt-${resTag.toLowerCase()}`,
+              resTag,
+              wantsMp3Output ? 'audio' : 'video',
+              reServer,
+              reKey
+            );
+            if (resolvedTt.downloadUrl?.startsWith('http')) {
+              return resolvedTt.downloadUrl;
+            }
+          }
+          const freshMedia = await extractMedia(sourceUrl, reKey, reServer);
+          if (freshMedia?.formats?.length) {
+            const bestFormat = freshMedia.formats.find((f) => f.isDirect && f.url && f.url.startsWith('http')) || freshMedia.formats[0];
+            if (bestFormat?.url?.startsWith('http')) {
+              return bestFormat.url;
+            }
+          }
+          if ((platform === 'youtube' || detectPlatform(sourceUrl) === 'youtube') && reServer !== 'server1') {
+            const resolvedYt = await resolveYouTubeServer2(
+              sourceUrl,
+              '',
+              wantsMp3Output ? '320 kbps' : '1080p',
+              wantsMp3Output ? 'audio' : 'video'
+            );
+            return resolvedYt.downloadUrl;
+          }
+        } catch (reErr) {
+          console.warn('[proxy-download] On-the-fly re-resolution notice:', reErr);
+        }
+        return '';
+      };
+
+      // Normalize ALL TikTok MP4 videos (Server 1 & Server 2, inline preview & download)
+      if (isTikTokMp4) {
+        const ttCacheKey = targetUrl;
+        const cachedEntry = tiktokMp4Cache.get(ttCacheKey);
+        if (cachedEntry && Date.now() - cachedEntry.timestamp < 180000) {
+          sendMp4BufferResponse(cachedEntry.buffer);
+          return;
+        }
+
+        let inflightPromise = tiktokMp4Inflight.get(ttCacheKey);
+        if (!inflightPromise) {
+          inflightPromise = (async (): Promise<Buffer> => {
+            const fetchFullTikTokBuffer = async (candidateUrl: string): Promise<Buffer | null> => {
+              for (const cfg of fetchCandidateConfigs) {
+                try {
+                  const resCandidate = await fetchWithHeaderTimeout(candidateUrl, { ...cfg.headers }, 25000);
+                  if (resCandidate.ok && resCandidate.body) {
+                    const buf = Buffer.from(await resCandidate.arrayBuffer());
+                    if (buf.length >= 1024) {
+                      const headText = buf.subarray(0, 512).toString('utf8').trim();
+                      const looksLikeErr =
+                        headText.startsWith('<!DOCTYPE') ||
+                        headText.startsWith('<!doctype') ||
+                        headText.startsWith('<html') ||
+                        headText.startsWith('{"docs_url"') ||
+                        headText.startsWith('{"error_code"') ||
+                        headText.startsWith('{"success":false');
+                      if (!looksLikeErr) {
+                        return buf;
+                      }
+                    }
+                  }
+                } catch {}
+              }
+              return null;
+            };
+
+            let rawVideoBuf = await fetchFullTikTokBuffer(targetUrl);
+            if (!rawVideoBuf) {
+              const freshUrl = await tryReResolveFreshUrl();
+              if (freshUrl && freshUrl !== targetUrl) {
+                rawVideoBuf = await fetchFullTikTokBuffer(freshUrl);
+              }
+            }
+            if (!rawVideoBuf) {
+              throw new Error('Gagal mengunduh berkas video TikTok dari server sumber.');
+            }
+
+            const normalizedBuf = await normalizeTikTokMp4ForCompat(rawVideoBuf);
+
+            if (tiktokMp4Cache.size >= 4) {
+              const oldestKey = tiktokMp4Cache.keys().next().value;
+              if (oldestKey) tiktokMp4Cache.delete(oldestKey);
+            }
+            tiktokMp4Cache.set(ttCacheKey, { buffer: normalizedBuf, timestamp: Date.now() });
+            setTimeout(() => {
+              tiktokMp4Cache.delete(ttCacheKey);
+            }, 180000);
+
+            return normalizedBuf;
+          })();
+          tiktokMp4Inflight.set(ttCacheKey, inflightPromise);
+          inflightPromise.finally(() => {
+            tiktokMp4Inflight.delete(ttCacheKey);
+          });
+        }
+
+        const normalizedMp4 = await inflightPromise;
+        sendMp4BufferResponse(normalizedMp4);
+        return;
+      }
+
       let response: globalThis.Response | null = null;
       let lastStatus = 0;
 
@@ -1226,45 +1539,22 @@ async function startServer() {
 
       // If CDN link expired or returned 403/404/410, attempt on-the-fly re-resolution via extractMedia
       if ((!response || !response.ok) && sourceUrl && /^https?:\/\//i.test(sourceUrl)) {
-        try {
-          console.log(`[proxy-download] Attempting on-the-fly re-resolution for ${platform || 'media'} (${sourceUrl})...`);
-          const reKey = typeof req.query.apiKey === 'string' && req.query.apiKey.trim() ? req.query.apiKey.trim() : undefined;
-          const reServer = req.query.server === 'server1' || req.query.server === 'server2' || req.query.server === 'auto' ? req.query.server : 'auto';
-          const freshMedia = await extractMedia(sourceUrl, reKey, reServer);
-          let freshTargetUrl = '';
-          if (freshMedia && freshMedia.formats && freshMedia.formats.length > 0) {
-            const bestFormat = freshMedia.formats.find((f) => f.isDirect && f.url && f.url.startsWith('http')) || freshMedia.formats[0];
-            if (bestFormat?.url?.startsWith('http')) {
-              freshTargetUrl = bestFormat.url;
-            }
-          }
-          if (!freshTargetUrl && (platform === 'youtube' || detectPlatform(sourceUrl) === 'youtube') && reServer !== 'server1') {
-            const resolvedYt = await resolveYouTubeServer2(
-              sourceUrl,
-              '',
-              sanitizedFilename.toLowerCase().endsWith('.mp3') ? '320 kbps' : '1080p',
-              sanitizedFilename.toLowerCase().endsWith('.mp3') ? 'audio' : 'video'
-            );
-            freshTargetUrl = resolvedYt.downloadUrl;
-          }
-          if (freshTargetUrl && freshTargetUrl !== targetUrl && freshTargetUrl.startsWith('http')) {
-            targetUrl = freshTargetUrl;
-              for (const cfg of fetchCandidateConfigs) {
-                try {
-                  const reqHeaders: Record<string, string> = { ...cfg.headers };
-                  if (rangeHeader && !wantsMp3Output) {
-                    reqHeaders['Range'] = rangeHeader;
-                  }
-                  const resCandidate = await fetchWithHeaderTimeout(targetUrl, reqHeaders, 15000);
-                  if (resCandidate.ok && resCandidate.body) {
-                    response = resCandidate;
-                    break;
-                  }
-                } catch {}
+        const freshTargetUrl = await tryReResolveFreshUrl();
+        if (freshTargetUrl && freshTargetUrl !== targetUrl && freshTargetUrl.startsWith('http')) {
+          targetUrl = freshTargetUrl;
+          for (const cfg of fetchCandidateConfigs) {
+            try {
+              const reqHeaders: Record<string, string> = { ...cfg.headers };
+              if (rangeHeader && !wantsMp3Output) {
+                reqHeaders['Range'] = rangeHeader;
               }
-            }
-        } catch (reErr) {
-          console.warn('[proxy-download] On-the-fly re-resolution notice:', reErr);
+              const resCandidate = await fetchWithHeaderTimeout(targetUrl, reqHeaders, 15000);
+              if (resCandidate.ok && resCandidate.body) {
+                response = resCandidate;
+                break;
+              }
+            } catch {}
+          }
         }
       }
 
