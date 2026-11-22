@@ -150,7 +150,7 @@ export const MediaResult: React.FC<MediaResultProps> = ({
 
       const kbpsMatch = `${fmt.resolution || ''} ${fmt.quality || ''} ${fmt.id || ''}`.match(/(320|256|192|128|64)/);
       const bitrate = kbpsMatch ? `${kbpsMatch[1]}k` : (media.platform === 'spotify' ? '320k' : '192k');
-      let proxyUrl = `/api/proxy-download?url=${encodeURIComponent(targetDownloadUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(media.platform)}&sourceUrl=${encodeURIComponent(media.url)}`;
+      let proxyUrl = `/api/proxy-download?url=${encodeURIComponent(targetDownloadUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(media.platform)}&sourceUrl=${encodeURIComponent(media.url)}${fmt.resolution ? `&res=${encodeURIComponent(fmt.resolution)}` : ''}`;
       if (fmt.type === 'audio' || ext.toLowerCase() === 'mp3' || media.platform === 'spotify') {
         proxyUrl += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(media.title || '')}&artist=${encodeURIComponent(media.author || '')}`;
         if (media.platform === 'spotify') {

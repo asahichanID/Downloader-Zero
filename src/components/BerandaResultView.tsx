@@ -639,7 +639,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
               poster={displayThumbnail || undefined}
               controls
               playsInline
-              preload="metadata"
+              preload={media.platform === 'tiktok' ? 'auto' : 'metadata'}
               onError={() => setVideoError(true)}
               className="w-full h-full object-contain bg-black"
             />

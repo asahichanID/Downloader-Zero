@@ -479,6 +479,9 @@ export default function App() {
     if (inline) {
       href += '&inline=1';
     }
+    if (formatOverride?.resolution) {
+      href += `&res=${encodeURIComponent(formatOverride.resolution)}`;
+    }
     const bitrateMatch =
       (formatOverride?.resolution || '').match(/(320|256|192|128|64)/) ||
       (formatOverride?.quality || '').match(/(320|256|192|128|64)\s*k/i) ||
@@ -716,7 +719,13 @@ export default function App() {
 
     const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
     const cachedPrep = getCachedPrepared(mediaData.url, targetFormat, serverMode, customKey);
-    if (cachedPrep) {
+    const isTikTokVideoCacheHit = Boolean(
+      cachedPrep &&
+      cachedPrep.media.platform === 'tiktok' &&
+      cachedPrep.format.type === 'video' &&
+      (cachedPrep.format.extension || 'mp4').toLowerCase() === 'mp4'
+    );
+    if (cachedPrep && !isTikTokVideoCacheHit) {
       setIsFormatModalOpen(false);
       setErrorMessage(null);
       enterPreviewStage(cachedPrep.media, cachedPrep.format, cachedPrep.resolvedUrl);
@@ -731,12 +740,12 @@ export default function App() {
     setDownloadStatusText(`Menyiapkan pratinjau ${targetFormat.quality || targetFormat.resolution}...`);
 
     try {
-      let resolvedFormat: MediaFormat = targetFormat;
-      let finalUrl = targetFormat.url;
+      let resolvedFormat: MediaFormat = cachedPrep ? cachedPrep.format : targetFormat;
+      let finalUrl = cachedPrep ? cachedPrep.resolvedUrl : targetFormat.url;
       let jobId = targetFormat.jobId;
       let startJobError = '';
 
-      if (!finalUrl || !finalUrl.startsWith('http') || targetFormat.needsResolution) {
+      if (!cachedPrep && (!finalUrl || !finalUrl.startsWith('http') || targetFormat.needsResolution)) {
         const loaderFormat = mapFormatForLoader(targetFormat);
         setDownloadStatusText(`Menyiapkan ${targetFormat.quality}...`);
         try {
@@ -838,6 +847,34 @@ export default function App() {
 
       if (!finalUrl || typeof finalUrl !== 'string' || !finalUrl.startsWith('http')) {
         throw new Error(startJobError || 'Tautan media tidak tersedia dari server sumber saat ini.');
+      }
+
+      if (
+        mediaData.platform === 'tiktok' &&
+        resolvedFormat.type === 'video' &&
+        (resolvedFormat.extension || 'mp4').toLowerCase() === 'mp4'
+      ) {
+        setDownloadProgress(45);
+        setDownloadStatusText('Mengoptimalkan kualitas & kompatibilitas video...');
+        let prepTick: ReturnType<typeof setInterval> | null = null;
+        try {
+          prepTick = setInterval(() => {
+            setDownloadProgress((prev) => (prev < 94 ? prev + 2 : prev));
+          }, 700);
+          const prepareHref = `${buildProxyHref(finalUrl, `preview.${resolvedFormat.extension || 'mp4'}`, mediaData, true, undefined, resolvedFormat)}&prepare=1`;
+          const prepRes = await fetch(prepareHref);
+          if (!prepRes.ok) {
+            const ctPrep = (prepRes.headers.get('content-type') || '').toLowerCase();
+            let prepErrMsg = '';
+            if (ctPrep.includes('application/json')) {
+              const j = await prepRes.json().catch(() => null);
+              prepErrMsg = j?.error || '';
+            }
+            throw new Error(prepErrMsg || `Gagal memproses pratinjau video TikTok (HTTP ${prepRes.status}).`);
+          }
+        } finally {
+          if (prepTick) clearInterval(prepTick);
+        }
       }
 
       setCachedPrepared(mediaData.url, resolvedFormat, serverMode, customKey, mediaData, finalUrl);
@@ -1618,6 +1655,9 @@ export default function App() {
     const streamUrl = item.downloadUrl || item.sourceUrl;
 
     let downloadHref = `/api/proxy-download?url=${encodeURIComponent(streamUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl)}&server=${encodeURIComponent(serverMode)}`;
+    if (item.resolution) {
+      downloadHref += `&res=${encodeURIComponent(item.resolution)}`;
+    }
     const kbpsMatch = `${item.resolution || ''} ${item.quality || ''}`.match(/(320|256|192|128|64)/);
     if (item.platform === 'spotify') {
       const customKey = localStorage.getItem('dz_neoxr_api_key') || '';

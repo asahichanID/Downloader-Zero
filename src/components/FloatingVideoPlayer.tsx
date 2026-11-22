@@ -43,7 +43,7 @@ export const FloatingVideoPlayer: React.FC<FloatingVideoPlayerProps> = React.mem
     const target = item.downloadUrl || item.sourceUrl || '';
     if (!target) return '';
     const filename = item.filename || `preview.${item.extension || 'mp4'}`;
-    return `/api/proxy-download?url=${encodeURIComponent(target)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl || '')}&inline=1`;
+    return `/api/proxy-download?url=${encodeURIComponent(target)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl || '')}${item.resolution ? `&res=${encodeURIComponent(item.resolution)}` : ''}&inline=1`;
   }, [item]);
 
   const activeSrc = (!forceProxy && blobUrl) ? blobUrl : proxyUrl;

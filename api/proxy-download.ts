@@ -195,7 +195,47 @@ async function muxVideoAndAudioToMp4(videoBuffer: Buffer, audioBuffer: Buffer | 
   }
 }
 
-async function normalizeTikTokMp4ForCompat(inputBuffer: Buffer): Promise<Buffer> {
+function parseAvcCFromMp4Buffer(buf: Buffer): { profile: number; compat: number; level: number } | null {
+  const idx = buf.indexOf(Buffer.from('avcC'));
+  if (idx === -1 || idx + 8 >= buf.length) return null;
+  if (buf[idx + 4] !== 1) return null;
+  return {
+    profile: buf[idx + 5],
+    compat: buf[idx + 6],
+    level: buf[idx + 7]
+  };
+}
+
+function pickH264LevelForStream(
+  w: number,
+  h: number,
+  fps: number
+): { levelStr: string; levelByte: number; maxDpbMbs: number } {
+  const mbW = Math.ceil(Math.max(16, w) / 16);
+  const mbH = Math.ceil(Math.max(16, h) / 16);
+  const frameMbs = mbW * mbH;
+  const mbPerSec = frameMbs * Math.max(1, Math.ceil(fps || 30));
+
+  const levels = [
+    { levelStr: '4.1', levelByte: 41, maxFrameMbs: 8192, maxMbPerSec: 245760, maxDpbMbs: 32768 },
+    { levelStr: '4.2', levelByte: 42, maxFrameMbs: 8704, maxMbPerSec: 522240, maxDpbMbs: 34816 },
+    { levelStr: '5.0', levelByte: 50, maxFrameMbs: 22080, maxMbPerSec: 589824, maxDpbMbs: 110400 },
+    { levelStr: '5.1', levelByte: 51, maxFrameMbs: 36864, maxMbPerSec: 983040, maxDpbMbs: 184320 },
+    { levelStr: '5.2', levelByte: 52, maxFrameMbs: 36864, maxMbPerSec: 2073600, maxDpbMbs: 184320 }
+  ];
+
+  for (const lvl of levels) {
+    if (frameMbs <= lvl.maxFrameMbs && mbPerSec <= lvl.maxMbPerSec) {
+      return lvl;
+    }
+  }
+  return levels[levels.length - 1];
+}
+
+async function normalizeTikTokMp4ForCompat(
+  inputBuffer: Buffer,
+  targetResTier: '480p' | '720p' | '1080p' | '2k' | '4k' = '1080p'
+): Promise<Buffer> {
   const uid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const tmpInPath = path.join(os.tmpdir(), `dz_api_tt_in_${uid}.mp4`);
   const tmpOutPath = path.join(os.tmpdir(), `dz_api_tt_out_${uid}.mp4`);
@@ -206,7 +246,7 @@ async function normalizeTikTokMp4ForCompat(inputBuffer: Buffer): Promise<Buffer>
       const ff = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
       let errText = '';
       ff.stderr.on('data', (chunk: Buffer) => {
-        if (collectStderr && errText.length < 16000) {
+        if (collectStderr && errText.length < 24000) {
           errText += chunk.toString('utf8');
         }
       });
@@ -247,6 +287,8 @@ async function normalizeTikTokMp4ForCompat(inputBuffer: Buffer): Promise<Buffer>
     const pixFmt = (vLine.match(/\b(yuv[a-z0-9_]+|nv12|nv21|rgb\d+|gbrp[a-z0-9_]*)\b/i)?.[1] || '').toLowerCase();
     const vBitrateMatch = vLine.match(/(\d+)\s*kb\/s/i);
     const vBitrateKbps = vBitrateMatch ? Number(vBitrateMatch[1]) : 0;
+    const fpsMatch = vLine.match(/\b(\d+(?:\.\d+)?)\s*(?:fps|tbr)\b/i);
+    const srcFps = fpsMatch ? Number(fpsMatch[1]) : 30;
 
     const durMatch = probeStderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/i);
     const durationSec = durMatch
@@ -266,26 +308,78 @@ async function normalizeTikTokMp4ForCompat(inputBuffer: Buffer): Promise<Buffer>
       (aSr === 44100 || aSr === 48000) &&
       isStereoOrMono;
 
-    const isStandardH264 =
+    const maxShortSide =
+      targetResTier === '480p' ? 480
+        : targetResTier === '720p' ? 720
+          : targetResTier === '1080p' ? 1080
+            : targetResTier === '2k' ? 1440
+              : 2160;
+    const maxLongSide =
+      targetResTier === '480p' ? 854
+        : targetResTier === '720p' ? 1280
+          : targetResTier === '1080p' ? 1920
+            : targetResTier === '2k' ? 2560
+              : 3840;
+    const srcShortSide = Math.min(width, height);
+    const srcLongSide = Math.max(width, height);
+    const fitsTargetRes =
+      width > 0 &&
+      height > 0 &&
+      srcShortSide <= maxShortSide &&
+      srcLongSide <= maxLongSide;
+
+    const srcLevelSpec = pickH264LevelForStream(width || 1080, height || 1920, srcFps);
+    const avcCInfo = vCodec === 'h264' ? parseAvcCFromMp4Buffer(inputBuffer) : null;
+    let spsLevel = avcCInfo?.level ?? 0;
+    let spsMaxRefs = 0;
+
+    const looksCandidateH264 =
       vCodec === 'h264' &&
       pixFmt === 'yuv420p' &&
       !/high\s*10|4:?2:?2|4:?4:?4/i.test(vProfile) &&
       width > 0 &&
       height > 0 &&
       width % 2 === 0 &&
-      height % 2 === 0;
+      height % 2 === 0 &&
+      fitsTargetRes &&
+      (spsLevel === 0 || spsLevel <= srcLevelSpec.levelByte);
+
+    if (looksCandidateH264) {
+      try {
+        const spsProbe = await runSpawn(
+          workingBin,
+          ['-hide_banner', '-v', 'info', '-i', tmpInPath, '-frames:v', '1', '-c:v', 'copy', '-bsf:v', 'trace_headers', '-f', 'null', '-'],
+          true
+        );
+        const lvlM = spsProbe.stderr.match(/\blevel_idc\s+[01]+\s*=\s*(\d+)/i);
+        if (lvlM?.[1]) spsLevel = Number(lvlM[1]);
+        const refM = spsProbe.stderr.match(/\bmax_num_ref_frames\s+[01]+\s*=\s*(\d+)/i);
+        if (refM?.[1]) spsMaxRefs = Number(refM[1]);
+      } catch {}
+    }
+
+    const mbW = Math.ceil(Math.max(16, width) / 16);
+    const mbH = Math.ceil(Math.max(16, height) / 16);
+    const srcMaxDpbRefs = Math.max(1, Math.floor(srcLevelSpec.maxDpbMbs / Math.max(1, mbW * mbH)));
+
+    const isStandardH264 =
+      looksCandidateH264 &&
+      spsLevel > 0 &&
+      spsLevel <= srcLevelSpec.levelByte &&
+      spsMaxRefs > 0 &&
+      spsMaxRefs <= Math.min(8, srcMaxDpbRefs);
 
     if (isStandardH264) {
       const remuxArgs = [
-        '-y', '-fflags', '+genpts', '-i', tmpInPath,
+        '-y', '-i', tmpInPath,
         '-map', '0:v:0', ...(hasAudio ? ['-map', '0:a:0'] : []),
         '-c:v', 'copy',
         ...(hasAudio
           ? (isStandardAacLc
               ? ['-c:a', 'copy']
-              : ['-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', '128k', '-ar', '44100', '-ac', '2'])
+              : ['-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', '192k', '-ar', '44100', '-ac', '2'])
           : []),
-        '-movflags', '+faststart', '-brand', 'mp42', '-map_metadata', '-1', '-avoid_negative_ts', 'make_zero',
+        '-movflags', '+faststart', '-brand', 'mp42', '-map_metadata', '-1',
         '-f', 'mp4', tmpOutPath
       ];
       const remuxRes = await runSpawn(workingBin, remuxArgs, true);
@@ -293,7 +387,7 @@ async function normalizeTikTokMp4ForCompat(inputBuffer: Buffer): Promise<Buffer>
         const outStat = fs.statSync(tmpOutPath);
         if (outStat.size > 1024) {
           let hasBitstreamCorruption = false;
-          if (outStat.size <= 60 * 1024 * 1024) {
+          if (outStat.size <= 80 * 1024 * 1024) {
             const verifyRes = await runSpawn(workingBin, ['-v', 'error', '-i', tmpOutPath, '-f', 'null', '-'], true);
             if (/corrupt decoded frame|concealing .* errors|non-existing PPS|Missing reference picture|Invalid NAL unit|moov atom not found|error while decoding MB/i.test(verifyRes.stderr)) {
               hasBitstreamCorruption = true;
@@ -307,21 +401,55 @@ async function normalizeTikTokMp4ForCompat(inputBuffer: Buffer): Promise<Buffer>
       try { if (fs.existsSync(tmpOutPath)) fs.unlinkSync(tmpOutPath); } catch {}
     }
 
+    let targetW = width > 0 ? width - (width % 2) : 0;
+    let targetH = height > 0 ? height - (height % 2) : 0;
+    if (width > 0 && height > 0 && (srcShortSide > maxShortSide || srcLongSide > maxLongSide)) {
+      const scaleFactor = Math.min(maxShortSide / Math.max(1, srcShortSide), maxLongSide / Math.max(1, srcLongSide));
+      targetW = Math.max(2, Math.floor((width * scaleFactor) / 2) * 2);
+      targetH = Math.max(2, Math.floor((height * scaleFactor) / 2) * 2);
+    }
+    const scaleFilter = (targetW > 0 && targetH > 0 && (targetW !== width || targetH !== height))
+      ? `scale=${targetW}:${targetH}:flags=lanczos`
+      : 'scale=trunc(iw/2)*2:trunc(ih/2)*2';
+
+    const outW = targetW || width || 1080;
+    const outH = targetH || height || 1920;
+    const outLevelSpec = pickH264LevelForStream(outW, outH, srcFps);
+    const outFrameMbs = Math.max(1, Math.ceil(outW / 16) * Math.ceil(outH / 16));
+    const outDpbMaxRefs = Math.max(1, Math.floor(outLevelSpec.maxDpbMbs / outFrameMbs));
+    const targetRefs = outDpbMaxRefs >= 4 ? 2 : 1;
+    const isHighFps = srcFps > 32;
+
     const estSrcKbps = vBitrateKbps > 0
       ? vBitrateKbps
-      : Math.max(500, Math.round((inputBuffer.length * 8) / Math.max(1, durationSec || 15) / 1000));
-    const capKbps = Math.min(4500, Math.max(1500, Math.round(estSrcKbps * 1.8)));
+      : Math.max(1200, Math.round((inputBuffer.length * 8) / Math.max(1, durationSec || 15) / 1000));
+    const tierMaxCap =
+      targetResTier === '480p' ? (isHighFps ? 3200 : 2200)
+        : targetResTier === '720p' ? (isHighFps ? 6500 : 4500)
+          : targetResTier === '1080p' ? (isHighFps ? 12000 : 8000)
+            : targetResTier === '2k' ? (isHighFps ? 18000 : 12000)
+              : (isHighFps ? 26000 : 18000);
+    const tierMinCap =
+      targetResTier === '480p' ? 1200
+        : targetResTier === '720p' ? 2500
+          : targetResTier === '1080p' ? (isHighFps ? 7000 : 4000)
+            : targetResTier === '2k' ? (isHighFps ? 10000 : 6500)
+              : (isHighFps ? 14000 : 9000);
+    const capKbps = Math.min(tierMaxCap, Math.max(tierMinCap, Math.round(estSrcKbps * (isHighFps ? 3.2 : 2.0))));
+    const crfVal = targetResTier === '480p' ? '19' : '18';
+    const gopSize = Math.max(30, Math.min(120, Math.round(srcFps * 2)));
     const preset = durationSec > 90 ? 'ultrafast' : 'superfast';
 
     const transcodeArgs = [
-      '-y', '-fflags', '+genpts', '-i', tmpInPath,
+      '-y', '-i', tmpInPath,
       '-map', '0:v:0', ...(hasAudio ? ['-map', '0:a:0'] : []),
-      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
-      '-c:v', 'libx264', '-profile:v', 'high', '-level', '4.1', '-pix_fmt', 'yuv420p',
-      '-preset', preset, '-crf', '23', '-maxrate', `${capKbps}k`, '-bufsize', `${capKbps * 2}k`,
-      '-g', '60', '-sc_threshold', '0',
-      ...(hasAudio ? ['-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', '128k', '-ar', '44100', '-ac', '2'] : []),
-      '-movflags', '+faststart', '-brand', 'mp42', '-map_metadata', '-1', '-avoid_negative_ts', 'make_zero',
+      '-vf', scaleFilter,
+      '-fps_mode', 'passthrough',
+      '-c:v', 'libx264', '-profile:v', 'high', '-level', outLevelSpec.levelStr, '-pix_fmt', 'yuv420p',
+      '-refs', String(targetRefs), '-bf', '2', '-g', String(gopSize), '-sc_threshold', '0', '-threads', '0',
+      '-preset', preset, '-crf', crfVal, '-maxrate', `${capKbps}k`, '-bufsize', `${capKbps * 2}k`,
+      ...(hasAudio ? ['-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', '192k', '-ar', '44100', '-ac', '2'] : []),
+      '-movflags', '+faststart', '-brand', 'mp42', '-map_metadata', '-1',
       '-f', 'mp4', tmpOutPath
     ];
 
@@ -367,7 +495,7 @@ export default async function handler(req: any, res: any) {
     const urlParamIdx = rawReqUrl.indexOf('url=');
     if (urlParamIdx !== -1) {
       let extracted = rawReqUrl.slice(urlParamIdx + 4);
-      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate|duration|audioUrl)=/);
+      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate|duration|audioUrl|res|prepare)=/);
       if (nextParamMatch && nextParamMatch.index !== undefined) {
         extracted = extracted.slice(0, nextParamMatch.index);
       }
@@ -848,7 +976,7 @@ export default async function handler(req: any, res: any) {
       );
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges');
-      res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Cache-Control', isInline ? 'private, no-cache' : 'no-store, no-cache, must-revalidate, private');
       res.setHeader('X-Content-Type-Options', 'nosniff');
 
       if (rangeHeader) {
@@ -872,6 +1000,19 @@ export default async function handler(req: any, res: any) {
       res.send(mp4Buffer);
     };
 
+    const rawResHint = `${String(query.res || req.query?.res || '')} ${sanitizedFilename}`.toLowerCase();
+    const targetTikTokResTier: '480p' | '720p' | '1080p' | '2k' | '4k' =
+      rawResHint.includes('480') || rawResHint.includes('360')
+        ? '480p'
+        : rawResHint.includes('720')
+          ? '720p'
+          : rawResHint.includes('4k') || rawResHint.includes('2160')
+            ? '4k'
+            : rawResHint.includes('2k') || rawResHint.includes('1440')
+              ? '2k'
+              : '1080p';
+    const isPrepareOnly = query.prepare === '1' || req.query?.prepare === '1' || query.prepare === 'true';
+
     const tryReResolveFreshUrl = async (): Promise<string> => {
       if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) return '';
       try {
@@ -879,8 +1020,15 @@ export default async function handler(req: any, res: any) {
         const reKey = typeof query.apiKey === 'string' && query.apiKey.trim() ? query.apiKey.trim() : undefined;
         const reServer = query.server === 'server1' || query.server === 'server2' || query.server === 'auto' ? query.server : 'auto';
         if (platform === 'tiktok' || detectPlatform(sourceUrl) === 'tiktok') {
-          const fnLower = sanitizedFilename.toLowerCase();
-          const resTag = fnLower.includes('4k') ? '4K' : fnLower.includes('2k') ? '2K' : fnLower.includes('720') ? '720p' : fnLower.includes('480') ? '480p' : '1080p';
+          const resTag = rawResHint.includes('4k') || rawResHint.includes('2160')
+            ? '4K'
+            : rawResHint.includes('2k') || rawResHint.includes('1440')
+              ? '2K'
+              : rawResHint.includes('720')
+                ? '720p'
+                : rawResHint.includes('480') || rawResHint.includes('360')
+                  ? '480p'
+                  : '1080p';
           const resolvedTt = await resolveTikTokDownload(
             sourceUrl,
             wantsMp3OutputEarly ? 'tt-audio' : `tt-${resTag.toLowerCase()}`,
@@ -916,9 +1064,14 @@ export default async function handler(req: any, res: any) {
     };
 
     if (isTikTokMp4) {
-      const ttCacheKey = targetUrl;
+      const ttCacheKey = `${targetUrl}::${targetTikTokResTier}`;
       const cachedEntry = tiktokMp4Cache.get(ttCacheKey);
       if (cachedEntry && Date.now() - cachedEntry.timestamp < 180000) {
+        if (isPrepareOnly) {
+          res.setHeader('Cache-Control', 'no-store');
+          res.json({ success: true, ready: true, size: cachedEntry.buffer.length, resolution: targetTikTokResTier });
+          return;
+        }
         sendMp4BufferResponse(cachedEntry.buffer);
         return;
       }
@@ -962,9 +1115,9 @@ export default async function handler(req: any, res: any) {
             throw new Error('Gagal mengunduh berkas video TikTok dari server sumber.');
           }
 
-          const normalizedBuf = await normalizeTikTokMp4ForCompat(rawVideoBuf);
+          const normalizedBuf = await normalizeTikTokMp4ForCompat(rawVideoBuf, targetTikTokResTier);
 
-          if (tiktokMp4Cache.size >= 4) {
+          if (tiktokMp4Cache.size >= 6) {
             const oldestKey = tiktokMp4Cache.keys().next().value;
             if (oldestKey) tiktokMp4Cache.delete(oldestKey);
           }
@@ -982,6 +1135,11 @@ export default async function handler(req: any, res: any) {
       }
 
       const normalizedMp4 = await inflightPromise;
+      if (isPrepareOnly) {
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ success: true, ready: true, size: normalizedMp4.length, resolution: targetTikTokResTier });
+        return;
+      }
       sendMp4BufferResponse(normalizedMp4);
       return;
     }
