@@ -1,8 +1,10 @@
-import { detectPlatform, resolveTikTokDownload, resolveYouTubeServer2, resolveInstagramServer2, resolvePinterestServer2 } from './_utils/scraper.ts';
+import { detectPlatform, resolveTikTokDownload, resolveYouTubeServer2, resolveInstagramServer2, resolvePinterestServer2, resolveFacebookServer2 } from './_utils/scraper.ts';
+import { isSafePublicUrl } from '../src/services/security.ts';
 
 function normalizeLoaderFormat(raw: string | undefined): string {
   if (!raw) return '1080';
   const f = String(raw).toLowerCase().trim();
+  if (f === 'original' || f.includes('original')) return '2160';
   if (f === '2k' || f === '1440' || f === '1440p' || f.includes('1440') || f.includes('2k') || f.includes('qhd')) return '1440';
   if (f === '4k' || f === '2160' || f === '2160p' || f.includes('2160') || f.includes('4k')) return '2160';
   if (f === '1080' || f === '1080p' || f.includes('1080')) return '1080';
@@ -33,9 +35,16 @@ export default async function handler(req: any, res: any) {
       } catch {}
     }
 
-    const { format, url, server, apiKey, platform, formatId, resolution, type } = body || {};
-    if (!url) {
+    const { format, url: rawUrl, server, apiKey, platform, formatId, resolution, type } = body || {};
+    if (!rawUrl || typeof rawUrl !== 'string') {
       res.status(400).json({ success: false, error: 'URL target wajib disertakan.' });
+      return;
+    }
+    const extractedMatch = rawUrl.trim().match(/https?:\/\/[^\s<>"'`]+/i);
+    const url = extractedMatch ? extractedMatch[0].replace(/[),.;!?]+$/, '') : rawUrl.trim();
+    const safetyCheck = isSafePublicUrl(url);
+    if (!safetyCheck.safe) {
+      res.status(400).json({ success: false, error: safetyCheck.reason || 'URL tidak aman atau diblokir.' });
       return;
     }
 
@@ -125,6 +134,36 @@ export default async function handler(req: any, res: any) {
         res.status(502).json({
           success: false,
           error: pinErr.message || 'Gagal menyiapkan unduhan Pinterest.'
+        });
+        return;
+      }
+    }
+
+    // 1d. Facebook Server 2 on-demand resolution
+    if ((platform === 'facebook' || detectPlatform(url) === 'facebook') && (serverMode !== 'server1' || String(formatId || '').startsWith('fb-s2-'))) {
+      try {
+        const fbType = (type === 'audio' || type === 'video')
+          ? type
+          : (format === 'mp3' ? 'audio' : 'video');
+        const resolved = await resolveFacebookServer2(
+          url,
+          resolution || format || '720p',
+          fbType
+        );
+        res.json({
+          success: true,
+          id: null,
+          downloadUrl: resolved.downloadUrl,
+          dashAudioUrl: resolved.dashAudioUrl,
+          format: resolved.resolution || resolution || format || '720p',
+          text: `Siap diunduh (${resolved.quality || 'Kualitas Pilihan'})!`
+        });
+        return;
+      } catch (fbErr: any) {
+        console.error('[api/start-job] Facebook resolution error:', fbErr.message);
+        res.status(502).json({
+          success: false,
+          error: fbErr.message || 'Gagal menyiapkan unduhan Facebook.'
         });
         return;
       }

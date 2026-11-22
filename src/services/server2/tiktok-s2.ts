@@ -696,11 +696,12 @@ export async function resolveTikTokServer2(
   const normalizedRes = (resolution || '').toLowerCase().trim();
   const formatIdLower = (formatId || '').toLowerCase().trim();
 
-  const is4K = normalizedRes.includes('4k') || normalizedRes.includes('2160') || formatIdLower.includes('4k') || formatIdLower.includes('2160');
-  const is2K = (normalizedRes.includes('2k') || normalizedRes.includes('1440') || formatIdLower.includes('2k') || formatIdLower.includes('1440')) && !is4K;
-  const is1080p = (normalizedRes.includes('1080') || formatIdLower.includes('1080')) && !is4K && !is2K;
-  const is720p = (normalizedRes.includes('720') || formatIdLower.includes('720')) && !is4K && !is2K && !is1080p;
-  const is480p = (normalizedRes.includes('480') || normalizedRes.includes('360') || formatIdLower.includes('480')) && !is4K && !is2K && !is1080p && !is720p;
+  const isOriginal = normalizedRes === 'original' || formatIdLower.includes('original');
+  const is4K = !isOriginal && (normalizedRes.includes('4k') || normalizedRes.includes('2160') || formatIdLower.includes('4k') || formatIdLower.includes('2160'));
+  const is2K = !isOriginal && (normalizedRes.includes('2k') || normalizedRes.includes('1440') || formatIdLower.includes('2k') || formatIdLower.includes('1440')) && !is4K;
+  const is1080p = !isOriginal && (normalizedRes.includes('1080') || formatIdLower.includes('1080')) && !is4K && !is2K;
+  const is720p = !isOriginal && (normalizedRes.includes('720') || formatIdLower.includes('720')) && !is4K && !is2K && !is1080p;
+  const is480p = !isOriginal && (normalizedRes.includes('480') || normalizedRes.includes('360') || formatIdLower.includes('480')) && !is4K && !is2K && !is1080p && !is720p;
 
   const hdPlayUrl = ensureAbsoluteUrl(data.hdplay);
   const standardPlayUrl = ensureAbsoluteUrl(data.play);
@@ -740,6 +741,31 @@ export async function resolveTikTokServer2(
     }
     return best?.url || '';
   };
+
+  // Strategy A0: Original -> Highest native master stream untouched without encode
+  if (isOriginal) {
+    if (hdPlayUrl && hdPlayUrl.startsWith('http')) {
+      return {
+        downloadUrl: hdPlayUrl,
+        quality: 'Original (Stream Asli Tanpa Encode)'
+      };
+    }
+    if (data.id) {
+      const topGear = await pickOfficialFeedStream(data.id, false);
+      if (topGear && topGear.startsWith('http')) {
+        return {
+          downloadUrl: topGear,
+          quality: 'Original (Master Stream Tanpa Encode)'
+        };
+      }
+    }
+    if (standardPlayUrl && standardPlayUrl.startsWith('http')) {
+      return {
+        downloadUrl: standardPlayUrl,
+        quality: 'Original (Stream Asli Tanpa Watermark)'
+      };
+    }
+  }
 
   // Strategy A1: 4K Ultra HD (2160p) -> Master highest-bitrate unwatermarked stream
   if (is4K) {

@@ -21,6 +21,10 @@ import {
   scrapePinterestServer2,
   resolvePinterestServer2
 } from './server2/pinterest-s2.ts';
+import {
+  scrapeFacebookServer2,
+  resolveFacebookServer2
+} from './server2/facebook-s2.ts';
 
 export {
   resolveTikTokDownload,
@@ -36,7 +40,9 @@ export {
   scrapeInstagramServer2,
   resolveInstagramServer2,
   scrapePinterestServer2,
-  resolvePinterestServer2
+  resolvePinterestServer2,
+  scrapeFacebookServer2,
+  resolveFacebookServer2
 };
 
 
@@ -322,7 +328,7 @@ async function scrapeFacebookServer1(target: string, apiKey?: string): Promise<M
     platform: 'facebook',
     title: neoJson.title || neoJson.data[0]?.title || 'Facebook Video',
     author: neoJson.author || neoJson.data[0]?.author || 'Facebook Creator',
-    thumbnail: neoJson.thumbnail || neoJson.data[0]?.thumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800',
+    thumbnail: neoJson.thumbnail || neoJson.data[0]?.thumbnail || '',
     duration: 60,
     durationFormatted: '01:00',
     views: neoJson.views ?? neoJson.view ?? neoJson.data[0]?.views,
@@ -330,72 +336,6 @@ async function scrapeFacebookServer1(target: string, apiKey?: string): Promise<M
     comments: neoJson.comments ?? neoJson.comment ?? neoJson.data[0]?.comments,
     formats,
     source: 'Server 1 Engine',
-    createdAt: new Date().toISOString()
-  };
-}
-
-async function scrapeFacebookServer2(target: string): Promise<MediaMetadata> {
-  const formats: MediaFormat[] = [];
-  let title = 'Facebook Video';
-  let thumbnail = '';
-  const res = await fetch('https://fdown.co.in/ajax', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Origin': 'https://fdown.co.in',
-      'Referer': 'https://fdown.co.in/',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    },
-    body: JSON.stringify({ url: target }),
-    signal: AbortSignal.timeout(8000)
-  });
-  if (!res.ok) throw new Error(`Server 2 Facebook HTTP ${res.status}`);
-  const data = await res.json();
-  if (!data.success || !data.links) {
-    throw new Error('Server 2 tidak dapat menemukan media Facebook.');
-  }
-  if (data.title) title = data.title;
-  if (data.thumbnail) thumbnail = data.thumbnail;
-  const links = Object.entries(data.links).filter(([, l]) => typeof l === 'string' && (l as string).startsWith('http'));
-  for (const [label, link] of links) {
-    const lStr = link as string;
-    const isHd = /hd|1080|720/i.test(label);
-    formats.push({
-      id: `fb-${label.toLowerCase().replace(/\s+/g, '-')}`,
-      quality: isHd ? '720p / 1080p HD Video' : '360p / 480p SD Video',
-      resolution: isHd ? '720p' : '360p',
-      type: 'video',
-      extension: 'mp4',
-      url: lStr,
-      isDirect: true,
-      note: isHd ? 'High Definition Video' : 'Standard Definition'
-    });
-  }
-  if (formats.length === 0) throw new Error('Format media tidak ditemukan di Server 2.');
-  formats.push({
-    id: 'fb-audio-mp3',
-    quality: '192 kbps (Ekstrak Audio MP3)',
-    resolution: 'Audio',
-    type: 'audio',
-    extension: 'mp3',
-    url: formats[0].url,
-    isDirect: false,
-    note: 'Dikonversi ke audio MP3 jernih'
-  });
-  return {
-    id: `fb-${Date.now()}`,
-    url: target,
-    platform: 'facebook',
-    title,
-    author: data.author || 'Facebook Creator',
-    thumbnail: thumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800',
-    duration: 60,
-    durationFormatted: '01:00',
-    views: data.views ?? data.view,
-    likes: data.likes ?? data.like,
-    comments: data.comments ?? data.comment,
-    formats,
-    source: 'Server 2 Engine',
     createdAt: new Date().toISOString()
   };
 }

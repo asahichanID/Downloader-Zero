@@ -114,8 +114,8 @@ const PLATFORM_CATALOG: PlatformCatalogItem[] = [
     id: 'facebook',
     name: 'Facebook',
     fullTitle: 'Facebook Watch & Reels',
-    desc: 'Simpan video publik Facebook Watch maupun Reels dengan pilihan kualitas HD hingga 1080p dan audio MP3.',
-    formats: 'MP4 1080p, 720p, SD, MP3 Audio',
+    desc: 'Simpan video publik Facebook Watch maupun Reels dengan pilihan resolusi asli hingga 1080p tanpa encode ulang serta audio MP3 (320/256/128 kbps).',
+    formats: 'MP4 Multi-Resolusi (Original), MP3 Audio',
     renderLogo: (sizeClass, iconClass) => (
       <div className={`${sizeClass} rounded-2xl bg-[#1877F2] flex items-center justify-center shadow-md shadow-blue-900/25`}>
         <svg className={`${iconClass} text-white fill-current`} viewBox="0 0 24 24">

@@ -730,7 +730,8 @@ export async function resolveYouTubeServer2(
   // Parse requested numeric resolution
   const combinedHint = `${resolution || ''} ${formatId || ''}`.toLowerCase();
   let requestedHeight = 1080;
-  if (combinedHint.includes('2160') || combinedHint.includes('4k')) requestedHeight = 2160;
+  if (combinedHint.includes('original')) requestedHeight = 4320;
+  else if (combinedHint.includes('2160') || combinedHint.includes('4k')) requestedHeight = 2160;
   else if (combinedHint.includes('1440') || combinedHint.includes('2k')) requestedHeight = 1440;
   else if (combinedHint.includes('1080')) requestedHeight = 1080;
   else if (combinedHint.includes('720')) requestedHeight = 720;

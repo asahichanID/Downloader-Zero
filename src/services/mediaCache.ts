@@ -54,8 +54,8 @@ export function buildExtractCacheKey(rawUrl: string, serverMode: ServerMode, api
   return `${normalizeUrlForCache(rawUrl)}::${makeServerScope(serverMode, apiKey)}`;
 }
 
-export function buildFormatCacheKey(format: Pick<MediaFormat, 'id' | 'type' | 'resolution' | 'quality' | 'fps'>): string {
-  return `${format.type}|${format.resolution || ''}|${format.fps || ''}|${format.id || ''}|${format.quality || ''}`;
+export function buildFormatCacheKey(format: Pick<MediaFormat, 'id' | 'type' | 'resolution' | 'quality'>): string {
+  return `${format.type}|${format.resolution || ''}|${format.id || ''}|${format.quality || ''}`;
 }
 
 export function buildPreparedCacheKey(
@@ -234,7 +234,7 @@ export function setCachedExtract(
 
 export function getCachedPrepared(
   rawUrl: string,
-  format: Pick<MediaFormat, 'id' | 'type' | 'resolution' | 'quality' | 'fps'>,
+  format: Pick<MediaFormat, 'id' | 'type' | 'resolution' | 'quality'>,
   serverMode: ServerMode,
   apiKey?: string
 ): CachedPreparedEntry | null {

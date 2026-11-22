@@ -33,6 +33,14 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
 }) => {
   const videoOptions: ResolutionOption[] = [
     {
+      id: 'Original',
+      label: 'Original',
+      tag: 'RAW',
+      desc: 'Asli tanpa encode',
+      badge: 'ASLI',
+      badgeStyle: 'balanced'
+    },
+    {
       id: '4K',
       label: '4K UHD',
       tag: '2160p',
@@ -266,16 +274,17 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
             className="space-y-3"
           >
-            {/* Grid of 6 distinct video cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-2.5">
+            {/* Grid of 7 distinct video cards (Original + 4K..360p) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 sm:gap-2.5">
               {videoOptions.map((opt) => {
                 const isActive = selectedVideoRes === opt.id;
+                const isOriginalCard = opt.id === 'Original';
                 return (
                   <button
                     key={opt.id}
                     type="button"
                     onClick={() => setSelectedVideoRes(opt.id)}
-                    className={`relative p-3 rounded-xl text-left cursor-pointer flex flex-col justify-between min-h-[76px] touch-manipulation transition-colors duration-150 active:scale-[0.98] ${
+                    className={`${isOriginalCard ? 'col-span-2 sm:col-span-3 lg:col-span-1 ' : ''}relative p-3 rounded-xl text-left cursor-pointer flex flex-col justify-between min-h-[76px] touch-manipulation transition-colors duration-150 active:scale-[0.98] ${
                       isActive
                         ? 'dz-card-active ring-2 ring-cyan-400/40 bg-gradient-to-b from-blue-600/25 to-cyan-500/15 dark:from-blue-600/30 dark:to-cyan-500/20'
                         : 'bg-white/70 dark:bg-slate-900/60 border border-slate-200 dark:border-blue-900/40 hover:border-cyan-500/40 hover:bg-white dark:hover:bg-slate-800/80 text-slate-800 dark:text-slate-200'
@@ -314,12 +323,14 @@ export const QualitySelectorCard: React.FC<QualitySelectorCardProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-slate-500 dark:text-slate-400">
               <div className="flex items-center gap-1.5">
                 <ShieldCheck className="h-3.5 w-3.5 text-cyan-500 dark:text-cyan-400" />
-                <span>Format MP4 (H.264)</span>
+                <span>{selectedVideoRes === 'Original' ? 'Stream Asli (Tanpa Encode)' : 'Format MP4 (H.264)'}</span>
                 <span aria-hidden="true">·</span>
-                <span>Resolusi Terpilih: <strong className="text-cyan-700 dark:text-cyan-300 font-bold">{selectedVideoRes}</strong></span>
+                <span>Pilihan: <strong className="text-cyan-700 dark:text-cyan-300 font-bold">{selectedVideoRes}</strong></span>
               </div>
               <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                Otomatis memilih stream video kualitas tertinggi
+                {selectedVideoRes === 'Original'
+                  ? 'Mengambil video mentah asli (resolusi & FPS tidak diubah)'
+                  : 'Otomatis menyesuaikan stream video ke resolusi pilihan'}
               </span>
             </div>
           </motion.div>

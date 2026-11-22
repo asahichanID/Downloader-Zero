@@ -20,7 +20,7 @@ import { HistoryFullView } from './components/HistoryFullView.tsx';
 import { SettingsFullView } from './components/SettingsFullView.tsx';
 import { AdminPanelView } from './components/AdminPanelView.tsx';
 import { TermsModal } from './components/TermsModal.tsx';
-import { BannerSelectorModal } from './components/BannerSelectorModal.tsx';
+import { BannerSelectorModal, type AnimatedBannerItemState } from './components/BannerSelectorModal.tsx';
 import {
   BerandaResultView,
   type BerandaStage,
@@ -45,10 +45,12 @@ import {
 import { registerWebViewOnce, logDownloadActivity } from './services/firebase.ts';
 import { initAutoRefresh, AUTO_REFRESH_PENDING_KEY } from './services/autoRefresh.ts';
 import {
+  ANIMATED_BANNER_CATALOG,
   getStoredActiveBanner,
   setStoredActiveBanner,
-  loadLilyWuwaBannerFromPrivateStorage,
-  downloadAndPersistLilyWuwaBanner,
+  loadAnimatedBannerFromPrivateStorage,
+  downloadAndPersistAnimatedBanner,
+  type AnimatedBannerId,
   type BannerOptionId
 } from './services/bannerStorage.ts';
 import type {
@@ -71,7 +73,6 @@ interface PreservedSessionState {
   selectedPlatform: PlatformType;
   mediaType: MediaType;
   selectedVideoRes: string;
-  selectedVideoFps?: number;
   selectedAudioQuality: string;
   mediaData: MediaMetadata | null;
   isFormatModalOpen: boolean;
@@ -118,16 +119,6 @@ export default function App() {
 
   // Quality selection states
   const [selectedVideoRes, setSelectedVideoRes] = useState<string>(() => initialSnap?.selectedVideoRes || '1080p');
-  const [selectedVideoFps, setSelectedVideoFps] = useState<number>(() => {
-    if (typeof initialSnap?.selectedVideoFps === 'number' && initialSnap.selectedVideoFps >= 24 && initialSnap.selectedVideoFps <= 120) {
-      return Math.round(initialSnap.selectedVideoFps);
-    }
-    try {
-      const saved = Number(localStorage.getItem('dz_video_fps') || '60');
-      if (!isNaN(saved) && saved >= 24 && saved <= 120) return Math.round(saved);
-    } catch {}
-    return 60;
-  });
   const [selectedAudioQuality, setSelectedAudioQuality] = useState<string>(() => initialSnap?.selectedAudioQuality || '320');
 
   // Processing & Download states
@@ -199,7 +190,6 @@ export default function App() {
     selectedPlatform,
     mediaType,
     selectedVideoRes,
-    selectedVideoFps,
     selectedAudioQuality,
     mediaData,
     isFormatModalOpen,
@@ -212,12 +202,6 @@ export default function App() {
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem('dz_video_fps', String(selectedVideoFps));
-    } catch {}
-  }, [selectedVideoFps]);
-
-  useEffect(() => {
     latestSessionRef.current = {
       savedAt: Date.now(),
       activeTab,
@@ -226,7 +210,6 @@ export default function App() {
       selectedPlatform,
       mediaType,
       selectedVideoRes,
-      selectedVideoFps,
       selectedAudioQuality,
       mediaData,
       isFormatModalOpen,
@@ -244,7 +227,6 @@ export default function App() {
     selectedPlatform,
     mediaType,
     selectedVideoRes,
-    selectedVideoFps,
     selectedAudioQuality,
     mediaData,
     isFormatModalOpen,
@@ -404,46 +386,92 @@ export default function App() {
     return () => window.removeEventListener('dz_server_mode_changed', handleServerModeChange);
   }, []);
 
-  // Banner selection ('default' PNG vs 'lily_wuwa' animated video stored in private browser storage)
+  // Banner selection ('default' PNG vs animated videos stored permanently in private browser storage)
   const [activeBanner, setActiveBanner] = useState<BannerOptionId>(() => getStoredActiveBanner());
   const [isBannerModalOpen, setIsBannerModalOpen] = useState<boolean>(false);
-  const [lilyBannerUrl, setLilyBannerUrl] = useState<string | null>(null);
-  const [lilySizeBytes, setLilySizeBytes] = useState<number | null>(null);
-  const [isDownloadingLily, setIsDownloadingLily] = useState<boolean>(false);
-  const [lilyDownloadProgress, setLilyDownloadProgress] = useState<number>(0);
-  const [lilyLoadedBytes, setLilyLoadedBytes] = useState<number>(0);
-  const [lilyTotalBytes, setLilyTotalBytes] = useState<number>(0);
-  const [lilyDownloadError, setLilyDownloadError] = useState<string | null>(null);
-  const lilyObjectUrlRef = useRef<string | null>(null);
+  const [bannerAssets, setBannerAssets] = useState<Record<AnimatedBannerId, AnimatedBannerItemState>>({
+    lily_wuwa: {
+      isDownloaded: false,
+      url: null,
+      sizeBytes: null,
+      isBusy: false,
+      phase: null,
+      progress: 0,
+      loadedBytes: 0,
+      totalBytes: 0,
+      error: null
+    },
+    wuthering_waves: {
+      isDownloaded: false,
+      url: null,
+      sizeBytes: null,
+      isBusy: false,
+      phase: null,
+      progress: 0,
+      loadedBytes: 0,
+      totalBytes: 0,
+      error: null
+    }
+  });
+  const bannerObjectUrlsRef = useRef<Partial<Record<AnimatedBannerId, string>>>({});
 
   useEffect(() => {
     let cancelled = false;
-    void loadLilyWuwaBannerFromPrivateStorage().then((res) => {
+    const ids: AnimatedBannerId[] = ['lily_wuwa', 'wuthering_waves'];
+
+    void Promise.all(
+      ids.map(async (id) => ({
+        id,
+        res: await loadAnimatedBannerFromPrivateStorage(id)
+      }))
+    ).then((results) => {
       if (cancelled) return;
-      if (res) {
-        const urlObj = URL.createObjectURL(res.blob);
-        if (lilyObjectUrlRef.current) {
-          try { URL.revokeObjectURL(lilyObjectUrlRef.current); } catch {}
-        }
-        lilyObjectUrlRef.current = urlObj;
-        setLilyBannerUrl(urlObj);
-        setLilySizeBytes(res.sizeBytes);
-      } else {
-        // Ensure default PNG is used if animated banner hasn't been downloaded into private storage
-        setActiveBanner((prev) => {
-          if (prev === 'lily_wuwa') {
-            setStoredActiveBanner('default');
-            return 'default';
+      const loadedMap = new Map<AnimatedBannerId, { url: string; sizeBytes: number }>();
+
+      for (const { id, res } of results) {
+        if (res) {
+          const urlObj = URL.createObjectURL(res.blob);
+          const prevUrl = bannerObjectUrlsRef.current[id];
+          if (prevUrl) {
+            try { URL.revokeObjectURL(prevUrl); } catch {}
           }
-          return prev;
+          bannerObjectUrlsRef.current[id] = urlObj;
+          loadedMap.set(id, { url: urlObj, sizeBytes: res.sizeBytes });
+        }
+      }
+
+      if (loadedMap.size > 0) {
+        setBannerAssets((prev) => {
+          const next = { ...prev };
+          for (const [id, info] of loadedMap.entries()) {
+            next[id] = {
+              ...prev[id],
+              isDownloaded: true,
+              url: info.url,
+              sizeBytes: info.sizeBytes
+            };
+          }
+          return next;
         });
       }
+
+      setActiveBanner((prev) => {
+        if (prev !== 'default' && !loadedMap.has(prev)) {
+          setStoredActiveBanner('default');
+          return 'default';
+        }
+        return prev;
+      });
     });
+
     return () => {
       cancelled = true;
-      if (lilyObjectUrlRef.current) {
-        try { URL.revokeObjectURL(lilyObjectUrlRef.current); } catch {}
-        lilyObjectUrlRef.current = null;
+      for (const id of ids) {
+        const u = bannerObjectUrlsRef.current[id];
+        if (u) {
+          try { URL.revokeObjectURL(u); } catch {}
+          delete bannerObjectUrlsRef.current[id];
+        }
       }
     };
   }, []);
@@ -507,6 +535,9 @@ export default function App() {
     const res = (fmt.resolution || '').toLowerCase();
     const qual = (fmt.quality || '').toLowerCase();
 
+    if (res === 'original' || id.includes('original')) {
+      return '2160';
+    }
     // Check 2K / 1440p explicitly first so 2K never gets overridden by 4K
     if (res === '2k' || res.includes('1440') || id.includes('1440') || id === 'tt-2k' || qual.includes('1440') || qual.includes('2k')) {
       return '1440';
@@ -544,12 +575,11 @@ export default function App() {
     if (formatOverride?.resolution) {
       href += `&res=${encodeURIComponent(formatOverride.resolution)}`;
     }
-    const effectiveVideoFps =
-      formatOverride?.type === 'video' && typeof formatOverride.fps === 'number' && formatOverride.fps >= 24 && formatOverride.fps <= 120
-        ? Math.round(formatOverride.fps)
-        : undefined;
-    if (effectiveVideoFps) {
-      href += `&fps=${effectiveVideoFps}`;
+    if (
+      formatOverride?.resolution?.toLowerCase() === 'original' ||
+      formatOverride?.id?.toLowerCase().includes('original')
+    ) {
+      href += '&original=1';
     }
     const bitrateMatch =
       (formatOverride?.resolution || '').match(/(320|256|192|128|64)/) ||
@@ -649,13 +679,15 @@ export default function App() {
       setMediaType('audio');
     } else if (meta.platform === 'twitter') {
       setMediaType('video');
-      const topTwitterVideo = meta.formats.find((f) => f.type === 'video' && f.resolution);
-      if (topTwitterVideo?.resolution) {
-        setSelectedVideoRes(topTwitterVideo.resolution);
+      if (selectedVideoRes.toLowerCase() !== 'original') {
+        const topTwitterVideo = meta.formats.find((f) => f.type === 'video' && f.resolution);
+        if (topTwitterVideo?.resolution) {
+          setSelectedVideoRes(topTwitterVideo.resolution);
+        }
       }
-    } else if (meta.platform === 'youtube' || meta.platform === 'instagram' || meta.platform === 'pinterest') {
+    } else if (meta.platform === 'youtube' || meta.platform === 'instagram' || meta.platform === 'pinterest' || meta.platform === 'facebook') {
       const resVideos = meta.formats.filter((f) => f.type === 'video' && f.resolution);
-      if (resVideos.length > 0) {
+      if (resVideos.length > 0 && selectedVideoRes.toLowerCase() !== 'original') {
         const curLower = selectedVideoRes.toLowerCase();
         const curMatch = resVideos.find((f) => {
           const r = (f.resolution || '').toLowerCase();
@@ -788,31 +820,31 @@ export default function App() {
 
     const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
     const cachedPrep = getCachedPrepared(mediaData.url, targetFormat, serverMode, customKey);
-    const isVideoMp4Format =
-      targetFormat.type === 'video' &&
-      (targetFormat.extension || 'mp4').toLowerCase() === 'mp4';
 
-    if (cachedPrep && !isVideoMp4Format) {
+    if (cachedPrep) {
       setIsFormatModalOpen(false);
       setErrorMessage(null);
       enterPreviewStage(cachedPrep.media, cachedPrep.format, cachedPrep.resolvedUrl);
       return;
     }
 
+    const isOrigTarget =
+      targetFormat.resolution?.toLowerCase() === 'original' ||
+      targetFormat.id?.toLowerCase().includes('original');
     pendingPreparingFormatRef.current = targetFormat;
     setIsFormatModalOpen(false);
     setErrorMessage(null);
     setBerandaStage('preparing');
     setDownloadProgress(20);
-    setDownloadStatusText(`Menyiapkan pratinjau ${targetFormat.quality || targetFormat.resolution}${targetFormat.fps ? ` · ${targetFormat.fps} FPS` : ''}...`);
+    setDownloadStatusText(`Menyiapkan pratinjau ${targetFormat.quality || targetFormat.resolution}...`);
 
     try {
-      let resolvedFormat: MediaFormat = cachedPrep ? cachedPrep.format : targetFormat;
-      let finalUrl = cachedPrep ? cachedPrep.resolvedUrl : targetFormat.url;
+      let resolvedFormat: MediaFormat = targetFormat;
+      let finalUrl = targetFormat.url;
       let jobId = targetFormat.jobId;
       let startJobError = '';
 
-      if (!cachedPrep && (!finalUrl || !finalUrl.startsWith('http') || targetFormat.needsResolution)) {
+      if (!finalUrl || !finalUrl.startsWith('http') || targetFormat.needsResolution) {
         const loaderFormat = mapFormatForLoader(targetFormat);
         setDownloadStatusText(`Menyiapkan ${targetFormat.quality}...`);
         try {
@@ -825,7 +857,6 @@ export default function App() {
               formatId: targetFormat.id,
               resolution: targetFormat.resolution,
               quality: targetFormat.quality,
-              fps: targetFormat.fps,
               type: targetFormat.type,
               url: mediaData.url,
               server: serverMode,
@@ -917,22 +948,24 @@ export default function App() {
         throw new Error(startJobError || 'Tautan media tidak tersedia dari server sumber saat ini.');
       }
 
-      // Pre-prepare & measure exact output byte size for ALL video MP4 formats (ensuring preview size === downloaded size)
+      // Verify stream accessibility / resolution preparation for MP4 video formats
       if (
         resolvedFormat.type === 'video' &&
         (resolvedFormat.extension || 'mp4').toLowerCase() === 'mp4'
       ) {
-        setDownloadProgress(45);
+        setDownloadProgress(55);
         setDownloadStatusText(
-          resolvedFormat.fps
-            ? `Menyiapkan video ${resolvedFormat.resolution || ''} · ${resolvedFormat.fps} FPS & menghitung ukuran tepat...`
-            : 'Mengoptimalkan kualitas video & menghitung ukuran file...'
+          isOrigTarget
+            ? 'Menyiapkan stream Original (tanpa encode ulang)...'
+            : mediaData.platform === 'tiktok'
+              ? `Menyiapkan resolusi ${resolvedFormat.resolution || '1080p'}...`
+              : `Menyiapkan pratinjau ${resolvedFormat.resolution || ''}...`
         );
         let prepTick: ReturnType<typeof setInterval> | null = null;
         try {
           prepTick = setInterval(() => {
-            setDownloadProgress((prev) => (prev < 94 ? prev + 2 : prev));
-          }, 700);
+            setDownloadProgress((prev) => (prev < 94 ? prev + 4 : prev));
+          }, 450);
           const prepareHref = `${buildProxyHref(finalUrl, `preview.${resolvedFormat.extension || 'mp4'}`, mediaData, true, undefined, resolvedFormat)}&prepare=1`;
           const prepRes = await fetch(prepareHref);
           if (!prepRes.ok) {
@@ -942,29 +975,15 @@ export default function App() {
               const j = await prepRes.json().catch(() => null);
               prepErrMsg = j?.error || '';
             }
-            if (mediaData.platform === 'tiktok') {
-              throw new Error(prepErrMsg || `Gagal memproses pratinjau video TikTok (HTTP ${prepRes.status}).`);
-            }
-            if (resolvedFormat.fps && prepErrMsg) {
-              throw new Error(prepErrMsg);
-            }
             console.warn('[prepare-video] Non-fatal prepare status:', prepRes.status, prepErrMsg);
           } else {
             const prepJson = await prepRes.json().catch(() => null);
-            if (prepJson) {
-              if (prepJson.streamed === true) {
-                resolvedFormat = {
-                  ...resolvedFormat,
-                  fps: undefined
-                };
-              }
-              if (typeof prepJson.size === 'number' && prepJson.size > 0) {
-                resolvedFormat = {
-                  ...resolvedFormat,
-                  filesize: formatBytes(prepJson.size),
-                  filesizeBytes: prepJson.size
-                };
-              }
+            if (prepJson && typeof prepJson.size === 'number' && prepJson.size > 0) {
+              resolvedFormat = {
+                ...resolvedFormat,
+                filesize: formatBytes(prepJson.size),
+                filesizeBytes: prepJson.size
+              };
             }
           }
         } finally {
@@ -1661,17 +1680,12 @@ export default function App() {
       setDownloadStatusText('Menyimpan berkas ke perangkat...');
 
       const isAudioOrSpotify = media.platform === 'spotify' || targetFormat.type === 'audio' || ext === 'mp3';
-      const hasRequestedFps = targetFormat.type === 'video' && ext === 'mp4' && Boolean(targetFormat.fps);
-      const requiresNormalizedProxy = isAudioOrSpotify || (media.platform === 'tiktok' && ext === 'mp4') || hasRequestedFps;
+      const requiresNormalizedProxy = isAudioOrSpotify;
       if (mediaBlob) {
         triggerBlobDownload(mediaBlob, filename);
       } else if (requiresNormalizedProxy) {
         throw proxyError || new Error(
-          isAudioOrSpotify
-            ? 'Gagal mengunduh audio MP3 sesuai bitrate yang dipilih dari server. Silakan coba lagi.'
-            : hasRequestedFps
-              ? `Gagal memproses video ${targetFormat.resolution || ''} ${targetFormat.fps} FPS dari server. Silakan coba lagi.`
-              : 'Gagal memproses video TikTok dari server agar kompatibel di galeri dan WhatsApp. Silakan coba lagi.'
+          'Gagal mengunduh audio MP3 sesuai bitrate yang dipilih dari server. Silakan coba lagi.'
         );
       } else {
         triggerDirectDownloadFallback(effectiveUrl, filename);
@@ -1693,7 +1707,6 @@ export default function App() {
           durationFormatted: effectiveDurationFmt,
           quality: effectiveFormatForHistory.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
           resolution: effectiveFormatForHistory.resolution || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
-          fps: effectiveFormatForHistory.fps,
           mediaType: targetFormat.type,
           extension: ext as any,
           filename,
@@ -1756,9 +1769,9 @@ export default function App() {
     let downloadHref = `/api/proxy-download?url=${encodeURIComponent(streamUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl)}&server=${encodeURIComponent(serverMode)}`;
     if (item.resolution) {
       downloadHref += `&res=${encodeURIComponent(item.resolution)}`;
-    }
-    if (item.mediaType === 'video' && item.fps) {
-      downloadHref += `&fps=${item.fps}`;
+      if (item.resolution.toLowerCase() === 'original') {
+        downloadHref += '&original=1';
+      }
     }
     const kbpsMatch = `${item.resolution || ''} ${item.quality || ''}`.match(/(320|256|192|128|64)/);
     if (item.platform === 'spotify') {
@@ -1834,40 +1847,76 @@ export default function App() {
   const handleCloseBannerSelector = useCallback(() => setIsBannerModalOpen(false), []);
 
   const handleSelectBanner = useCallback((id: BannerOptionId) => {
-    if (id === 'lily_wuwa' && !lilyBannerUrl) return;
+    if (id !== 'default' && (!bannerAssets[id]?.isDownloaded || !bannerAssets[id]?.url)) {
+      return;
+    }
     setActiveBanner(id);
     setStoredActiveBanner(id);
-  }, [lilyBannerUrl]);
+  }, [bannerAssets]);
 
-  const handleDownloadLilyBanner = useCallback(async () => {
-    if (isDownloadingLily || lilyBannerUrl) return;
-    setIsDownloadingLily(true);
-    setLilyDownloadError(null);
-    setLilyDownloadProgress(0);
-    setLilyLoadedBytes(0);
-    setLilyTotalBytes(0);
+  const handleDownloadBanner = useCallback(async (id: AnimatedBannerId) => {
+    const current = bannerAssets[id];
+    if (current?.isBusy || current?.isDownloaded) return;
+
+    setBannerAssets((prev) => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        isBusy: true,
+        phase: 'downloading',
+        progress: 0,
+        loadedBytes: 0,
+        totalBytes: 0,
+        error: null
+      }
+    }));
 
     try {
-      const result = await downloadAndPersistLilyWuwaBanner((pct, loaded, total) => {
-        setLilyDownloadProgress(pct);
-        setLilyLoadedBytes(loaded);
-        if (total > 0) setLilyTotalBytes(total);
+      const result = await downloadAndPersistAnimatedBanner(id, ({ phase, percent, loadedBytes, totalBytes }) => {
+        setBannerAssets((prev) => ({
+          ...prev,
+          [id]: {
+            ...prev[id],
+            phase,
+            progress: percent,
+            loadedBytes,
+            totalBytes: totalBytes > 0 ? totalBytes : prev[id].totalBytes
+          }
+        }));
       });
 
       const urlObj = URL.createObjectURL(result.blob);
-      if (lilyObjectUrlRef.current) {
-        try { URL.revokeObjectURL(lilyObjectUrlRef.current); } catch {}
+      const prevUrl = bannerObjectUrlsRef.current[id];
+      if (prevUrl) {
+        try { URL.revokeObjectURL(prevUrl); } catch {}
       }
-      lilyObjectUrlRef.current = urlObj;
-      setLilyBannerUrl(urlObj);
-      setLilySizeBytes(result.sizeBytes);
-      setLilyDownloadProgress(100);
+      bannerObjectUrlsRef.current[id] = urlObj;
+
+      setBannerAssets((prev) => ({
+        ...prev,
+        [id]: {
+          ...prev[id],
+          isDownloaded: true,
+          url: urlObj,
+          sizeBytes: result.sizeBytes,
+          isBusy: false,
+          phase: null,
+          progress: 100,
+          error: null
+        }
+      }));
     } catch (err: any) {
-      setLilyDownloadError(err?.message || 'Gagal mengunduh banner animasi.');
-    } finally {
-      setIsDownloadingLily(false);
+      setBannerAssets((prev) => ({
+        ...prev,
+        [id]: {
+          ...prev[id],
+          isBusy: false,
+          phase: null,
+          error: err?.message || 'Gagal mengunduh banner animasi.'
+        }
+      }));
     }
-  }, [isDownloadingLily, lilyBannerUrl]);
+  }, [bannerAssets]);
   const handleOpenTerms = useCallback((tab: 'terms' | 'privacy') => {
     setTermsDefaultTab(tab);
     setIsTermsOpen(true);
@@ -1891,13 +1940,28 @@ export default function App() {
     }
   }, [isBusy]);
 
+  const activeAnimatedBannerUrl =
+    activeBanner !== 'default' && bannerAssets[activeBanner]?.isDownloaded
+      ? bannerAssets[activeBanner].url
+      : null;
+
+  const activeBusyBannerEntry = (['wuthering_waves', 'lily_wuwa'] as AnimatedBannerId[]).find(
+    (id) => bannerAssets[id]?.isBusy
+  );
+  const busyBannerState = activeBusyBannerEntry ? bannerAssets[activeBusyBannerEntry] : null;
+  const busyBannerLabel = activeBusyBannerEntry
+    ? (busyBannerState?.phase === 'adapting' || busyBannerState?.phase === 'saving'
+        ? `Menyesuaikan ${ANIMATED_BANNER_CATALOG[activeBusyBannerEntry].name}`
+        : `Mengunduh ${ANIMATED_BANNER_CATALOG[activeBusyBannerEntry].name}`)
+    : '';
+
   return (
     <div className="relative min-h-screen w-full bg-[#f0f4fa] dark:bg-[#050B18] text-slate-900 dark:text-slate-100 flex flex-col items-center overflow-x-hidden transition-colors duration-200">
       {/* Top Banner (Spans 100% full-width across the screen) */}
       <header className="w-full bg-[#f0f4fa] dark:bg-[#050B18]">
         <BannerDZ
-          activeBanner={activeBanner}
-          animatedBannerUrl={lilyBannerUrl}
+          activeBanner={activeAnimatedBannerUrl ? activeBanner : 'default'}
+          animatedBannerUrl={activeAnimatedBannerUrl}
         />
       </header>
 
@@ -2009,9 +2073,10 @@ export default function App() {
               isAdmin={isAdmin}
               onAdminAccessChange={handleAdminAccessChange}
               onOpenAdmin={handleOpenAdmin}
-              activeBanner={activeBanner}
-              isDownloadingBanner={isDownloadingLily}
-              bannerDownloadProgress={lilyDownloadProgress}
+              activeBanner={activeAnimatedBannerUrl ? activeBanner : 'default'}
+              isDownloadingBanner={Boolean(activeBusyBannerEntry)}
+              bannerDownloadProgress={busyBannerState?.progress || 0}
+              downloadingBannerLabel={busyBannerLabel}
               onOpenBannerSelector={handleOpenBannerSelector}
             />
           )
@@ -2036,8 +2101,6 @@ export default function App() {
           onChangeType={setMediaType}
           selectedVideoRes={selectedVideoRes}
           onSelectVideoRes={setSelectedVideoRes}
-          selectedVideoFps={selectedVideoFps}
-          onSelectVideoFps={setSelectedVideoFps}
           selectedAudioQuality={selectedAudioQuality}
           onSelectAudioQuality={setSelectedAudioQuality}
           onConfirmDownload={handleConfirmDownload}
@@ -2090,17 +2153,10 @@ export default function App() {
       <BannerSelectorModal
         isOpen={isBannerModalOpen}
         onClose={handleCloseBannerSelector}
-        activeBanner={activeBanner}
+        activeBanner={activeAnimatedBannerUrl ? activeBanner : 'default'}
         onSelectBanner={handleSelectBanner}
-        isLilyDownloaded={Boolean(lilyBannerUrl)}
-        lilyBannerUrl={lilyBannerUrl}
-        lilySizeBytes={lilySizeBytes}
-        isDownloadingLily={isDownloadingLily}
-        downloadProgress={lilyDownloadProgress}
-        loadedBytes={lilyLoadedBytes}
-        totalBytes={lilyTotalBytes}
-        downloadError={lilyDownloadError}
-        onDownloadLily={handleDownloadLilyBanner}
+        banners={bannerAssets}
+        onDownloadBanner={handleDownloadBanner}
       />
     </div>
   );

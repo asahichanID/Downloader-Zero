@@ -256,12 +256,16 @@ export async function resolveTikTokServer1(
   }
 
   const resLower = String(_resolution || '').toLowerCase();
-  const preferLower = resLower.includes('480') || resLower.includes('360') || resLower.includes('720');
+  const isOriginal = resLower === 'original' || String(_formatId || '').toLowerCase().includes('original');
+  const preferLower = !isOriginal && (resLower.includes('480') || resLower.includes('360') || resLower.includes('720'));
   const vidUrl = preferLower
     ? (d.video || d.nowm || d.play || d.sd || d.video_hd || d.hd || d.url || d.download)
     : (d.video_hd || d.hd || d.hdplay || d.video || d.nowm || d.play || d.url || d.download);
   if (vidUrl && typeof vidUrl === 'string' && vidUrl.startsWith('http')) {
-    return { downloadUrl: vidUrl, quality: preferLower ? '720p HD (Tanpa Watermark)' : '1080p Full HD (Tanpa Watermark)' };
+    return {
+      downloadUrl: vidUrl,
+      quality: isOriginal ? 'Original (Stream Asli Tanpa Encode)' : (preferLower ? '720p HD (Tanpa Watermark)' : '1080p Full HD (Tanpa Watermark)')
+    };
   }
 
   throw new Error('Server 1 tidak menghasilkan link unduhan yang valid.');

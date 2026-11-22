@@ -38,6 +38,7 @@ interface SettingsFullViewProps {
   activeBanner?: BannerOptionId;
   isDownloadingBanner?: boolean;
   bannerDownloadProgress?: number;
+  downloadingBannerLabel?: string;
   onOpenBannerSelector?: () => void;
 }
 
@@ -57,6 +58,7 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
   activeBanner = 'default',
   isDownloadingBanner = false,
   bannerDownloadProgress = 0,
+  downloadingBannerLabel = 'Banner Animasi',
   onOpenBannerSelector
 }) => {
   const [currentMode, setCurrentMode] = useState<ServerMode>(() => {
@@ -396,10 +398,12 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                 {isDownloadingBanner
-                  ? `Mengunduh Lily - Wuwa (${bannerDownloadProgress}%)`
+                  ? `${downloadingBannerLabel} (${bannerDownloadProgress}%)`
                   : activeBanner === 'lily_wuwa'
                     ? 'Dipakai · Lily - Wuwa (Animasi)'
-                    : 'Dipakai · Default (PNG)'}
+                    : activeBanner === 'wuthering_waves'
+                      ? 'Dipakai · Wuthering waves (Animasi)'
+                      : 'Dipakai · Default (PNG)'}
               </p>
             </div>
           </div>

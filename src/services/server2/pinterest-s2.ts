@@ -939,20 +939,24 @@ export async function resolvePinterestServer2(
   }
 
   if (built.variants.length > 0) {
+    const isOrigReq = String(targetResolution || '').toLowerCase().includes('original');
     const wantNum = Number((targetResolution || '').replace(/[^\d]/g, '')) || 720;
-    const exactMatch =
-      built.variants.find((v) => v.resolution.toLowerCase() === String(targetResolution || '').toLowerCase()) ||
-      built.variants.find((v) => v.rank === wantNum) ||
-      built.variants.reduce((best, cur) =>
-        Math.abs(cur.rank - wantNum) < Math.abs(best.rank - wantNum) ? cur : best
-      );
+    const exactMatch = isOrigReq
+      ? built.variants[0]
+      : (built.variants.find((v) => v.resolution.toLowerCase() === String(targetResolution || '').toLowerCase()) ||
+         built.variants.find((v) => v.rank === wantNum) ||
+         built.variants.reduce((best, cur) =>
+           Math.abs(cur.rank - wantNum) < Math.abs(best.rank - wantNum) ? cur : best
+         ));
 
     const stream = await resolvePinterestVariantStream(exactMatch, built.directV720Url);
     return {
       downloadUrl: stream.downloadUrl,
       dashAudioUrl: stream.dashAudioUrl,
-      quality: `${exactMatch.tierName}${exactMatch.width > 0 ? ` (${exactMatch.width}x${exactMatch.height})` : ''}`,
-      resolution: exactMatch.resolution
+      quality: isOrigReq
+        ? `Original (${exactMatch.tierName})`
+        : `${exactMatch.tierName}${exactMatch.width > 0 ? ` (${exactMatch.width}x${exactMatch.height})` : ''}`,
+      resolution: isOrigReq ? 'Original' : exactMatch.resolution
     };
   }
 

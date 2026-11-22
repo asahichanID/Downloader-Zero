@@ -21,7 +21,7 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({
   const loopTimerRef = useRef<number | null>(null);
   const revealTimerRef = useRef<number | null>(null);
 
-  const showAnimatedVideo = activeBanner === 'lily_wuwa' && Boolean(animatedBannerUrl);
+  const showAnimatedVideo = activeBanner !== 'default' && Boolean(animatedBannerUrl);
 
   const clearTimers = useCallback(() => {
     if (loopTimerRef.current !== null) {
@@ -159,7 +159,9 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({
                 }
               }}
               style={{ opacity: 0, transform: 'translateZ(0)' }}
-              className="absolute inset-0 w-full h-full object-cover object-top sm:object-center will-change-[opacity] transition-opacity duration-500 ease-in-out"
+              className={`absolute inset-0 w-full h-full object-cover ${
+                activeBanner === 'wuthering_waves' ? 'object-center' : 'object-top sm:object-center'
+              } will-change-[opacity] transition-opacity duration-500 ease-in-out`}
             />
           ) : (
             <img

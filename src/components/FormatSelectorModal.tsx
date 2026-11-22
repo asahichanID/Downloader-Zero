@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Video, Music, Check, Download, Sparkles, Film, Disc, Gauge } from 'lucide-react';
+import { X, Video, Music, Check, Download, Sparkles, Film, Disc, ShieldCheck } from 'lucide-react';
 import type { MediaMetadata, MediaFormat, MediaType } from '../types/index.ts';
 import { formatDuration, formatBytes } from '../services/scraper.ts';
 
@@ -11,8 +11,6 @@ interface FormatSelectorModalProps {
   onChangeType: (type: MediaType) => void;
   selectedVideoRes: string;
   onSelectVideoRes: (res: string) => void;
-  selectedVideoFps: number;
-  onSelectVideoFps: (fps: number) => void;
   selectedAudioQuality: string;
   onSelectAudioQuality: (quality: string) => void;
   onConfirmDownload: (format: MediaFormat) => void;
@@ -27,8 +25,6 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
   onChangeType,
   selectedVideoRes,
   onSelectVideoRes,
-  selectedVideoFps,
-  onSelectVideoFps,
   selectedAudioQuality,
   onSelectAudioQuality,
   onConfirmDownload,
@@ -72,6 +68,10 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
     media.platform === 'pinterest' &&
     videoFormats.length > 0 &&
     (Boolean(media.source?.includes('Server 2')) || videoFormats.some((f) => f.id.startsWith('pin-s2-')));
+  const isFacebookServer2 =
+    media.platform === 'facebook' &&
+    videoFormats.length > 0 &&
+    (Boolean(media.source?.includes('Server 2')) || videoFormats.some((f) => f.id.startsWith('fb-s2-')));
 
   const isSameResolution = (a: string, b: string): boolean => {
     const na = a.toLowerCase().trim();
@@ -86,25 +86,43 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
     return na.replace(/p$/i, '') === nb.replace(/p$/i, '');
   };
 
+  const isSelectedOriginal = selectedVideoRes.trim().toLowerCase() === 'original';
+
   const activeYoutubeRes = isYouTubeServer2
-    ? (videoFormats.find((vf) => isSameResolution(vf.resolution || '', selectedVideoRes))?.resolution ||
-       videoFormats.find((vf) => isSameResolution(vf.resolution || '', '1080p'))?.resolution ||
-       videoFormats[0]?.resolution ||
-       '1080p')
+    ? (isSelectedOriginal
+        ? 'Original'
+        : videoFormats.find((vf) => isSameResolution(vf.resolution || '', selectedVideoRes))?.resolution ||
+          videoFormats.find((vf) => isSameResolution(vf.resolution || '', '1080p'))?.resolution ||
+          videoFormats[0]?.resolution ||
+          '1080p')
     : selectedVideoRes;
 
   const activeInstagramRes = isInstagramServer2
-    ? (videoFormats.find((vf) => isSameResolution(vf.resolution || '', selectedVideoRes))?.resolution ||
-       videoFormats.find((vf) => isSameResolution(vf.resolution || '', '1080p'))?.resolution ||
-       videoFormats[0]?.resolution ||
-       '1080p')
+    ? (isSelectedOriginal
+        ? 'Original'
+        : videoFormats.find((vf) => isSameResolution(vf.resolution || '', selectedVideoRes))?.resolution ||
+          videoFormats.find((vf) => isSameResolution(vf.resolution || '', '1080p'))?.resolution ||
+          videoFormats[0]?.resolution ||
+          '1080p')
     : selectedVideoRes;
 
   const activePinterestRes = isPinterestServer2
-    ? (videoFormats.find((vf) => isSameResolution(vf.resolution || '', selectedVideoRes))?.resolution ||
-       videoFormats.find((vf) => isSameResolution(vf.resolution || '', '720p'))?.resolution ||
-       videoFormats[0]?.resolution ||
-       '720p')
+    ? (isSelectedOriginal
+        ? 'Original'
+        : videoFormats.find((vf) => isSameResolution(vf.resolution || '', selectedVideoRes))?.resolution ||
+          videoFormats.find((vf) => isSameResolution(vf.resolution || '', '720p'))?.resolution ||
+          videoFormats[0]?.resolution ||
+          '720p')
+    : selectedVideoRes;
+
+  const activeFacebookRes = isFacebookServer2
+    ? (isSelectedOriginal
+        ? 'Original'
+        : videoFormats.find((vf) => isSameResolution(vf.resolution || '', selectedVideoRes))?.resolution ||
+          videoFormats.find((vf) => isSameResolution(vf.resolution || '', '1080p'))?.resolution ||
+          videoFormats.find((vf) => isSameResolution(vf.resolution || '', '720p'))?.resolution ||
+          videoFormats[0]?.resolution ||
+          '720p')
     : selectedVideoRes;
 
   const calcAudioMb = (kbpsNum: number): string | undefined => {
@@ -112,59 +130,29 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
     return `~ ${Math.max(0.2, +((media.duration * kbpsNum) / 8 / 1024).toFixed(1))} MB`;
   };
 
-  const clampedFps = Math.max(24, Math.min(120, Math.round(selectedVideoFps || 60)));
-
   const estimateVideoSizeLabel = (
     resLabel: string,
     rawBytes?: number
   ): string | undefined => {
+    if (rawBytes && rawBytes > 0) {
+      return `~ ${formatBytes(rawBytes)}`;
+    }
+
     const r = (resLabel || '').toLowerCase();
     const dur = media.duration && media.duration > 0 ? media.duration : 0;
+    if (dur <= 0) return undefined;
 
-    // Approximate H.264 + AAC combined kbps at 30 FPS per resolution tier
-    let baseKbpsAt30 = 4800;
-    if (r.includes('4k') || r.includes('2160')) baseKbpsAt30 = 14500;
-    else if (r.includes('2k') || r.includes('1440')) baseKbpsAt30 = 9000;
-    else if (r.includes('1080')) baseKbpsAt30 = 5600;
-    else if (r.includes('720')) baseKbpsAt30 = 3000;
-    else if (r.includes('540') || r.includes('640')) baseKbpsAt30 = 2000;
-    else if (r.includes('480')) baseKbpsAt30 = 1500;
-    else if (r.includes('360') || r.includes('240')) baseKbpsAt30 = 850;
+    let baseKbps = 4800;
+    if (r.includes('4k') || r.includes('2160')) baseKbps = 14500;
+    else if (r.includes('2k') || r.includes('1440')) baseKbps = 9000;
+    else if (r.includes('1080')) baseKbps = 5600;
+    else if (r.includes('720')) baseKbps = 3000;
+    else if (r.includes('540') || r.includes('640')) baseKbps = 2000;
+    else if (r.includes('480')) baseKbps = 1500;
+    else if (r.includes('360') || r.includes('240')) baseKbps = 850;
 
-    const fpsScale = Math.pow(clampedFps / 30, 0.52);
-
-    if (media.platform === 'tiktok') {
-      // TikTok raw hd_size/size is often ByteVC1/HEVC; H.264 High normalization expands it
-      if (dur > 0) {
-        const estBytes = Math.round(((baseKbpsAt30 * fpsScale * 1000) / 8) * dur);
-        return `~ ${formatBytes(estBytes)}`;
-      }
-      if (rawBytes && rawBytes > 0) {
-        const tierMult = (r.includes('4k') || r.includes('2160')) ? 3.4 : (r.includes('2k') || r.includes('1440')) ? 2.9 : r.includes('1080') ? 2.6 : r.includes('720') ? 1.9 : 1.4;
-        return `~ ${formatBytes(Math.round(rawBytes * tierMult * fpsScale))}`;
-      }
-      return undefined;
-    }
-
-    if (rawBytes && rawBytes > 0) {
-      const scaledBytes = Math.round(rawBytes * Math.pow(clampedFps / 30, 0.45));
-      return `~ ${formatBytes(scaledBytes)}`;
-    }
-
-    if (dur > 0) {
-      const estBytes = Math.round(((baseKbpsAt30 * fpsScale * 1000) / 8) * dur);
-      return `~ ${formatBytes(estBytes)}`;
-    }
-
-    return undefined;
-  };
-
-  const getFpsDescriptor = (fps: number): string => {
-    if (fps < 28) return 'Sinematik';
-    if (fps < 48) return 'Standar';
-    if (fps < 75) return 'Mulus';
-    if (fps < 105) return 'Tinggi';
-    return 'Ultra Halus';
+    const estBytes = Math.round(((baseKbps * 1000) / 8) * dur);
+    return `~ ${formatBytes(estBytes)}`;
   };
 
   // Determine current active format to download
@@ -211,13 +199,24 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
         return;
       }
 
+      if (isSelectedOriginal && videoFormats[0]) {
+        const topTw = videoFormats[0];
+        onConfirmDownload({
+          ...topTw,
+          id: `${topTw.id}-original`,
+          resolution: 'Original',
+          quality: `Original (${topTw.resolution || 'Asli Tanpa Encode'})`,
+          filesize: estimateVideoSizeLabel(topTw.resolution || '1080p', topTw.filesizeBytes) || topTw.filesize
+        });
+        return;
+      }
+
       const exactTwitterFormat =
         videoFormats.find((f) => (f.resolution || '').toLowerCase() === selectedVideoRes.toLowerCase()) ||
         videoFormats[0];
       if (exactTwitterFormat) {
         onConfirmDownload({
           ...exactTwitterFormat,
-          fps: clampedFps,
           filesize: estimateVideoSizeLabel(exactTwitterFormat.resolution || selectedVideoRes, exactTwitterFormat.filesizeBytes) || exactTwitterFormat.filesize
         });
       }
@@ -225,13 +224,23 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
     }
 
     if (isYouTubeServer2 && effectiveType === 'video') {
+      if (isSelectedOriginal && videoFormats[0]) {
+        const topYt = videoFormats[0];
+        onConfirmDownload({
+          ...topYt,
+          id: 'yt-s2-original',
+          resolution: 'Original',
+          quality: `Original (${topYt.resolution || 'Asli'} Tanpa Encode)`,
+          filesize: estimateVideoSizeLabel(topYt.resolution || '1080p', topYt.filesizeBytes) || topYt.filesize
+        });
+        return;
+      }
       const exactYtFormat =
         videoFormats.find((f) => isSameResolution(f.resolution || '', activeYoutubeRes)) ||
         videoFormats[0];
       if (exactYtFormat) {
         onConfirmDownload({
           ...exactYtFormat,
-          fps: clampedFps,
           filesize: estimateVideoSizeLabel(exactYtFormat.resolution || activeYoutubeRes, exactYtFormat.filesizeBytes) || exactYtFormat.filesize
         });
       }
@@ -239,13 +248,23 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
     }
 
     if (isInstagramServer2 && effectiveType === 'video') {
+      if (isSelectedOriginal && videoFormats[0]) {
+        const topIg = videoFormats[0];
+        onConfirmDownload({
+          ...topIg,
+          id: `${topIg.id}-original`,
+          resolution: 'Original',
+          quality: `Original (${topIg.resolution || 'Asli'} Tanpa Encode)`,
+          filesize: estimateVideoSizeLabel(topIg.resolution || '1080p', topIg.filesizeBytes) || topIg.filesize
+        });
+        return;
+      }
       const exactIgFormat =
         videoFormats.find((f) => isSameResolution(f.resolution || '', activeInstagramRes)) ||
         videoFormats[0];
       if (exactIgFormat) {
         onConfirmDownload({
           ...exactIgFormat,
-          fps: clampedFps,
           filesize: estimateVideoSizeLabel(exactIgFormat.resolution || activeInstagramRes, exactIgFormat.filesizeBytes) || exactIgFormat.filesize
         });
       }
@@ -253,14 +272,48 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
     }
 
     if (isPinterestServer2 && effectiveType === 'video') {
+      if (isSelectedOriginal && videoFormats[0]) {
+        const topPin = videoFormats[0];
+        onConfirmDownload({
+          ...topPin,
+          id: `${topPin.id}-original`,
+          resolution: 'Original',
+          quality: `Original (${topPin.resolution || 'Asli'} Tanpa Encode)`,
+          filesize: estimateVideoSizeLabel(topPin.resolution || '720p', topPin.filesizeBytes) || topPin.filesize
+        });
+        return;
+      }
       const exactPinFormat =
         videoFormats.find((f) => isSameResolution(f.resolution || '', activePinterestRes)) ||
         videoFormats[0];
       if (exactPinFormat) {
         onConfirmDownload({
           ...exactPinFormat,
-          fps: clampedFps,
           filesize: estimateVideoSizeLabel(exactPinFormat.resolution || activePinterestRes, exactPinFormat.filesizeBytes) || exactPinFormat.filesize
+        });
+      }
+      return;
+    }
+
+    if (isFacebookServer2 && effectiveType === 'video') {
+      if (isSelectedOriginal && videoFormats[0]) {
+        const topFb = videoFormats[0];
+        onConfirmDownload({
+          ...topFb,
+          id: `${topFb.id}-original`,
+          resolution: 'Original',
+          quality: `Original (${topFb.resolution || 'Asli'} Tanpa Encode)`,
+          filesize: estimateVideoSizeLabel(topFb.resolution || '720p', topFb.filesizeBytes) || topFb.filesize
+        });
+        return;
+      }
+      const exactFbFormat =
+        videoFormats.find((f) => isSameResolution(f.resolution || '', activeFacebookRes)) ||
+        videoFormats[0];
+      if (exactFbFormat) {
+        onConfirmDownload({
+          ...exactFbFormat,
+          filesize: estimateVideoSizeLabel(exactFbFormat.resolution || activeFacebookRes, exactFbFormat.filesizeBytes) || exactFbFormat.filesize
         });
       }
       return;
@@ -298,6 +351,35 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
       onConfirmDownload(matchAudio);
     } else {
       const targetRes = selectedVideoRes.toLowerCase();
+      if (targetRes === 'original') {
+        const topFmt = videoFormats[0];
+        const topSize = topFmt
+          ? (estimateVideoSizeLabel(topFmt.resolution || '1080p', topFmt.filesizeBytes) || topFmt.filesize)
+          : undefined;
+        const origFormat: MediaFormat = topFmt
+          ? {
+              ...topFmt,
+              id: media.platform === 'tiktok' ? 'tt-original' : `${topFmt.id || 'video'}-original`,
+              quality: 'Original (Tanpa Encode)',
+              resolution: 'Original',
+              filesize: topSize,
+              type: 'video',
+              extension: 'mp4'
+            }
+          : {
+              id: media.platform === 'tiktok' ? 'tt-original' : 'video-original',
+              quality: 'Original (Tanpa Encode)',
+              resolution: 'Original',
+              type: 'video',
+              extension: 'mp4',
+              url: '',
+              isDirect: false,
+              needsResolution: true
+            };
+        onConfirmDownload(origFormat);
+        return;
+      }
+
       const is2K = targetRes.includes('1440') || targetRes.includes('2k');
       const is4K = targetRes.includes('2160') || targetRes.includes('4k');
 
@@ -317,7 +399,6 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
         return r.includes(targetRes) || q.includes(targetRes) || id.includes(targetRes);
       });
 
-      // CRITICAL FIX: If exact format exists, enforce strictly correct resolution tag & selected FPS
       if (matchVideo) {
         const resolvedResTag = is2K ? '2K' : is4K ? '4K' : (matchVideo.resolution || selectedVideoRes);
         const estLabel = estimateVideoSizeLabel(resolvedResTag, matchVideo.filesizeBytes);
@@ -326,7 +407,6 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
             ...matchVideo,
             id: matchVideo.id && !matchVideo.id.includes('4k') ? matchVideo.id : 'tt-2k',
             resolution: '2K',
-            fps: clampedFps,
             filesize: estLabel || matchVideo.filesize,
             quality: matchVideo.quality && !matchVideo.quality.includes('4K') ? matchVideo.quality : '2K Quad HD (1440p Tanpa Watermark)'
           };
@@ -334,14 +414,12 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
           matchVideo = {
             ...matchVideo,
             resolution: '4K',
-            fps: clampedFps,
             filesize: estLabel || matchVideo.filesize,
             quality: matchVideo.quality || '4K Ultra HD (2160p Tanpa Watermark)'
           };
         } else {
           matchVideo = {
             ...matchVideo,
-            fps: clampedFps,
             filesize: estLabel || matchVideo.filesize
           };
         }
@@ -353,7 +431,6 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
           id: is2K ? 'tt-2k' : (is4K ? 'tt-4k' : `video-${selectedVideoRes}`),
           quality: preset ? preset.label : `${selectedVideoRes} Video`,
           resolution: resolvedTag,
-          fps: clampedFps,
           filesize: estimateVideoSizeLabel(resolvedTag),
           type: 'video',
           extension: 'mp4',
@@ -383,10 +460,12 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
   const hasTwitterAudio = isTwitter && audioFormats.length > 0;
   const hasInstagramAudio = !isInstagramServer2 || audioFormats.length > 0;
   const hasPinterestAudio = !isPinterestServer2 || audioFormats.length > 0;
+  const hasFacebookAudio = !isFacebookServer2 || audioFormats.length > 0;
   const hideAudioTab =
     (isTwitter && !hasTwitterAudio) ||
     (isInstagramServer2 && !hasInstagramAudio) ||
-    (isPinterestServer2 && !hasPinterestAudio);
+    (isPinterestServer2 && !hasPinterestAudio) ||
+    (isFacebookServer2 && !hasFacebookAudio);
   const effectiveType: MediaType = isSpotify ? 'audio' : hideAudioTab ? 'video' : selectedType;
 
   return (
@@ -428,7 +507,9 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                         ? 'Menampilkan resolusi asli yang tersedia dari Instagram Server 2'
                         : isPinterestServer2
                           ? 'Menampilkan resolusi asli yang tersedia dari Pinterest Server 2'
-                          : 'Sesuaikan resolusi video atau bitrate audio yang ingin disimpan'}
+                          : isFacebookServer2
+                            ? 'Pilih resolusi video asli atau audio MP3 dari Facebook Server 2'
+                            : 'Sesuaikan resolusi video atau bitrate audio yang ingin disimpan'}
               </p>
             </div>
             <button
@@ -551,18 +632,22 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                         ? 'Resolusi Tersedia (Instagram Server 2)'
                         : isPinterestServer2
                           ? 'Resolusi Tersedia (Pinterest Server 2)'
-                          : 'Pilih Resolusi Video'}
+                          : isFacebookServer2
+                            ? 'Resolusi Tersedia (Facebook Server 2)'
+                            : 'Pilih Resolusi Video'}
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {isTwitter
                     ? videoFormats.map((fmt) => {
                         const resLabel = fmt.resolution || 'HD';
-                        const activeRes = videoFormats.some(
-                          (vf) => (vf.resolution || '').toLowerCase() === selectedVideoRes.toLowerCase()
-                        )
-                          ? selectedVideoRes
-                          : (videoFormats[0]?.resolution || '');
-                        const isSelected = resLabel.toLowerCase() === activeRes.toLowerCase();
+                        const activeRes = isSelectedOriginal
+                          ? 'Original'
+                          : videoFormats.some(
+                              (vf) => (vf.resolution || '').toLowerCase() === selectedVideoRes.toLowerCase()
+                            )
+                            ? selectedVideoRes
+                            : (videoFormats[0]?.resolution || '');
+                        const isSelected = !isSelectedOriginal && resLabel.toLowerCase() === activeRes.toLowerCase();
                         const dimMatch = fmt.quality.match(/\(([^)]+)\)/);
                         const estSz = estimateVideoSizeLabel(resLabel, fmt.filesizeBytes) || fmt.filesize;
                         const detailText = dimMatch
@@ -595,15 +680,17 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                           </button>
                         );
                       })
-                    : (isYouTubeServer2 || isInstagramServer2 || isPinterestServer2)
+                    : (isYouTubeServer2 || isInstagramServer2 || isPinterestServer2 || isFacebookServer2)
                       ? videoFormats.map((fmt) => {
                           const resLabel = fmt.resolution || 'HD';
                           const activeResTarget = isInstagramServer2
                             ? activeInstagramRes
                             : isPinterestServer2
                               ? activePinterestRes
-                              : activeYoutubeRes;
-                          const isSelected = isSameResolution(resLabel, activeResTarget);
+                              : isFacebookServer2
+                                ? activeFacebookRes
+                                : activeYoutubeRes;
+                          const isSelected = !isSelectedOriginal && isSameResolution(resLabel, activeResTarget);
                           const baseTierText =
                             resLabel === '4K' ? 'Ultra 4K'
                               : resLabel === '2K' ? '2K QHD'
@@ -675,87 +762,49 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                           </button>
                         );
                       })}
-                </div>
 
-                {/* Frame Rate (FPS) Draggable Slider (All Video Platforms, 24 - 120 FPS) */}
-                {(() => {
-                  const sliderPercent = ((clampedFps - 24) / (120 - 24)) * 100;
-                  const activeResForEstimate = isTwitter
-                    ? (videoFormats.some((vf) => (vf.resolution || '').toLowerCase() === selectedVideoRes.toLowerCase()) ? selectedVideoRes : (videoFormats[0]?.resolution || selectedVideoRes))
-                    : isInstagramServer2
-                      ? activeInstagramRes
-                      : isPinterestServer2
-                        ? activePinterestRes
-                        : isYouTubeServer2
-                          ? activeYoutubeRes
-                          : selectedVideoRes;
-                  const activeMatchedFmt = videoFormats.find((vf) => isSameResolution(vf.resolution || '', activeResForEstimate));
-                  const activeEstSize = estimateVideoSizeLabel(activeResForEstimate, activeMatchedFmt?.filesizeBytes);
-
-                  return (
-                    <div className="mt-4 p-3.5 rounded-2xl bg-slate-50 dark:bg-[#0c1a3a]/80 border border-slate-200 dark:border-blue-500/25 space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-sky-100 dark:bg-cyan-500/15 border border-sky-200 dark:border-cyan-400/30 flex items-center justify-center text-sky-600 dark:text-cyan-400 shrink-0">
-                            <Gauge className="w-3.5 h-3.5" />
-                          </div>
-                          <div>
-                            <label htmlFor="dz-fps-range" className="text-xs font-bold text-slate-800 dark:text-white block leading-tight">
-                              Frame Rate (FPS)
-                            </label>
-                            <span className="text-[10px] text-slate-500 dark:text-blue-200/60 block">
-                              Geser untuk mengatur FPS (maks 120)
+                  {/* Selectable "Original" Video Option (All Platforms — raw native source without re-encoding) */}
+                  {(() => {
+                    const usesNativeList = isTwitter || isYouTubeServer2 || isInstagramServer2 || isPinterestServer2 || isFacebookServer2;
+                    const itemCount = usesNativeList ? videoFormats.length : videoPresets.length;
+                    const spanFull = itemCount % 2 === 0;
+                    const topFmt = videoFormats[0];
+                    const origEstSz = topFmt
+                      ? (estimateVideoSizeLabel(topFmt.resolution || '1080p', topFmt.filesizeBytes) || topFmt.filesize)
+                      : undefined;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => onSelectVideoRes('Original')}
+                        className={`${spanFull ? 'col-span-2 ' : ''}p-3 rounded-2xl border text-left transition-colors duration-150 active:scale-[0.98] cursor-pointer relative ${
+                          isSelectedOriginal
+                            ? 'bg-emerald-50 dark:bg-[#0d2b2a] border-emerald-500 dark:border-emerald-400 ring-1 ring-emerald-500/40 dark:ring-emerald-400/50 shadow-md shadow-emerald-500/15 dark:shadow-emerald-500/20'
+                            : 'bg-slate-50 dark:bg-[#0c1a3a]/70 border-slate-200 dark:border-blue-900/60 hover:border-emerald-400 dark:hover:border-emerald-500/60 hover:bg-slate-100 dark:hover:bg-[#0c1e42]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <ShieldCheck className={`w-3.5 h-3.5 shrink-0 ${isSelectedOriginal ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-emerald-400/80'}`} />
+                            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                              Original
+                            </span>
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-400/30 shrink-0">
+                              Asli
                             </span>
                           </div>
+                          {isSelectedOriginal && (
+                            <div className="w-4 h-4 rounded-full bg-emerald-600 dark:bg-emerald-400 text-white dark:text-black flex items-center justify-center shrink-0">
+                              <Check className="w-2.5 h-2.5 stroke-[3]" />
+                            </div>
+                          )}
                         </div>
-
-                        <div className="px-2.5 py-1 rounded-xl bg-sky-600/10 dark:bg-cyan-500/15 border border-sky-500/30 dark:border-cyan-400/40 text-right shrink-0">
-                          <span className="text-xs sm:text-sm font-extrabold font-mono tabular-nums text-sky-700 dark:text-cyan-300">
-                            {clampedFps} FPS
-                          </span>
-                          <span className="text-[10px] font-semibold text-sky-600/80 dark:text-cyan-400/80 ml-1.5">
-                            · {getFpsDescriptor(clampedFps)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="pt-1">
-                        <input
-                          id="dz-fps-range"
-                          type="range"
-                          min={24}
-                          max={120}
-                          step={1}
-                          value={clampedFps}
-                          onChange={(e) => onSelectVideoFps(Number(e.target.value))}
-                          aria-label="Pilih Frame Rate FPS"
-                          className="w-full dz-fps-slider touch-pan-y"
-                          style={{
-                            background: `linear-gradient(to right, #06b6d4 0%, #3b82f6 ${sliderPercent}%, rgba(148, 163, 184, 0.3) ${sliderPercent}%, rgba(148, 163, 184, 0.3) 100%)`
-                          }}
-                        />
-                        <div className="flex items-center justify-between text-[10px] font-mono tabular-nums text-slate-400 dark:text-slate-400 mt-1.5 px-0.5 select-none">
-                          <span>24 FPS</span>
-                          <span>30</span>
-                          <span>60</span>
-                          <span>90</span>
-                          <span>120 FPS</span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-200/80 dark:border-blue-900/50 text-[11px] text-slate-500 dark:text-blue-200/70">
-                        <span>
-                          {activeEstSize
-                            ? <>Estimasi: <strong className="text-slate-800 dark:text-white font-semibold">{activeEstSize}</strong></>
-                            : 'Ukuran file tepat dihitung saat pratinjau'}
+                        <span className="text-[11px] text-slate-500 dark:text-blue-200/70 block mt-1 truncate">
+                          {`Tanpa encode · Kualitas & FPS asli${origEstSz ? ` · ${origEstSz}` : ''}`}
                         </span>
-                        <span className="text-[10px] text-sky-600 dark:text-cyan-400 font-medium">
-                          Ukuran akurat tampil di pratinjau
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()}
+                      </button>
+                    );
+                  })()}
+                </div>
               </div>
             ) : (
               <div>

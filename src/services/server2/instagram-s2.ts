@@ -968,13 +968,15 @@ export async function resolveInstagramServer2(
   if (videoFmts.length > 0) {
     const targetNorm = targetResolution.toLowerCase().trim();
     const matched =
-      videoFmts.find((f) => (f.resolution || '').toLowerCase() === targetNorm) ||
-      videoFmts.find((f) => (f.resolution || '').toLowerCase().replace(/p$/, '') === targetNorm.replace(/p$/, '')) ||
-      videoFmts[0];
+      targetNorm === 'original'
+        ? videoFmts[0]
+        : (videoFmts.find((f) => (f.resolution || '').toLowerCase() === targetNorm) ||
+           videoFmts.find((f) => (f.resolution || '').toLowerCase().replace(/p$/, '') === targetNorm.replace(/p$/, '')) ||
+           videoFmts[0]);
     return {
       downloadUrl: matched.url,
       dashAudioUrl: matched.dashAudioUrl,
-      quality: matched.resolution || matched.quality
+      quality: targetNorm === 'original' ? 'Original' : (matched.resolution || matched.quality)
     };
   }
 
