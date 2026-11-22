@@ -478,7 +478,7 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
 
           <div className="space-y-1.5">
             <p className="text-xs font-semibold text-sky-600 dark:text-cyan-400">
-              {platformLabel} · {format?.resolution || format?.quality || 'Memproses'}
+              {platformLabel} · {format?.resolution || format?.quality || 'Memproses'}{format?.type === 'video' && format?.fps ? ` · ${format.fps} FPS` : ''}
             </p>
             <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white line-clamp-2 text-balance">
               {displayTitle || 'Menyiapkan pratinjau media...'}
@@ -592,13 +592,13 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
     ? `${teraboxFiles.length} File · ${selectedTeraboxFileIds.length} Dipilih`
     : effectiveMediaType === 'photos'
       ? `Ultra HD${activePhotos.length > 1 ? ` · ${activePhotos.length} Foto` : ''}`
-      : `${format.resolution || format.quality}${format.filesize ? ` · ${format.filesize}` : ''}`;
+      : `${format.resolution || format.quality}${effectiveMediaType === 'video' && format.fps ? ` · ${format.fps} FPS` : ''}${format.filesize ? ` · ${format.filesize}` : ''}`;
 
   const topBarFormatLabel = isTerabox
     ? `${teraboxFiles.length} File`
     : effectiveMediaType === 'photos'
       ? 'Ultra HD'
-      : (format.resolution || format.quality);
+      : `${format.resolution || format.quality}${effectiveMediaType === 'video' && format.fps ? ` · ${format.fps} FPS` : ''}`;
 
   return (
     <div className="w-full space-y-5 sm:space-y-6 dz-animate-enter">

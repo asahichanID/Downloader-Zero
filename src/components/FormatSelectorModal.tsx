@@ -1,7 +1,7 @@
 import React from 'react';
-import { X, Video, Music, Check, Download, Sparkles, Film, Disc } from 'lucide-react';
+import { X, Video, Music, Check, Download, Sparkles, Film, Disc, Gauge } from 'lucide-react';
 import type { MediaMetadata, MediaFormat, MediaType } from '../types/index.ts';
-import { formatDuration } from '../services/scraper.ts';
+import { formatDuration, formatBytes } from '../services/scraper.ts';
 
 interface FormatSelectorModalProps {
   isOpen: boolean;
@@ -11,6 +11,8 @@ interface FormatSelectorModalProps {
   onChangeType: (type: MediaType) => void;
   selectedVideoRes: string;
   onSelectVideoRes: (res: string) => void;
+  selectedVideoFps: number;
+  onSelectVideoFps: (fps: number) => void;
   selectedAudioQuality: string;
   onSelectAudioQuality: (quality: string) => void;
   onConfirmDownload: (format: MediaFormat) => void;
@@ -25,6 +27,8 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
   onChangeType,
   selectedVideoRes,
   onSelectVideoRes,
+  selectedVideoFps,
+  onSelectVideoFps,
   selectedAudioQuality,
   onSelectAudioQuality,
   onConfirmDownload,
@@ -108,6 +112,61 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
     return `~ ${Math.max(0.2, +((media.duration * kbpsNum) / 8 / 1024).toFixed(1))} MB`;
   };
 
+  const clampedFps = Math.max(24, Math.min(120, Math.round(selectedVideoFps || 60)));
+
+  const estimateVideoSizeLabel = (
+    resLabel: string,
+    rawBytes?: number
+  ): string | undefined => {
+    const r = (resLabel || '').toLowerCase();
+    const dur = media.duration && media.duration > 0 ? media.duration : 0;
+
+    // Approximate H.264 + AAC combined kbps at 30 FPS per resolution tier
+    let baseKbpsAt30 = 4800;
+    if (r.includes('4k') || r.includes('2160')) baseKbpsAt30 = 14500;
+    else if (r.includes('2k') || r.includes('1440')) baseKbpsAt30 = 9000;
+    else if (r.includes('1080')) baseKbpsAt30 = 5600;
+    else if (r.includes('720')) baseKbpsAt30 = 3000;
+    else if (r.includes('540') || r.includes('640')) baseKbpsAt30 = 2000;
+    else if (r.includes('480')) baseKbpsAt30 = 1500;
+    else if (r.includes('360') || r.includes('240')) baseKbpsAt30 = 850;
+
+    const fpsScale = Math.pow(clampedFps / 30, 0.52);
+
+    if (media.platform === 'tiktok') {
+      // TikTok raw hd_size/size is often ByteVC1/HEVC; H.264 High normalization expands it
+      if (dur > 0) {
+        const estBytes = Math.round(((baseKbpsAt30 * fpsScale * 1000) / 8) * dur);
+        return `~ ${formatBytes(estBytes)}`;
+      }
+      if (rawBytes && rawBytes > 0) {
+        const tierMult = (r.includes('4k') || r.includes('2160')) ? 3.4 : (r.includes('2k') || r.includes('1440')) ? 2.9 : r.includes('1080') ? 2.6 : r.includes('720') ? 1.9 : 1.4;
+        return `~ ${formatBytes(Math.round(rawBytes * tierMult * fpsScale))}`;
+      }
+      return undefined;
+    }
+
+    if (rawBytes && rawBytes > 0) {
+      const scaledBytes = Math.round(rawBytes * Math.pow(clampedFps / 30, 0.45));
+      return `~ ${formatBytes(scaledBytes)}`;
+    }
+
+    if (dur > 0) {
+      const estBytes = Math.round(((baseKbpsAt30 * fpsScale * 1000) / 8) * dur);
+      return `~ ${formatBytes(estBytes)}`;
+    }
+
+    return undefined;
+  };
+
+  const getFpsDescriptor = (fps: number): string => {
+    if (fps < 28) return 'Sinematik';
+    if (fps < 48) return 'Standar';
+    if (fps < 75) return 'Mulus';
+    if (fps < 105) return 'Tinggi';
+    return 'Ultra Halus';
+  };
+
   // Determine current active format to download
   const handleStartDownload = () => {
     if (isTerabox) {
@@ -156,7 +215,11 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
         videoFormats.find((f) => (f.resolution || '').toLowerCase() === selectedVideoRes.toLowerCase()) ||
         videoFormats[0];
       if (exactTwitterFormat) {
-        onConfirmDownload(exactTwitterFormat);
+        onConfirmDownload({
+          ...exactTwitterFormat,
+          fps: clampedFps,
+          filesize: estimateVideoSizeLabel(exactTwitterFormat.resolution || selectedVideoRes, exactTwitterFormat.filesizeBytes) || exactTwitterFormat.filesize
+        });
       }
       return;
     }
@@ -166,7 +229,11 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
         videoFormats.find((f) => isSameResolution(f.resolution || '', activeYoutubeRes)) ||
         videoFormats[0];
       if (exactYtFormat) {
-        onConfirmDownload(exactYtFormat);
+        onConfirmDownload({
+          ...exactYtFormat,
+          fps: clampedFps,
+          filesize: estimateVideoSizeLabel(exactYtFormat.resolution || activeYoutubeRes, exactYtFormat.filesizeBytes) || exactYtFormat.filesize
+        });
       }
       return;
     }
@@ -176,7 +243,11 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
         videoFormats.find((f) => isSameResolution(f.resolution || '', activeInstagramRes)) ||
         videoFormats[0];
       if (exactIgFormat) {
-        onConfirmDownload(exactIgFormat);
+        onConfirmDownload({
+          ...exactIgFormat,
+          fps: clampedFps,
+          filesize: estimateVideoSizeLabel(exactIgFormat.resolution || activeInstagramRes, exactIgFormat.filesizeBytes) || exactIgFormat.filesize
+        });
       }
       return;
     }
@@ -186,7 +257,11 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
         videoFormats.find((f) => isSameResolution(f.resolution || '', activePinterestRes)) ||
         videoFormats[0];
       if (exactPinFormat) {
-        onConfirmDownload(exactPinFormat);
+        onConfirmDownload({
+          ...exactPinFormat,
+          fps: clampedFps,
+          filesize: estimateVideoSizeLabel(exactPinFormat.resolution || activePinterestRes, exactPinFormat.filesizeBytes) || exactPinFormat.filesize
+        });
       }
       return;
     }
@@ -242,20 +317,32 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
         return r.includes(targetRes) || q.includes(targetRes) || id.includes(targetRes);
       });
 
-      // CRITICAL FIX: If exact format exists, enforce strictly correct resolution tag
+      // CRITICAL FIX: If exact format exists, enforce strictly correct resolution tag & selected FPS
       if (matchVideo) {
+        const resolvedResTag = is2K ? '2K' : is4K ? '4K' : (matchVideo.resolution || selectedVideoRes);
+        const estLabel = estimateVideoSizeLabel(resolvedResTag, matchVideo.filesizeBytes);
         if (is2K) {
           matchVideo = {
             ...matchVideo,
             id: matchVideo.id && !matchVideo.id.includes('4k') ? matchVideo.id : 'tt-2k',
             resolution: '2K',
+            fps: clampedFps,
+            filesize: estLabel || matchVideo.filesize,
             quality: matchVideo.quality && !matchVideo.quality.includes('4K') ? matchVideo.quality : '2K Quad HD (1440p Tanpa Watermark)'
           };
         } else if (is4K) {
           matchVideo = {
             ...matchVideo,
             resolution: '4K',
+            fps: clampedFps,
+            filesize: estLabel || matchVideo.filesize,
             quality: matchVideo.quality || '4K Ultra HD (2160p Tanpa Watermark)'
+          };
+        } else {
+          matchVideo = {
+            ...matchVideo,
+            fps: clampedFps,
+            filesize: estLabel || matchVideo.filesize
           };
         }
       } else {
@@ -266,6 +353,8 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
           id: is2K ? 'tt-2k' : (is4K ? 'tt-4k' : `video-${selectedVideoRes}`),
           quality: preset ? preset.label : `${selectedVideoRes} Video`,
           resolution: resolvedTag,
+          fps: clampedFps,
+          filesize: estimateVideoSizeLabel(resolvedTag),
           type: 'video',
           extension: 'mp4',
           url: '',
@@ -475,9 +564,10 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                           : (videoFormats[0]?.resolution || '');
                         const isSelected = resLabel.toLowerCase() === activeRes.toLowerCase();
                         const dimMatch = fmt.quality.match(/\(([^)]+)\)/);
+                        const estSz = estimateVideoSizeLabel(resLabel, fmt.filesizeBytes) || fmt.filesize;
                         const detailText = dimMatch
-                          ? `${dimMatch[1]}${fmt.filesize ? ` · ${fmt.filesize}` : ''}`
-                          : (fmt.filesize || 'Stream Asli MP4');
+                          ? `${dimMatch[1]}${estSz ? ` · ${estSz}` : ''}`
+                          : (estSz || 'Stream Asli MP4');
                         return (
                           <button
                             key={fmt.id}
@@ -525,7 +615,8 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                               : resLabel === '360p' ? 'Ringan'
                               : resLabel === '240p' ? 'Hemat Data'
                               : (fmt.quality || 'MP4 Video');
-                          const badgeText = fmt.filesize ? `${baseTierText} · ${fmt.filesize}` : baseTierText;
+                          const estSz = estimateVideoSizeLabel(resLabel, fmt.filesizeBytes) || fmt.filesize;
+                          const badgeText = estSz ? `${baseTierText} · ${estSz}` : baseTierText;
                           return (
                             <button
                               key={fmt.id}
@@ -555,6 +646,8 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                         })
                     : videoPresets.map((preset) => {
                         const isSelected = selectedVideoRes === preset.resolution;
+                        const matchedRaw = videoFormats.find((vf) => isSameResolution(vf.resolution || '', preset.resolution));
+                        const estSz = estimateVideoSizeLabel(preset.resolution, matchedRaw?.filesizeBytes);
                         return (
                           <button
                             key={preset.id}
@@ -576,13 +669,93 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
                                 </div>
                               )}
                             </div>
-                            <span className="text-[11px] text-slate-500 dark:text-blue-200/70 block mt-1">
-                              {preset.badge}
+                            <span className="text-[11px] text-slate-500 dark:text-blue-200/70 block mt-1 truncate">
+                              {estSz ? `${preset.badge} · ${estSz}` : preset.badge}
                             </span>
                           </button>
                         );
                       })}
                 </div>
+
+                {/* Frame Rate (FPS) Draggable Slider (All Video Platforms, 24 - 120 FPS) */}
+                {(() => {
+                  const sliderPercent = ((clampedFps - 24) / (120 - 24)) * 100;
+                  const activeResForEstimate = isTwitter
+                    ? (videoFormats.some((vf) => (vf.resolution || '').toLowerCase() === selectedVideoRes.toLowerCase()) ? selectedVideoRes : (videoFormats[0]?.resolution || selectedVideoRes))
+                    : isInstagramServer2
+                      ? activeInstagramRes
+                      : isPinterestServer2
+                        ? activePinterestRes
+                        : isYouTubeServer2
+                          ? activeYoutubeRes
+                          : selectedVideoRes;
+                  const activeMatchedFmt = videoFormats.find((vf) => isSameResolution(vf.resolution || '', activeResForEstimate));
+                  const activeEstSize = estimateVideoSizeLabel(activeResForEstimate, activeMatchedFmt?.filesizeBytes);
+
+                  return (
+                    <div className="mt-4 p-3.5 rounded-2xl bg-slate-50 dark:bg-[#0c1a3a]/80 border border-slate-200 dark:border-blue-500/25 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-sky-100 dark:bg-cyan-500/15 border border-sky-200 dark:border-cyan-400/30 flex items-center justify-center text-sky-600 dark:text-cyan-400 shrink-0">
+                            <Gauge className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <label htmlFor="dz-fps-range" className="text-xs font-bold text-slate-800 dark:text-white block leading-tight">
+                              Frame Rate (FPS)
+                            </label>
+                            <span className="text-[10px] text-slate-500 dark:text-blue-200/60 block">
+                              Geser untuk mengatur FPS (maks 120)
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="px-2.5 py-1 rounded-xl bg-sky-600/10 dark:bg-cyan-500/15 border border-sky-500/30 dark:border-cyan-400/40 text-right shrink-0">
+                          <span className="text-xs sm:text-sm font-extrabold font-mono tabular-nums text-sky-700 dark:text-cyan-300">
+                            {clampedFps} FPS
+                          </span>
+                          <span className="text-[10px] font-semibold text-sky-600/80 dark:text-cyan-400/80 ml-1.5">
+                            · {getFpsDescriptor(clampedFps)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="pt-1">
+                        <input
+                          id="dz-fps-range"
+                          type="range"
+                          min={24}
+                          max={120}
+                          step={1}
+                          value={clampedFps}
+                          onChange={(e) => onSelectVideoFps(Number(e.target.value))}
+                          aria-label="Pilih Frame Rate FPS"
+                          className="w-full dz-fps-slider touch-pan-y"
+                          style={{
+                            background: `linear-gradient(to right, #06b6d4 0%, #3b82f6 ${sliderPercent}%, rgba(148, 163, 184, 0.3) ${sliderPercent}%, rgba(148, 163, 184, 0.3) 100%)`
+                          }}
+                        />
+                        <div className="flex items-center justify-between text-[10px] font-mono tabular-nums text-slate-400 dark:text-slate-400 mt-1.5 px-0.5 select-none">
+                          <span>24 FPS</span>
+                          <span>30</span>
+                          <span>60</span>
+                          <span>90</span>
+                          <span>120 FPS</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-200/80 dark:border-blue-900/50 text-[11px] text-slate-500 dark:text-blue-200/70">
+                        <span>
+                          {activeEstSize
+                            ? <>Estimasi: <strong className="text-slate-800 dark:text-white font-semibold">{activeEstSize}</strong></>
+                            : 'Ukuran file tepat dihitung saat pratinjau'}
+                        </span>
+                        <span className="text-[10px] text-sky-600 dark:text-cyan-400 font-medium">
+                          Ukuran akurat tampil di pratinjau
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
               <div>

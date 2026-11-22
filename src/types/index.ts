@@ -24,6 +24,7 @@ export interface MediaFormat {
   id: string;
   quality: string; // e.g., '360p', '480p', '720p HD', '1080p FHD', '2K', '4K', '128 kbps', '320 kbps'
   resolution?: string; // '1080p', '720p', etc.
+  fps?: number; // Target frame rate (e.g. 24, 30, 60, 120)
   type: 'video' | 'audio' | 'photos';
   extension: 'mp4' | 'mp3' | 'm4a' | 'jpg' | 'jpeg' | 'png' | 'zip';
   filesize?: string; // e.g. '15.4 MB'
@@ -110,6 +111,7 @@ export interface HistoryItem {
   durationFormatted?: string;
   quality: string;
   resolution?: string;
+  fps?: number;
   mediaType: 'video' | 'audio' | 'photos';
   extension: 'mp4' | 'mp3' | 'm4a' | 'jpg' | 'jpeg' | 'png' | 'zip';
   filename: string;

@@ -63,6 +63,7 @@ interface PreservedSessionState {
   selectedPlatform: PlatformType;
   mediaType: MediaType;
   selectedVideoRes: string;
+  selectedVideoFps?: number;
   selectedAudioQuality: string;
   mediaData: MediaMetadata | null;
   isFormatModalOpen: boolean;
@@ -109,6 +110,16 @@ export default function App() {
 
   // Quality selection states
   const [selectedVideoRes, setSelectedVideoRes] = useState<string>(() => initialSnap?.selectedVideoRes || '1080p');
+  const [selectedVideoFps, setSelectedVideoFps] = useState<number>(() => {
+    if (typeof initialSnap?.selectedVideoFps === 'number' && initialSnap.selectedVideoFps >= 24 && initialSnap.selectedVideoFps <= 120) {
+      return Math.round(initialSnap.selectedVideoFps);
+    }
+    try {
+      const saved = Number(localStorage.getItem('dz_video_fps') || '60');
+      if (!isNaN(saved) && saved >= 24 && saved <= 120) return Math.round(saved);
+    } catch {}
+    return 60;
+  });
   const [selectedAudioQuality, setSelectedAudioQuality] = useState<string>(() => initialSnap?.selectedAudioQuality || '320');
 
   // Processing & Download states
@@ -180,6 +191,7 @@ export default function App() {
     selectedPlatform,
     mediaType,
     selectedVideoRes,
+    selectedVideoFps,
     selectedAudioQuality,
     mediaData,
     isFormatModalOpen,
@@ -192,6 +204,12 @@ export default function App() {
   });
 
   useEffect(() => {
+    try {
+      localStorage.setItem('dz_video_fps', String(selectedVideoFps));
+    } catch {}
+  }, [selectedVideoFps]);
+
+  useEffect(() => {
     latestSessionRef.current = {
       savedAt: Date.now(),
       activeTab,
@@ -200,6 +218,7 @@ export default function App() {
       selectedPlatform,
       mediaType,
       selectedVideoRes,
+      selectedVideoFps,
       selectedAudioQuality,
       mediaData,
       isFormatModalOpen,
@@ -217,6 +236,7 @@ export default function App() {
     selectedPlatform,
     mediaType,
     selectedVideoRes,
+    selectedVideoFps,
     selectedAudioQuality,
     mediaData,
     isFormatModalOpen,
@@ -482,6 +502,13 @@ export default function App() {
     if (formatOverride?.resolution) {
       href += `&res=${encodeURIComponent(formatOverride.resolution)}`;
     }
+    const effectiveVideoFps =
+      formatOverride?.type === 'video' && typeof formatOverride.fps === 'number' && formatOverride.fps >= 24 && formatOverride.fps <= 120
+        ? Math.round(formatOverride.fps)
+        : undefined;
+    if (effectiveVideoFps) {
+      href += `&fps=${effectiveVideoFps}`;
+    }
     const bitrateMatch =
       (formatOverride?.resolution || '').match(/(320|256|192|128|64)/) ||
       (formatOverride?.quality || '').match(/(320|256|192|128|64)\s*k/i) ||
@@ -719,13 +746,11 @@ export default function App() {
 
     const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
     const cachedPrep = getCachedPrepared(mediaData.url, targetFormat, serverMode, customKey);
-    const isTikTokVideoCacheHit = Boolean(
-      cachedPrep &&
-      cachedPrep.media.platform === 'tiktok' &&
-      cachedPrep.format.type === 'video' &&
-      (cachedPrep.format.extension || 'mp4').toLowerCase() === 'mp4'
-    );
-    if (cachedPrep && !isTikTokVideoCacheHit) {
+    const isVideoMp4Format =
+      targetFormat.type === 'video' &&
+      (targetFormat.extension || 'mp4').toLowerCase() === 'mp4';
+
+    if (cachedPrep && !isVideoMp4Format) {
       setIsFormatModalOpen(false);
       setErrorMessage(null);
       enterPreviewStage(cachedPrep.media, cachedPrep.format, cachedPrep.resolvedUrl);
@@ -737,7 +762,7 @@ export default function App() {
     setErrorMessage(null);
     setBerandaStage('preparing');
     setDownloadProgress(20);
-    setDownloadStatusText(`Menyiapkan pratinjau ${targetFormat.quality || targetFormat.resolution}...`);
+    setDownloadStatusText(`Menyiapkan pratinjau ${targetFormat.quality || targetFormat.resolution}${targetFormat.fps ? ` · ${targetFormat.fps} FPS` : ''}...`);
 
     try {
       let resolvedFormat: MediaFormat = cachedPrep ? cachedPrep.format : targetFormat;
@@ -758,6 +783,7 @@ export default function App() {
               formatId: targetFormat.id,
               resolution: targetFormat.resolution,
               quality: targetFormat.quality,
+              fps: targetFormat.fps,
               type: targetFormat.type,
               url: mediaData.url,
               server: serverMode,
@@ -849,13 +875,17 @@ export default function App() {
         throw new Error(startJobError || 'Tautan media tidak tersedia dari server sumber saat ini.');
       }
 
+      // Pre-prepare & measure exact output byte size for ALL video MP4 formats (ensuring preview size === downloaded size)
       if (
-        mediaData.platform === 'tiktok' &&
         resolvedFormat.type === 'video' &&
         (resolvedFormat.extension || 'mp4').toLowerCase() === 'mp4'
       ) {
         setDownloadProgress(45);
-        setDownloadStatusText('Mengoptimalkan kualitas & kompatibilitas video...');
+        setDownloadStatusText(
+          resolvedFormat.fps
+            ? `Menyiapkan video ${resolvedFormat.resolution || ''} · ${resolvedFormat.fps} FPS & menghitung ukuran tepat...`
+            : 'Mengoptimalkan kualitas video & menghitung ukuran file...'
+        );
         let prepTick: ReturnType<typeof setInterval> | null = null;
         try {
           prepTick = setInterval(() => {
@@ -870,7 +900,30 @@ export default function App() {
               const j = await prepRes.json().catch(() => null);
               prepErrMsg = j?.error || '';
             }
-            throw new Error(prepErrMsg || `Gagal memproses pratinjau video TikTok (HTTP ${prepRes.status}).`);
+            if (mediaData.platform === 'tiktok') {
+              throw new Error(prepErrMsg || `Gagal memproses pratinjau video TikTok (HTTP ${prepRes.status}).`);
+            }
+            if (resolvedFormat.fps && prepErrMsg) {
+              throw new Error(prepErrMsg);
+            }
+            console.warn('[prepare-video] Non-fatal prepare status:', prepRes.status, prepErrMsg);
+          } else {
+            const prepJson = await prepRes.json().catch(() => null);
+            if (prepJson) {
+              if (prepJson.streamed === true) {
+                resolvedFormat = {
+                  ...resolvedFormat,
+                  fps: undefined
+                };
+              }
+              if (typeof prepJson.size === 'number' && prepJson.size > 0) {
+                resolvedFormat = {
+                  ...resolvedFormat,
+                  filesize: formatBytes(prepJson.size),
+                  filesizeBytes: prepJson.size
+                };
+              }
+            }
           }
         } finally {
           if (prepTick) clearInterval(prepTick);
@@ -1566,14 +1619,17 @@ export default function App() {
       setDownloadStatusText('Menyimpan berkas ke perangkat...');
 
       const isAudioOrSpotify = media.platform === 'spotify' || targetFormat.type === 'audio' || ext === 'mp3';
-      const requiresNormalizedProxy = isAudioOrSpotify || (media.platform === 'tiktok' && ext === 'mp4');
+      const hasRequestedFps = targetFormat.type === 'video' && ext === 'mp4' && Boolean(targetFormat.fps);
+      const requiresNormalizedProxy = isAudioOrSpotify || (media.platform === 'tiktok' && ext === 'mp4') || hasRequestedFps;
       if (mediaBlob) {
         triggerBlobDownload(mediaBlob, filename);
       } else if (requiresNormalizedProxy) {
         throw proxyError || new Error(
           isAudioOrSpotify
             ? 'Gagal mengunduh audio MP3 sesuai bitrate yang dipilih dari server. Silakan coba lagi.'
-            : 'Gagal memproses video TikTok dari server agar kompatibel di galeri dan WhatsApp. Silakan coba lagi.'
+            : hasRequestedFps
+              ? `Gagal memproses video ${targetFormat.resolution || ''} ${targetFormat.fps} FPS dari server. Silakan coba lagi.`
+              : 'Gagal memproses video TikTok dari server agar kompatibel di galeri dan WhatsApp. Silakan coba lagi.'
         );
       } else {
         triggerDirectDownloadFallback(effectiveUrl, filename);
@@ -1595,6 +1651,7 @@ export default function App() {
           durationFormatted: effectiveDurationFmt,
           quality: effectiveFormatForHistory.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
           resolution: effectiveFormatForHistory.resolution || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
+          fps: effectiveFormatForHistory.fps,
           mediaType: targetFormat.type,
           extension: ext as any,
           filename,
@@ -1657,6 +1714,9 @@ export default function App() {
     let downloadHref = `/api/proxy-download?url=${encodeURIComponent(streamUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl)}&server=${encodeURIComponent(serverMode)}`;
     if (item.resolution) {
       downloadHref += `&res=${encodeURIComponent(item.resolution)}`;
+    }
+    if (item.mediaType === 'video' && item.fps) {
+      downloadHref += `&fps=${item.fps}`;
     }
     const kbpsMatch = `${item.resolution || ''} ${item.quality || ''}`.match(/(320|256|192|128|64)/);
     if (item.platform === 'spotify') {
@@ -1910,6 +1970,8 @@ export default function App() {
           onChangeType={setMediaType}
           selectedVideoRes={selectedVideoRes}
           onSelectVideoRes={setSelectedVideoRes}
+          selectedVideoFps={selectedVideoFps}
+          onSelectVideoFps={setSelectedVideoFps}
           selectedAudioQuality={selectedAudioQuality}
           onSelectAudioQuality={setSelectedAudioQuality}
           onConfirmDownload={handleConfirmDownload}
