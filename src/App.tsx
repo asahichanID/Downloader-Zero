@@ -1891,15 +1891,6 @@ export default function App() {
     }
   }, [isBusy]);
 
-  const isBannerPaused =
-    activeTab !== 'beranda' ||
-    berandaStage !== 'idle' ||
-    isFormatModalOpen ||
-    isPlatformsModalOpen ||
-    isTermsOpen ||
-    isBannerModalOpen ||
-    Boolean(playingItem);
-
   return (
     <div className="relative min-h-screen w-full bg-[#f0f4fa] dark:bg-[#050B18] text-slate-900 dark:text-slate-100 flex flex-col items-center overflow-x-hidden transition-colors duration-200">
       {/* Top Banner (Spans 100% full-width across the screen) */}
@@ -1907,7 +1898,6 @@ export default function App() {
         <BannerDZ
           activeBanner={activeBanner}
           animatedBannerUrl={lilyBannerUrl}
-          paused={isBannerPaused}
         />
       </header>
 

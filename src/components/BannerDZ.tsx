@@ -9,28 +9,20 @@ const FADE_OUT_WINDOW_SEC = 0.85;
 interface BannerDZProps {
   activeBanner?: BannerOptionId;
   animatedBannerUrl?: string | null;
-  paused?: boolean;
 }
 
 export const BannerDZ: React.FC<BannerDZProps> = React.memo(({
   activeBanner = 'default',
-  animatedBannerUrl = null,
-  paused = false
+  animatedBannerUrl = null
 }) => {
-  const [isInView, setIsInView] = useState<boolean>(true);
-  const [isTabVisible, setIsTabVisible] = useState<boolean>(() =>
-    typeof document !== 'undefined' ? !document.hidden : true
-  );
   const [videoVisible, setVideoVisible] = useState<boolean>(false);
 
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const isFadingOutRef = useRef<boolean>(false);
   const isRestartingRef = useRef<boolean>(false);
   const restartTimerRef = useRef<number | null>(null);
 
   const showAnimatedVideo = activeBanner === 'lily_wuwa' && Boolean(animatedBannerUrl);
-  const isActive = !paused && isInView && isTabVisible;
 
   const clearRestartTimer = useCallback(() => {
     if (restartTimerRef.current !== null) {
@@ -40,47 +32,19 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({
   }, []);
 
   useEffect(() => {
-    const handleVisibility = () => {
-      setIsTabVisible(!document.hidden);
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el || typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]) {
-          setIsInView(entries[0].isIntersecting);
-        }
-      },
-      { threshold: 0.05 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
     isFadingOutRef.current = false;
     isRestartingRef.current = false;
     clearRestartTimer();
     setVideoVisible(false);
+
+    if (showAnimatedVideo && videoRef.current) {
+      videoRef.current.play().catch(() => {});
+    }
+
     return () => {
       clearRestartTimer();
     };
   }, [showAnimatedVideo, animatedBannerUrl, clearRestartTimer]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !showAnimatedVideo) return;
-    if (isActive) {
-      video.play().catch(() => {});
-    } else if (!video.paused) {
-      video.pause();
-    }
-  }, [isActive, showAnimatedVideo, animatedBannerUrl]);
 
   const handleVideoPlaying = useCallback(() => {
     if (!isRestartingRef.current && !isFadingOutRef.current) {
@@ -157,7 +121,6 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({
 
   return (
     <div
-      ref={containerRef}
       className="relative w-full overflow-hidden select-none bg-[#f0f4fa] dark:bg-[#050B18] dz-contain-card"
     >
       {/* Background Media Container (Full-width edge-to-edge) */}
@@ -183,6 +146,12 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({
               onPlaying={handleVideoPlaying}
               onTimeUpdate={handleVideoTimeUpdate}
               onEnded={handleVideoEnded}
+              onPause={(e) => {
+                const v = e.currentTarget;
+                if (!v.ended && !isRestartingRef.current) {
+                  v.play().catch(() => {});
+                }
+              }}
               className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center will-change-[opacity,transform] transition-[opacity,transform] duration-700 ease-in-out ${
                 videoVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-[1.018]'
               }`}
