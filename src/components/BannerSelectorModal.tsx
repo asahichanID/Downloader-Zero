@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect } from 'react';
 import { X, Download, Check, Film, HardDrive, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import bannerImage from '../assets/images/banner_dz.png';
@@ -26,98 +26,6 @@ function formatMegabytes(bytes: number): string {
   if (!bytes || bytes <= 0) return '12.1 MB';
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
-const SmoothPreviewVideo: React.FC<{ src: string }> = React.memo(({ src }) => {
-  const [visible, setVisible] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const fadingOutRef = useRef(false);
-  const restartingRef = useRef(false);
-  const timerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    fadingOutRef.current = false;
-    restartingRef.current = false;
-    setVisible(false);
-    return () => {
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    };
-  }, [src]);
-
-  const handlePlaying = useCallback(() => {
-    if (!restartingRef.current && !fadingOutRef.current) {
-      setVisible(true);
-    }
-  }, []);
-
-  const handleTimeUpdate = useCallback(() => {
-    const v = videoRef.current;
-    if (!v || restartingRef.current) return;
-    if (!Number.isFinite(v.duration) || v.duration <= 1.2) return;
-    if (v.duration - v.currentTime <= 0.75) {
-      if (!fadingOutRef.current) {
-        fadingOutRef.current = true;
-        setVisible(false);
-      }
-    } else if (!fadingOutRef.current && !v.paused && v.currentTime >= 0.02) {
-      setVisible(true);
-    }
-  }, []);
-
-  const handleEnded = useCallback(() => {
-    const v = videoRef.current;
-    if (!v || restartingRef.current) return;
-    const preFaded = fadingOutRef.current;
-    restartingRef.current = true;
-    fadingOutRef.current = true;
-    setVisible(false);
-    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => {
-      const el = videoRef.current;
-      if (!el) return;
-      const done = () => {
-        timerRef.current = window.setTimeout(() => {
-          fadingOutRef.current = false;
-          restartingRef.current = false;
-          if (!el.paused) setVisible(true);
-        }, 50);
-      };
-      const onSeeked = () => {
-        el.removeEventListener('seeked', onSeeked);
-        el.play().then(done).catch(() => {
-          fadingOutRef.current = false;
-          restartingRef.current = false;
-        });
-      };
-      el.addEventListener('seeked', onSeeked, { once: true });
-      try {
-        el.currentTime = 0;
-      } catch {
-        el.removeEventListener('seeked', onSeeked);
-        el.play().then(done).catch(() => {
-          fadingOutRef.current = false;
-          restartingRef.current = false;
-        });
-      }
-    }, preFaded ? 120 : 420);
-  }, []);
-
-  return (
-    <video
-      ref={videoRef}
-      src={src}
-      autoPlay
-      muted
-      playsInline
-      onLoadedData={handlePlaying}
-      onPlaying={handlePlaying}
-      onTimeUpdate={handleTimeUpdate}
-      onEnded={handleEnded}
-      className={`w-full h-full object-cover transition-opacity duration-500 ease-in-out ${
-        visible ? 'opacity-100' : 'opacity-0'
-      }`}
-    />
-  );
-});
 
 export const BannerSelectorModal: React.FC<BannerSelectorModalProps> = React.memo(({
   isOpen,
@@ -167,8 +75,8 @@ export const BannerSelectorModal: React.FC<BannerSelectorModalProps> = React.mem
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
+          transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75"
           onClick={onClose}
           role="dialog"
           aria-modal="true"
@@ -179,9 +87,9 @@ export const BannerSelectorModal: React.FC<BannerSelectorModalProps> = React.mem
             initial={{ opacity: 0, scale: 0.96, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 10 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-md rounded-3xl p-5 sm:p-6 bg-white/95 dark:bg-[#07132e]/95 border border-slate-300 dark:border-blue-500/35 shadow-2xl shadow-slate-900/15 dark:shadow-black/90 text-slate-900 dark:text-white max-h-[88vh] overflow-y-auto"
+            className="relative w-full max-w-md rounded-3xl p-5 sm:p-6 bg-white dark:bg-[#07132e] border border-slate-300 dark:border-blue-500/35 shadow-2xl shadow-slate-900/20 dark:shadow-black/90 text-slate-900 dark:text-white max-h-[88vh] overflow-y-auto"
           >
             {/* Header */}
             <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-blue-900/60">
@@ -244,11 +152,9 @@ export const BannerSelectorModal: React.FC<BannerSelectorModalProps> = React.mem
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                        Default
-                      </h3>
-                    </div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                      Default
+                    </h3>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                       Banner gambar PNG · Lokal
                     </p>
@@ -293,10 +199,17 @@ export const BannerSelectorModal: React.FC<BannerSelectorModalProps> = React.mem
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  {/* Preview Thumbnail Slot */}
+                  {/* Preview Thumbnail Slot (Paused single frame to avoid dual-video hardware decode lag) */}
                   <div className="relative w-20 h-14 rounded-xl overflow-hidden bg-gradient-to-br from-[#0d1f47] via-[#132c63] to-[#08142e] border border-slate-300/60 dark:border-cyan-500/30 shrink-0 flex items-center justify-center">
                     {isLilyDownloaded && lilyBannerUrl ? (
-                      <SmoothPreviewVideo src={lilyBannerUrl} />
+                      <video
+                        src={`${lilyBannerUrl}#t=1`}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        disablePictureInPicture
+                        className="w-full h-full object-cover pointer-events-none"
+                      />
                     ) : (
                       <div className="flex flex-col items-center justify-center text-cyan-300/90">
                         <Film className="w-5 h-5" />

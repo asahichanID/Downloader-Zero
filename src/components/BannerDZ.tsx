@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { Download } from 'lucide-react';
 import bannerImage from '../assets/images/banner_dz.png';
 import type { BannerOptionId } from '../services/bannerStorage.ts';
 
 const BANNER_IMAGE_CDN = 'https://cdn.jsdelivr.net/gh/asahichanID/media@main/banner_dz.png';
-const FADE_OUT_WINDOW_SEC = 0.85;
+const FADE_OUT_LEAD_SEC = 0.72;
+const FADE_DURATION_MS = 500;
 
 interface BannerDZProps {
   activeBanner?: BannerOptionId;
@@ -15,98 +16,78 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({
   activeBanner = 'default',
   animatedBannerUrl = null
 }) => {
-  const [videoVisible, setVideoVisible] = useState<boolean>(false);
-
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const isFadingOutRef = useRef<boolean>(false);
-  const isRestartingRef = useRef<boolean>(false);
-  const restartTimerRef = useRef<number | null>(null);
+  const isLoopingRef = useRef<boolean>(false);
+  const loopTimerRef = useRef<number | null>(null);
+  const revealTimerRef = useRef<number | null>(null);
 
   const showAnimatedVideo = activeBanner === 'lily_wuwa' && Boolean(animatedBannerUrl);
 
-  const clearRestartTimer = useCallback(() => {
-    if (restartTimerRef.current !== null) {
-      window.clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
+  const clearTimers = useCallback(() => {
+    if (loopTimerRef.current !== null) {
+      window.clearTimeout(loopTimerRef.current);
+      loopTimerRef.current = null;
+    }
+    if (revealTimerRef.current !== null) {
+      window.clearTimeout(revealTimerRef.current);
+      revealTimerRef.current = null;
     }
   }, []);
 
   useEffect(() => {
-    isFadingOutRef.current = false;
-    isRestartingRef.current = false;
-    clearRestartTimer();
-    setVideoVisible(false);
+    isLoopingRef.current = false;
+    clearTimers();
 
-    if (showAnimatedVideo && videoRef.current) {
-      videoRef.current.play().catch(() => {});
+    const video = videoRef.current;
+    if (showAnimatedVideo && video) {
+      video.style.opacity = '0';
+      video.play().catch(() => {});
     }
 
     return () => {
-      clearRestartTimer();
+      clearTimers();
     };
-  }, [showAnimatedVideo, animatedBannerUrl, clearRestartTimer]);
+  }, [showAnimatedVideo, animatedBannerUrl, clearTimers]);
 
-  const handleVideoPlaying = useCallback(() => {
-    if (!isRestartingRef.current && !isFadingOutRef.current) {
-      setVideoVisible(true);
+  const fadeInVideo = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || isLoopingRef.current) return;
+    if (video.style.opacity !== '1') {
+      video.style.opacity = '1';
     }
   }, []);
 
-  const handleVideoTimeUpdate = useCallback(() => {
+  const performSmoothLoopReset = useCallback((delayMs: number) => {
     const video = videoRef.current;
-    if (!video || isRestartingRef.current) return;
-    const dur = video.duration;
-    if (!Number.isFinite(dur) || dur <= 1.2) return;
+    if (!video) return;
 
-    const remaining = dur - video.currentTime;
-    if (remaining <= FADE_OUT_WINDOW_SEC) {
-      if (!isFadingOutRef.current) {
-        isFadingOutRef.current = true;
-        setVideoVisible(false);
-      }
-    } else if (!isFadingOutRef.current && !video.paused && video.currentTime >= 0.02) {
-      setVideoVisible(true);
-    }
-  }, []);
+    isLoopingRef.current = true;
+    video.style.opacity = '0';
+    clearTimers();
 
-  const handleVideoEnded = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || isRestartingRef.current) return;
-
-    const hadPreFaded = isFadingOutRef.current;
-    isRestartingRef.current = true;
-    isFadingOutRef.current = true;
-    setVideoVisible(false);
-    clearRestartTimer();
-
-    const waitBeforeSeekMs = hadPreFaded ? 140 : 480;
-
-    restartTimerRef.current = window.setTimeout(() => {
+    loopTimerRef.current = window.setTimeout(() => {
       const v = videoRef.current;
       if (!v) return;
 
-      const finishFadeIn = () => {
-        restartTimerRef.current = window.setTimeout(() => {
-          isFadingOutRef.current = false;
-          isRestartingRef.current = false;
-          if (!v.paused) {
-            setVideoVisible(true);
+      let revealed = false;
+      const reveal = () => {
+        if (revealed) return;
+        revealed = true;
+        isLoopingRef.current = false;
+        requestAnimationFrame(() => {
+          if (videoRef.current) {
+            videoRef.current.style.opacity = '1';
           }
-        }, 60);
-      };
-
-      const startPlaybackFromZero = () => {
-        v.play()
-          .then(finishFadeIn)
-          .catch(() => {
-            isFadingOutRef.current = false;
-            isRestartingRef.current = false;
-          });
+        });
       };
 
       const onSeeked = () => {
         v.removeEventListener('seeked', onSeeked);
-        startPlaybackFromZero();
+        if (v.paused) {
+          v.play().then(reveal).catch(reveal);
+        } else {
+          reveal();
+        }
       };
 
       v.addEventListener('seeked', onSeeked, { once: true });
@@ -114,24 +95,46 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({
         v.currentTime = 0;
       } catch {
         v.removeEventListener('seeked', onSeeked);
-        startPlaybackFromZero();
+        v.play().then(reveal).catch(reveal);
       }
-    }, waitBeforeSeekMs);
-  }, [clearRestartTimer]);
+
+      // Safety fallback in case seeked event doesn't fire
+      revealTimerRef.current = window.setTimeout(() => {
+        v.removeEventListener('seeked', onSeeked);
+        if (v.paused) {
+          v.play().catch(() => {});
+        }
+        reveal();
+      }, 220);
+    }, delayMs);
+  }, [clearTimers]);
+
+  const handleTimeUpdate = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || isLoopingRef.current) return;
+    const dur = video.duration;
+    if (!Number.isFinite(dur) || dur <= 1.4) return;
+
+    if (dur - video.currentTime <= FADE_OUT_LEAD_SEC) {
+      performSmoothLoopReset(FADE_DURATION_MS);
+    } else if (video.style.opacity !== '1' && !video.paused && video.currentTime >= 0.02) {
+      video.style.opacity = '1';
+    }
+  }, [performSmoothLoopReset]);
+
+  const handleEnded = useCallback(() => {
+    if (!isLoopingRef.current) {
+      performSmoothLoopReset(360);
+    }
+  }, [performSmoothLoopReset]);
 
   return (
-    <div
-      className="relative w-full overflow-hidden select-none bg-[#f0f4fa] dark:bg-[#050B18] dz-contain-card"
-    >
+    <div className="relative w-full overflow-hidden select-none bg-[#f0f4fa] dark:bg-[#050B18] dz-contain-card">
       {/* Background Media Container (Full-width edge-to-edge) */}
       <div className="relative w-full h-[270px] sm:h-[320px] md:h-[360px] lg:h-[400px] overflow-hidden">
-        {/* Banner Media Layer with 5% bottom transparency fade mask */}
+        {/* Banner Media Layer (Zero per-frame maskImage cost on live video; bottom gradient handles fade cleanly) */}
         <div
           className={`absolute inset-0 w-full h-full ${showAnimatedVideo ? 'bg-[#050B18]' : ''}`}
-          style={{
-            maskImage: 'linear-gradient(to bottom, black 0%, black 95%, transparent 100%)',
-            WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 95%, transparent 100%)',
-          }}
         >
           {showAnimatedVideo && animatedBannerUrl ? (
             <video
@@ -139,22 +142,24 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({
               key={animatedBannerUrl}
               src={animatedBannerUrl}
               autoPlay
+              loop
               muted
               playsInline
+              disablePictureInPicture
+              disableRemotePlayback
               preload="auto"
-              onLoadedData={handleVideoPlaying}
-              onPlaying={handleVideoPlaying}
-              onTimeUpdate={handleVideoTimeUpdate}
-              onEnded={handleVideoEnded}
+              onLoadedData={fadeInVideo}
+              onPlaying={fadeInVideo}
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={handleEnded}
               onPause={(e) => {
                 const v = e.currentTarget;
-                if (!v.ended && !isRestartingRef.current) {
+                if (!v.ended && !isLoopingRef.current) {
                   v.play().catch(() => {});
                 }
               }}
-              className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center will-change-[opacity,transform] transition-[opacity,transform] duration-700 ease-in-out ${
-                videoVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-[1.018]'
-              }`}
+              style={{ opacity: 0, transform: 'translateZ(0)' }}
+              className="absolute inset-0 w-full h-full object-cover object-top sm:object-center will-change-[opacity] transition-opacity duration-500 ease-in-out"
             />
           ) : (
             <img
