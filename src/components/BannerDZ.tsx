@@ -1,26 +1,43 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Download } from 'lucide-react';
 import bannerImage from '../assets/images/banner_dz.png';
+import type { BannerOptionId } from '../services/bannerStorage.ts';
 
 const BANNER_IMAGE_CDN = 'https://cdn.jsdelivr.net/gh/asahichanID/media@main/banner_dz.png';
-const BANNER_VIDEO_CDN = 'https://cdn.jsdelivr.net/gh/asahichanID/media@main/banner_dz.mp4';
+const FADE_OUT_WINDOW_SEC = 0.85;
 
 interface BannerDZProps {
+  activeBanner?: BannerOptionId;
+  animatedBannerUrl?: string | null;
   paused?: boolean;
-  alwaysPlay?: boolean;
 }
 
-export const BannerDZ: React.FC<BannerDZProps> = React.memo(({ paused = false, alwaysPlay = true }) => {
-  const [showVideo, setShowVideo] = useState<boolean>(false);
-  const [videoSrc, setVideoSrc] = useState<string>('/banner_eksperimen.mp4');
+export const BannerDZ: React.FC<BannerDZProps> = React.memo(({
+  activeBanner = 'default',
+  animatedBannerUrl = null,
+  paused = false
+}) => {
   const [isInView, setIsInView] = useState<boolean>(true);
   const [isTabVisible, setIsTabVisible] = useState<boolean>(() =>
     typeof document !== 'undefined' ? !document.hidden : true
   );
+  const [videoVisible, setVideoVisible] = useState<boolean>(false);
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const isFadingOutRef = useRef<boolean>(false);
+  const isRestartingRef = useRef<boolean>(false);
+  const restartTimerRef = useRef<number | null>(null);
 
-  const isActive = alwaysPlay ? true : (!paused && isInView && isTabVisible);
+  const showAnimatedVideo = activeBanner === 'lily_wuwa' && Boolean(animatedBannerUrl);
+  const isActive = !paused && isInView && isTabVisible;
+
+  const clearRestartTimer = useCallback(() => {
+    if (restartTimerRef.current !== null) {
+      window.clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -45,34 +62,98 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({ paused = false, a
     return () => observer.disconnect();
   }, []);
 
-  // Immediately stop video & switch back to crisp image when inactive/offscreen
   useEffect(() => {
-    if (!isActive) {
-      setShowVideo(false);
-    }
-  }, [isActive]);
-
-  // Smoothly alternate image and video only when visible and active
-  useEffect(() => {
-    if (!isActive || showVideo) return;
-    const timer = setTimeout(() => {
-      setShowVideo(true);
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [isActive, showVideo]);
+    isFadingOutRef.current = false;
+    isRestartingRef.current = false;
+    clearRestartTimer();
+    setVideoVisible(false);
+    return () => {
+      clearRestartTimer();
+    };
+  }, [showAnimatedVideo, animatedBannerUrl, clearRestartTimer]);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
-    if (isActive && showVideo) {
-      video.currentTime = 0;
-      video.play().catch(() => {
-        setShowVideo(false);
-      });
+    if (!video || !showAnimatedVideo) return;
+    if (isActive) {
+      video.play().catch(() => {});
     } else if (!video.paused) {
       video.pause();
     }
-  }, [isActive, showVideo]);
+  }, [isActive, showAnimatedVideo, animatedBannerUrl]);
+
+  const handleVideoPlaying = useCallback(() => {
+    if (!isRestartingRef.current && !isFadingOutRef.current) {
+      setVideoVisible(true);
+    }
+  }, []);
+
+  const handleVideoTimeUpdate = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || isRestartingRef.current) return;
+    const dur = video.duration;
+    if (!Number.isFinite(dur) || dur <= 1.2) return;
+
+    const remaining = dur - video.currentTime;
+    if (remaining <= FADE_OUT_WINDOW_SEC) {
+      if (!isFadingOutRef.current) {
+        isFadingOutRef.current = true;
+        setVideoVisible(false);
+      }
+    } else if (!isFadingOutRef.current && !video.paused && video.currentTime >= 0.02) {
+      setVideoVisible(true);
+    }
+  }, []);
+
+  const handleVideoEnded = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || isRestartingRef.current) return;
+
+    const hadPreFaded = isFadingOutRef.current;
+    isRestartingRef.current = true;
+    isFadingOutRef.current = true;
+    setVideoVisible(false);
+    clearRestartTimer();
+
+    const waitBeforeSeekMs = hadPreFaded ? 140 : 480;
+
+    restartTimerRef.current = window.setTimeout(() => {
+      const v = videoRef.current;
+      if (!v) return;
+
+      const finishFadeIn = () => {
+        restartTimerRef.current = window.setTimeout(() => {
+          isFadingOutRef.current = false;
+          isRestartingRef.current = false;
+          if (!v.paused) {
+            setVideoVisible(true);
+          }
+        }, 60);
+      };
+
+      const startPlaybackFromZero = () => {
+        v.play()
+          .then(finishFadeIn)
+          .catch(() => {
+            isFadingOutRef.current = false;
+            isRestartingRef.current = false;
+          });
+      };
+
+      const onSeeked = () => {
+        v.removeEventListener('seeked', onSeeked);
+        startPlaybackFromZero();
+      };
+
+      v.addEventListener('seeked', onSeeked, { once: true });
+      try {
+        v.currentTime = 0;
+      } catch {
+        v.removeEventListener('seeked', onSeeked);
+        startPlaybackFromZero();
+      }
+    }, waitBeforeSeekMs);
+  }, [clearRestartTimer]);
 
   return (
     <div
@@ -83,49 +164,46 @@ export const BannerDZ: React.FC<BannerDZProps> = React.memo(({ paused = false, a
       <div className="relative w-full h-[270px] sm:h-[320px] md:h-[360px] lg:h-[400px] overflow-hidden">
         {/* Banner Media Layer with 5% bottom transparency fade mask */}
         <div
-          className="absolute inset-0 w-full h-full"
+          className={`absolute inset-0 w-full h-full ${showAnimatedVideo ? 'bg-[#050B18]' : ''}`}
           style={{
             maskImage: 'linear-gradient(to bottom, black 0%, black 95%, transparent 100%)',
             WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 95%, transparent 100%)',
           }}
         >
-          {/* Banner PNG Image */}
-          <img
-            src={bannerImage}
-            alt="DownloaderZero Banner"
-            decoding="async"
-            onError={(e) => {
-              const img = e.currentTarget;
-              if (!img.dataset.cdnFallback) {
-                img.dataset.cdnFallback = '1';
-                img.src = BANNER_IMAGE_CDN;
-              }
-            }}
-            className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center will-change-[opacity] transition-opacity duration-500 ease-in-out ${
-              showVideo ? 'opacity-0' : 'opacity-100'
-            }`}
-            loading="eager"
-          />
-
-          {/* Banner MP4 Video (Paused cleanly whenever scrolled out, hidden, or in modal/other tabs) */}
-          <video
-            ref={videoRef}
-            src={videoSrc}
-            muted
-            playsInline
-            preload="metadata"
-            onEnded={() => setShowVideo(false)}
-            onError={() => {
-              if (videoSrc !== BANNER_VIDEO_CDN) {
-                setVideoSrc(BANNER_VIDEO_CDN);
-              } else {
-                setShowVideo(false);
-              }
-            }}
-            className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center will-change-[opacity] transition-opacity duration-500 ease-in-out ${
-              showVideo ? 'opacity-100' : 'opacity-0'
-            }`}
-          />
+          {showAnimatedVideo && animatedBannerUrl ? (
+            <video
+              ref={videoRef}
+              key={animatedBannerUrl}
+              src={animatedBannerUrl}
+              autoPlay
+              muted
+              playsInline
+              preload="auto"
+              onLoadedData={handleVideoPlaying}
+              onPlaying={handleVideoPlaying}
+              onTimeUpdate={handleVideoTimeUpdate}
+              onEnded={handleVideoEnded}
+              className={`absolute inset-0 w-full h-full object-cover object-top sm:object-center will-change-[opacity,transform] transition-[opacity,transform] duration-700 ease-in-out ${
+                videoVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-[1.018]'
+              }`}
+            />
+          ) : (
+            <img
+              src={bannerImage}
+              alt="DownloaderZero Banner"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                const img = e.currentTarget;
+                if (!img.dataset.cdnFallback) {
+                  img.dataset.cdnFallback = '1';
+                  img.src = BANNER_IMAGE_CDN;
+                }
+              }}
+              className="absolute inset-0 w-full h-full object-cover object-top sm:object-center"
+              loading="eager"
+            />
+          )}
         </div>
 
         {/* Ambient Dark-Blue Gradient Overlay (Zero blend-mode readback cost) */}

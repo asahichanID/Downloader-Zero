@@ -13,9 +13,11 @@ import {
   ChevronRight,
   ShieldCheck,
   Film,
-  AlertTriangle
+  AlertTriangle,
+  Menu
 } from 'lucide-react';
 import type { ServerMode } from '../types/index.ts';
+import type { BannerOptionId } from '../services/bannerStorage.ts';
 
 const ADMIN_ENTER_CODE = 'AA56026';
 const ADMIN_EXIT_CODE = 'AC52026';
@@ -33,8 +35,10 @@ interface SettingsFullViewProps {
   isAdmin?: boolean;
   onAdminAccessChange?: (active: boolean, openPanel?: boolean) => void;
   onOpenAdmin?: () => void;
-  bannerAlwaysPlay?: boolean;
-  onToggleBannerAlwaysPlay?: () => void;
+  activeBanner?: BannerOptionId;
+  isDownloadingBanner?: boolean;
+  bannerDownloadProgress?: number;
+  onOpenBannerSelector?: () => void;
 }
 
 export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
@@ -50,8 +54,10 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
   isAdmin = false,
   onAdminAccessChange,
   onOpenAdmin,
-  bannerAlwaysPlay = true,
-  onToggleBannerAlwaysPlay
+  activeBanner = 'default',
+  isDownloadingBanner = false,
+  bannerDownloadProgress = 0,
+  onOpenBannerSelector
 }) => {
   const [currentMode, setCurrentMode] = useState<ServerMode>(() => {
     try {
@@ -375,41 +381,39 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
           </button>
         </div>
 
-        {/* Banner Selalu Jalan (On/Off Toggle tepat di bawah Tema Tampilan) */}
-        <div className="p-4 flex items-center justify-between gap-3">
+        {/* Banner Animasi (3-line hamburger opens floating banner selector) */}
+        <div
+          onClick={onOpenBannerSelector}
+          className="p-4 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/70 dark:hover:bg-white/[0.02] transition-colors"
+        >
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-cyan-500/15 border border-sky-200 dark:border-cyan-400/30 flex items-center justify-center text-sky-600 dark:text-cyan-400 shrink-0">
               <Film className="w-4 h-4" />
             </div>
             <div className="min-w-0">
               <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
-                Banner Selalu Jalan
+                Banner Animasi
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                {bannerAlwaysPlay
-                  ? 'Aktif • Video banner terus diputar'
-                  : 'Nonaktif • Video jeda saat tidak terlihat'}
+                {isDownloadingBanner
+                  ? `Mengunduh Lily - Wuwa (${bannerDownloadProgress}%)`
+                  : activeBanner === 'lily_wuwa'
+                    ? 'Dipakai · Lily - Wuwa (Animasi)'
+                    : 'Dipakai · Default (PNG)'}
               </p>
             </div>
           </div>
 
           <button
             type="button"
-            role="switch"
-            aria-checked={bannerAlwaysPlay}
-            aria-label="Banner Selalu Jalan"
-            onClick={onToggleBannerAlwaysPlay}
-            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors duration-150 cursor-pointer ${
-              bannerAlwaysPlay
-                ? 'bg-sky-600 dark:bg-cyan-500 border-sky-500 dark:border-cyan-400'
-                : 'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700'
-            }`}
+            aria-label="Buka pilihan Banner Animasi"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenBannerSelector?.();
+            }}
+            className="w-11 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#0c1e44] dark:hover:bg-[#122a5c] border border-slate-200 dark:border-blue-500/30 text-slate-700 dark:text-cyan-300 flex items-center justify-center cursor-pointer active:scale-95 transition-transform shrink-0"
           >
-            <span
-              className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-150 ${
-                bannerAlwaysPlay ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
+            <Menu className="w-5 h-5" />
           </button>
         </div>
       </div>

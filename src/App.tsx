@@ -20,6 +20,7 @@ import { HistoryFullView } from './components/HistoryFullView.tsx';
 import { SettingsFullView } from './components/SettingsFullView.tsx';
 import { AdminPanelView } from './components/AdminPanelView.tsx';
 import { TermsModal } from './components/TermsModal.tsx';
+import { BannerSelectorModal } from './components/BannerSelectorModal.tsx';
 import {
   BerandaResultView,
   type BerandaStage,
@@ -43,6 +44,13 @@ import {
 } from './services/historyStorage.ts';
 import { registerWebViewOnce, logDownloadActivity } from './services/firebase.ts';
 import { initAutoRefresh, AUTO_REFRESH_PENDING_KEY } from './services/autoRefresh.ts';
+import {
+  getStoredActiveBanner,
+  setStoredActiveBanner,
+  loadLilyWuwaBannerFromPrivateStorage,
+  downloadAndPersistLilyWuwaBanner,
+  type BannerOptionId
+} from './services/bannerStorage.ts';
 import type {
   PlatformType,
   MediaType,
@@ -396,15 +404,49 @@ export default function App() {
     return () => window.removeEventListener('dz_server_mode_changed', handleServerModeChange);
   }, []);
 
-  // Banner video always-play preference (default: true / aktif)
-  const [bannerAlwaysPlay, setBannerAlwaysPlay] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('dz_banner_always_play');
-      return saved !== null ? saved === '1' : true;
-    } catch {
-      return true;
-    }
-  });
+  // Banner selection ('default' PNG vs 'lily_wuwa' animated video stored in private browser storage)
+  const [activeBanner, setActiveBanner] = useState<BannerOptionId>(() => getStoredActiveBanner());
+  const [isBannerModalOpen, setIsBannerModalOpen] = useState<boolean>(false);
+  const [lilyBannerUrl, setLilyBannerUrl] = useState<string | null>(null);
+  const [lilySizeBytes, setLilySizeBytes] = useState<number | null>(null);
+  const [isDownloadingLily, setIsDownloadingLily] = useState<boolean>(false);
+  const [lilyDownloadProgress, setLilyDownloadProgress] = useState<number>(0);
+  const [lilyLoadedBytes, setLilyLoadedBytes] = useState<number>(0);
+  const [lilyTotalBytes, setLilyTotalBytes] = useState<number>(0);
+  const [lilyDownloadError, setLilyDownloadError] = useState<string | null>(null);
+  const lilyObjectUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadLilyWuwaBannerFromPrivateStorage().then((res) => {
+      if (cancelled) return;
+      if (res) {
+        const urlObj = URL.createObjectURL(res.blob);
+        if (lilyObjectUrlRef.current) {
+          try { URL.revokeObjectURL(lilyObjectUrlRef.current); } catch {}
+        }
+        lilyObjectUrlRef.current = urlObj;
+        setLilyBannerUrl(urlObj);
+        setLilySizeBytes(res.sizeBytes);
+      } else {
+        // Ensure default PNG is used if animated banner hasn't been downloaded into private storage
+        setActiveBanner((prev) => {
+          if (prev === 'lily_wuwa') {
+            setStoredActiveBanner('default');
+            return 'default';
+          }
+          return prev;
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+      if (lilyObjectUrlRef.current) {
+        try { URL.revokeObjectURL(lilyObjectUrlRef.current); } catch {}
+        lilyObjectUrlRef.current = null;
+      }
+    };
+  }, []);
 
   // Auto-return to initial Beranda view 3 seconds after download completes
   useEffect(() => {
@@ -1788,15 +1830,44 @@ export default function App() {
   const handleGoToHistory = useCallback(() => setActiveTab('riwayat'), []);
   const handleBackToBeranda = useCallback(() => setActiveTab('beranda'), []);
   const handleToggleTheme = useCallback(() => setIsDark((prev) => !prev), []);
-  const handleToggleBannerAlwaysPlay = useCallback(() => {
-    setBannerAlwaysPlay((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('dz_banner_always_play', next ? '1' : '0');
-      } catch {}
-      return next;
-    });
-  }, []);
+  const handleOpenBannerSelector = useCallback(() => setIsBannerModalOpen(true), []);
+  const handleCloseBannerSelector = useCallback(() => setIsBannerModalOpen(false), []);
+
+  const handleSelectBanner = useCallback((id: BannerOptionId) => {
+    if (id === 'lily_wuwa' && !lilyBannerUrl) return;
+    setActiveBanner(id);
+    setStoredActiveBanner(id);
+  }, [lilyBannerUrl]);
+
+  const handleDownloadLilyBanner = useCallback(async () => {
+    if (isDownloadingLily || lilyBannerUrl) return;
+    setIsDownloadingLily(true);
+    setLilyDownloadError(null);
+    setLilyDownloadProgress(0);
+    setLilyLoadedBytes(0);
+    setLilyTotalBytes(0);
+
+    try {
+      const result = await downloadAndPersistLilyWuwaBanner((pct, loaded, total) => {
+        setLilyDownloadProgress(pct);
+        setLilyLoadedBytes(loaded);
+        if (total > 0) setLilyTotalBytes(total);
+      });
+
+      const urlObj = URL.createObjectURL(result.blob);
+      if (lilyObjectUrlRef.current) {
+        try { URL.revokeObjectURL(lilyObjectUrlRef.current); } catch {}
+      }
+      lilyObjectUrlRef.current = urlObj;
+      setLilyBannerUrl(urlObj);
+      setLilySizeBytes(result.sizeBytes);
+      setLilyDownloadProgress(100);
+    } catch (err: any) {
+      setLilyDownloadError(err?.message || 'Gagal mengunduh banner animasi.');
+    } finally {
+      setIsDownloadingLily(false);
+    }
+  }, [isDownloadingLily, lilyBannerUrl]);
   const handleOpenTerms = useCallback((tab: 'terms' | 'privacy') => {
     setTermsDefaultTab(tab);
     setIsTermsOpen(true);
@@ -1821,20 +1892,23 @@ export default function App() {
   }, [isBusy]);
 
   const isBannerPaused =
-    !bannerAlwaysPlay && (
-      activeTab !== 'beranda' ||
-      berandaStage !== 'idle' ||
-      isFormatModalOpen ||
-      isPlatformsModalOpen ||
-      isTermsOpen ||
-      Boolean(playingItem)
-    );
+    activeTab !== 'beranda' ||
+    berandaStage !== 'idle' ||
+    isFormatModalOpen ||
+    isPlatformsModalOpen ||
+    isTermsOpen ||
+    isBannerModalOpen ||
+    Boolean(playingItem);
 
   return (
     <div className="relative min-h-screen w-full bg-[#f0f4fa] dark:bg-[#050B18] text-slate-900 dark:text-slate-100 flex flex-col items-center overflow-x-hidden transition-colors duration-200">
       {/* Top Banner (Spans 100% full-width across the screen) */}
       <header className="w-full bg-[#f0f4fa] dark:bg-[#050B18]">
-        <BannerDZ paused={isBannerPaused} alwaysPlay={bannerAlwaysPlay} />
+        <BannerDZ
+          activeBanner={activeBanner}
+          animatedBannerUrl={lilyBannerUrl}
+          paused={isBannerPaused}
+        />
       </header>
 
       {/* Main Content Area (Spans full width on mobile/Android, gracefully expanding on larger screens) */}
@@ -1945,8 +2019,10 @@ export default function App() {
               isAdmin={isAdmin}
               onAdminAccessChange={handleAdminAccessChange}
               onOpenAdmin={handleOpenAdmin}
-              bannerAlwaysPlay={bannerAlwaysPlay}
-              onToggleBannerAlwaysPlay={handleToggleBannerAlwaysPlay}
+              activeBanner={activeBanner}
+              isDownloadingBanner={isDownloadingLily}
+              bannerDownloadProgress={lilyDownloadProgress}
+              onOpenBannerSelector={handleOpenBannerSelector}
             />
           )
         )}
@@ -2018,6 +2094,23 @@ export default function App() {
         isOpen={isTermsOpen}
         onClose={handleCloseTerms}
         defaultTab={termsDefaultTab}
+      />
+
+      {/* MODAL 6: Banner Animasi Selector (Floating modal triggered by 3-line hamburger in Settings) */}
+      <BannerSelectorModal
+        isOpen={isBannerModalOpen}
+        onClose={handleCloseBannerSelector}
+        activeBanner={activeBanner}
+        onSelectBanner={handleSelectBanner}
+        isLilyDownloaded={Boolean(lilyBannerUrl)}
+        lilyBannerUrl={lilyBannerUrl}
+        lilySizeBytes={lilySizeBytes}
+        isDownloadingLily={isDownloadingLily}
+        downloadProgress={lilyDownloadProgress}
+        loadedBytes={lilyLoadedBytes}
+        totalBytes={lilyTotalBytes}
+        downloadError={lilyDownloadError}
+        onDownloadLily={handleDownloadLilyBanner}
       />
     </div>
   );
