@@ -14,7 +14,8 @@ import {
   ShieldCheck,
   Film,
   AlertTriangle,
-  Menu
+  Menu,
+  Zap
 } from 'lucide-react';
 import type { ServerMode } from '../types/index.ts';
 import type { BannerOptionId } from '../services/bannerStorage.ts';
@@ -40,6 +41,8 @@ interface SettingsFullViewProps {
   bannerDownloadProgress?: number;
   downloadingBannerLabel?: string;
   onOpenBannerSelector?: () => void;
+  instantDownload?: boolean;
+  onToggleInstantDownload?: () => void;
 }
 
 export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
@@ -59,7 +62,9 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
   isDownloadingBanner = false,
   bannerDownloadProgress = 0,
   downloadingBannerLabel = 'Banner Animasi',
-  onOpenBannerSelector
+  onOpenBannerSelector,
+  instantDownload = false,
+  onToggleInstantDownload
 }) => {
   const [currentMode, setCurrentMode] = useState<ServerMode>(() => {
     try {
@@ -422,7 +427,62 @@ export const SettingsFullView: React.FC<SettingsFullViewProps> = React.memo(({
         </div>
       </div>
 
-      {/* 3. Bersihkan Riwayat */}
+      {/* 3. Unduh Instan (Langsung unduh setelah pilih resolusi tanpa pratinjau) */}
+      <div
+        onClick={() => onToggleInstantDownload?.()}
+        className="dz-card rounded-2xl p-4 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/70 dark:hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition-colors ${
+            instantDownload
+              ? 'bg-emerald-100 dark:bg-emerald-500/20 border-emerald-300 dark:border-emerald-400/40 text-emerald-600 dark:text-emerald-400'
+              : 'bg-sky-100 dark:bg-cyan-500/15 border-sky-200 dark:border-cyan-400/30 text-sky-600 dark:text-cyan-400'
+          }`}>
+            <Zap className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                Unduh Instan
+              </h3>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                instantDownload
+                  ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+              }`}>
+                {instantDownload ? 'Aktif' : 'Nonaktif'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+              Langsung unduh setelah pilih kualitas tanpa pratinjau
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={instantDownload}
+          aria-label="Aktifkan Unduh Instan"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleInstantDownload?.();
+          }}
+          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors duration-200 cursor-pointer focus:outline-none ${
+            instantDownload
+              ? 'bg-emerald-500 dark:bg-emerald-500 border-emerald-600 dark:border-emerald-400 shadow-sm shadow-emerald-500/30'
+              : 'bg-slate-200 dark:bg-[#0c1e44] border-slate-300 dark:border-blue-500/30'
+          }`}
+        >
+          <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+              instantDownload ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* 4. Bersihkan Riwayat */}
       <div className="dz-card rounded-2xl p-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-xl bg-red-100 dark:bg-red-600/20 border border-red-200 dark:border-red-500/30 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0">

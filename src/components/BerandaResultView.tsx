@@ -306,6 +306,8 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
 
   const [photoIndex, setPhotoIndex] = useState<number>(0);
   const [videoError, setVideoError] = useState<boolean>(false);
+  const [isVideoBuffering, setIsVideoBuffering] = useState<boolean>(true);
+  const [videoRetryCount, setVideoRetryCount] = useState<number>(0);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState<boolean>(false);
 
   // Active TeraBox file being previewed (defaults to first selected or first file)
@@ -332,11 +334,13 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
 
   useEffect(() => {
     setVideoError(false);
+    setIsVideoBuffering(true);
+    setVideoRetryCount(0);
     setPhotoIndex(0);
     if (teraboxFiles.length > 0) {
       setActiveTeraboxPreviewId(teraboxFiles[0].id);
     }
-  }, [media?.id]);
+  }, [media?.id, prepared?.previewProxyUrl]);
 
   // Determine active Spotify track if playlist
   const spotifyTracks: AudioTrack[] = media?.tracks || [];
@@ -633,16 +637,42 @@ export const BerandaResultView: React.FC<BerandaResultViewProps> = React.memo(({
       {effectiveMediaType === 'video' && (
         <div className="relative w-full aspect-video max-h-[440px] rounded-2xl sm:rounded-3xl overflow-hidden bg-slate-950 ring-1 ring-slate-900/10 dark:ring-white/10 shadow-2xl shadow-slate-900/20 dark:shadow-black/80">
           {activeVideoUrl && !videoError ? (
-            <video
-              key={activeVideoUrl}
-              src={activeVideoUrl}
-              poster={displayThumbnail || undefined}
-              controls
-              playsInline
-              preload={media.platform === 'tiktok' ? 'auto' : 'metadata'}
-              onError={() => setVideoError(true)}
-              className="w-full h-full object-contain bg-black"
-            />
+            <>
+              <video
+                key={`${activeVideoUrl}_${videoRetryCount}`}
+                src={
+                  videoRetryCount > 0
+                    ? `${activeVideoUrl}${activeVideoUrl.includes('?') ? '&' : '?'}cb=${videoRetryCount}`
+                    : activeVideoUrl
+                }
+                poster={displayThumbnail || undefined}
+                controls
+                playsInline
+                preload="auto"
+                onLoadStart={() => setIsVideoBuffering(true)}
+                onWaiting={() => setIsVideoBuffering(true)}
+                onLoadedData={() => setIsVideoBuffering(false)}
+                onCanPlay={() => setIsVideoBuffering(false)}
+                onPlaying={() => setIsVideoBuffering(false)}
+                onSeeked={() => setIsVideoBuffering(false)}
+                onError={() => {
+                  if (videoRetryCount < 1) {
+                    setIsVideoBuffering(true);
+                    setVideoRetryCount((c) => c + 1);
+                  } else {
+                    setIsVideoBuffering(false);
+                    setVideoError(true);
+                  }
+                }}
+                className="w-full h-full object-contain bg-black"
+              />
+              {isVideoBuffering && (
+                <div className="pointer-events-none absolute top-3 left-3 z-10 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950/80 border border-cyan-400/35 text-white text-[11px] font-semibold shadow-lg">
+                  <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
+                  <span>Memuat stream video...</span>
+                </div>
+              )}
+            </>
           ) : (
             <div className="relative w-full h-full flex flex-col items-center justify-center bg-slate-900 text-slate-200">
               {displayThumbnail && (

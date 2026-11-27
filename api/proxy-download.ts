@@ -200,8 +200,11 @@ async function muxVideoAndAudioToMp4(videoBuffer: Buffer, audioBuffer: Buffer | 
 const spotifyProcessCache = new Map<string, { buffer: Buffer; timestamp: number }>();
 // Short-lived cache for DASH video+audio muxed MP4 streams
 const dashMuxCache = new Map<string, { buffer: Buffer; timestamp: number }>();
+const inFlightDashMux = new Map<string, Promise<Buffer>>();
 // Short-lived cache for target-resolution normalized MP4 streams
 const videoNormalizeCache = new Map<string, { buffer: Buffer; timestamp: number }>();
+// Per-host winning header strategy index so Range requests connect on the 1st try
+const winningStrategyByHost = new Map<string, number>();
 
 function parseTargetShortSide(rawRes: string): number | null {
   const r = String(rawRes || '').toLowerCase().trim();
@@ -353,7 +356,7 @@ export default async function handler(req: any, res: any) {
     const urlParamIdx = rawReqUrl.indexOf('url=');
     if (urlParamIdx !== -1) {
       let extracted = rawReqUrl.slice(urlParamIdx + 4);
-      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate|duration|audioUrl|res|original|prepare)=/);
+      const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate|duration|audioUrl|res|original|prepare|cb)=/);
       if (nextParamMatch && nextParamMatch.index !== undefined) {
         extracted = extracted.slice(0, nextParamMatch.index);
       }
@@ -407,12 +410,12 @@ export default async function handler(req: any, res: any) {
     const rangeHeader = typeof req.headers?.range === 'string' ? req.headers.range : undefined;
 
     if (!targetUrl || typeof targetUrl !== 'string' || !/^https?:\/\//i.test(targetUrl) || !isSafePublicUrl(targetUrl).safe) {
-      res.status(400).send('Target URL tidak valid atau diblokir.');
+      res.status(400).json({ success: false, error: 'Target URL tidak valid atau diblokir.' });
       return;
     }
 
     if (sourceUrl && !isSafePublicUrl(sourceUrl).safe) {
-      res.status(400).send('Source URL tidak valid atau diblokir.');
+      res.status(400).json({ success: false, error: 'Source URL tidak valid atau diblokir.' });
       return;
     }
 
@@ -421,7 +424,7 @@ export default async function handler(req: any, res: any) {
       try { audioUrl = decodeURIComponent(audioUrl); } catch {}
     }
     if (audioUrl && (!/^https?:\/\//i.test(audioUrl) || !isSafePublicUrl(audioUrl).safe)) {
-      res.status(400).send('Audio URL tidak valid atau diblokir.');
+      res.status(400).json({ success: false, error: 'Audio URL tidak valid atau diblokir.' });
       return;
     }
 
@@ -510,7 +513,7 @@ export default async function handler(req: any, res: any) {
         }
 
         if (!resolvedOk || directAudioUrl.includes('spotify.com') || directAudioUrl.includes('spotify.link')) {
-          res.status(502).send('Gagal menyelesaikan tautan lagu penuh Spotify dari server sumber.');
+          res.status(502).json({ success: false, error: 'Gagal menyelesaikan tautan lagu penuh Spotify dari server sumber.' });
           return;
         }
       }
@@ -547,7 +550,7 @@ export default async function handler(req: any, res: any) {
       }
 
       if (!fetchedAudio.ok || !fetchedAudio.buffer) {
-        res.status(fetchedAudio.status || 502).send(fetchedAudio.errMsg || 'Gagal mengunduh audio Spotify dari server sumber.');
+        res.status(fetchedAudio.status || 502).json({ success: false, error: fetchedAudio.errMsg || 'Gagal mengunduh audio Spotify dari server sumber.' });
         return;
       }
 
@@ -559,7 +562,7 @@ export default async function handler(req: any, res: any) {
           rawAudioBuffer = await ensureMp3TargetBitrate(rawAudioBuffer, targetSpotifyBitrate);
         } catch (encErr: any) {
           console.error('[api/proxy-download] Spotify MP3 bitrate transcode failed:', encErr?.message || encErr);
-          res.status(502).send(`Gagal mengonversi audio Spotify ke ${targetSpotifyBitrate} CBR.`);
+          res.status(502).json({ success: false, error: `Gagal mengonversi audio Spotify ke ${targetSpotifyBitrate} CBR.` });
           return;
         }
       }
@@ -699,9 +702,10 @@ export default async function handler(req: any, res: any) {
       platformReferer = 'https://x.com/';
     }
 
-    const fetchCandidateConfigs: Array<{ headers: Record<string, string> }> = [
-      // Strategy 1: Clean browser request without Referer (standard for most signed media CDNs)
+    const fetchCandidateConfigs: Array<{ idx: number; headers: Record<string, string> }> = [
+      // Strategy 0: Clean browser request without Referer (standard for most signed media CDNs)
       {
+        idx: 0,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
           'Accept': '*/*',
@@ -709,16 +713,18 @@ export default async function handler(req: any, res: any) {
           'Sec-Fetch-Mode': 'no-cors'
         }
       },
-      // Strategy 2: With specific platform referer
+      // Strategy 1: With specific platform referer
       ...(platformReferer ? [{
+        idx: 1,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
           'Accept': '*/*',
           'Referer': platformReferer
         }
       }] : []),
-      // Strategy 3: Mobile Safari User-Agent
+      // Strategy 2: Mobile Safari User-Agent
       {
+        idx: 2,
         headers: {
           'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
           'Accept': '*/*',
@@ -727,25 +733,64 @@ export default async function handler(req: any, res: any) {
       }
     ];
 
+    const getHostKey = (u: string): string => {
+      try {
+        return new URL(u).hostname.toLowerCase();
+      } catch {
+        return '';
+      }
+    };
+
+    const getOrderedFetchConfigs = (u: string) => {
+      const host = getHostKey(u);
+      const preferredIdx = host ? winningStrategyByHost.get(host) : undefined;
+      if (preferredIdx === undefined) return fetchCandidateConfigs;
+      const preferred = fetchCandidateConfigs.find((c) => c.idx === preferredIdx);
+      if (!preferred) return fetchCandidateConfigs;
+      return [preferred, ...fetchCandidateConfigs.filter((c) => c.idx !== preferredIdx)];
+    };
+
+    const rememberWinningStrategy = (u: string, idx: number) => {
+      const host = getHostKey(u);
+      if (!host) return;
+      if (winningStrategyByHost.size > 300) {
+        const firstKey = winningStrategyByHost.keys().next().value;
+        if (firstKey) winningStrategyByHost.delete(firstKey);
+      }
+      winningStrategyByHost.set(host, idx);
+    };
+
     const fetchWithHeaderTimeout = async (
       target: string,
       headers: Record<string, string>,
-      headerTimeoutMs = 15000,
-      method: 'GET' | 'HEAD' = 'GET'
+      headerTimeoutMs = 9000,
+      method: 'GET' | 'HEAD' = 'GET',
+      externalSignal?: AbortSignal
     ) => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), headerTimeoutMs);
+      const onExternalAbort = () => controller.abort();
+      if (externalSignal) {
+        if (externalSignal.aborted) {
+          clearTimeout(timer);
+          controller.abort();
+        } else {
+          externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+        }
+      }
       try {
-        const res = await fetch(target, {
+        const upstreamRes = await fetch(target, {
           method,
           headers,
           redirect: 'follow',
           signal: controller.signal
         });
         clearTimeout(timer);
-        return res;
+        if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+        return upstreamRes;
       } catch (err) {
         clearTimeout(timer);
+        if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
         throw err;
       }
     };
@@ -866,47 +911,60 @@ export default async function handler(req: any, res: any) {
       let muxedMp4: Buffer | null = dashMuxCache.get(muxKey)?.buffer || null;
 
       if (!muxedMp4) {
-        const fetchFullStreamBuffer = async (streamUrl: string): Promise<Buffer> => {
-          for (const cfg of fetchCandidateConfigs) {
-            try {
-              const candidate = await fetchWithHeaderTimeout(streamUrl, { ...cfg.headers }, 20000);
-              if (candidate.ok && candidate.body) {
-                const buf = Buffer.from(await candidate.arrayBuffer());
-                if (buf.length > 200) {
-                  const headStr = buf.subarray(0, 64).toString('utf8').trim();
-                  if (!headStr.startsWith('<!DOCTYPE') && !headStr.startsWith('<html') && !headStr.startsWith('{"error')) {
-                    return buf;
+        let pendingMux = inFlightDashMux.get(muxKey);
+        if (!pendingMux) {
+          pendingMux = (async () => {
+            const fetchFullStreamBuffer = async (streamUrl: string): Promise<Buffer> => {
+              for (const cfg of getOrderedFetchConfigs(streamUrl)) {
+                try {
+                  const candidate = await fetchWithHeaderTimeout(streamUrl, { ...cfg.headers }, 15000);
+                  if (candidate.ok && candidate.body) {
+                    const buf = Buffer.from(await candidate.arrayBuffer());
+                    if (buf.length > 200) {
+                      const headStr = buf.subarray(0, 64).toString('utf8').trim();
+                      if (!headStr.startsWith('<!DOCTYPE') && !headStr.startsWith('<html') && !headStr.startsWith('{"error')) {
+                        rememberWinningStrategy(streamUrl, cfg.idx);
+                        return buf;
+                      }
+                    }
+                  } else {
+                    try { await candidate.body?.cancel(); } catch {}
                   }
-                }
+                } catch {}
               }
-            } catch {}
-          }
-          throw new Error('Gagal mengunduh stream media sumber untuk penggabungan resolusi.');
-        };
+              throw new Error('Gagal mengunduh stream media sumber untuk penggabungan resolusi.');
+            };
 
-        let vidBuf: Buffer;
-        let audBuf: Buffer | null;
-        try {
-          [vidBuf, audBuf] = await Promise.all([
-            fetchFullStreamBuffer(targetUrl),
-            audioUrl ? fetchFullStreamBuffer(audioUrl) : Promise.resolve(null)
-          ]);
-        } catch (firstMuxErr) {
-          const refreshed = await tryReResolveFreshUrl();
-          if (!refreshed?.url) throw firstMuxErr;
-          targetUrl = refreshed.url;
-          if (refreshed.dashAudioUrl) audioUrl = refreshed.dashAudioUrl;
-          [vidBuf, audBuf] = await Promise.all([
-            fetchFullStreamBuffer(targetUrl),
-            audioUrl ? fetchFullStreamBuffer(audioUrl) : Promise.resolve(null)
-          ]);
+            let vidBuf: Buffer;
+            let audBuf: Buffer | null;
+            try {
+              [vidBuf, audBuf] = await Promise.all([
+                fetchFullStreamBuffer(targetUrl),
+                audioUrl ? fetchFullStreamBuffer(audioUrl) : Promise.resolve(null)
+              ]);
+            } catch (firstMuxErr) {
+              const refreshed = await tryReResolveFreshUrl();
+              if (!refreshed?.url) throw firstMuxErr;
+              targetUrl = refreshed.url;
+              if (refreshed.dashAudioUrl) audioUrl = refreshed.dashAudioUrl;
+              [vidBuf, audBuf] = await Promise.all([
+                fetchFullStreamBuffer(targetUrl),
+                audioUrl ? fetchFullStreamBuffer(audioUrl) : Promise.resolve(null)
+              ]);
+            }
+
+            const resultBuf = await muxVideoAndAudioToMp4(vidBuf, audBuf);
+            dashMuxCache.set(muxKey, { buffer: resultBuf, timestamp: Date.now() });
+            setTimeout(() => {
+              dashMuxCache.delete(muxKey);
+            }, 180000);
+            return resultBuf;
+          })().finally(() => {
+            inFlightDashMux.delete(muxKey);
+          });
+          inFlightDashMux.set(muxKey, pendingMux);
         }
-
-        muxedMp4 = await muxVideoAndAudioToMp4(vidBuf, audBuf);
-        dashMuxCache.set(muxKey, { buffer: muxedMp4, timestamp: Date.now() });
-        setTimeout(() => {
-          dashMuxCache.delete(muxKey);
-        }, 180000);
+        muxedMp4 = await pendingMux;
       }
 
       if (isPrepareOnly) {
@@ -956,110 +1014,21 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // Enforce exact requested target resolution for single-stream platforms (TikTok) ONLY when NOT Original
-    const targetShortSide = !isOriginalRequest && !wantsMp3OutputEarly && platform === 'tiktok'
-      ? parseTargetShortSide(rawResParam)
-      : null;
-
-    if (targetShortSide !== null) {
-      const normCacheKey = `${targetUrl}::${targetShortSide}`;
-      let normalizedMp4: Buffer | null = videoNormalizeCache.get(normCacheKey)?.buffer || null;
-
-      if (!normalizedMp4) {
-        const fetchFullVideoBuffer = async (streamUrl: string): Promise<Buffer> => {
-          for (const cfg of fetchCandidateConfigs) {
-            try {
-              const candidate = await fetchWithHeaderTimeout(streamUrl, { ...cfg.headers }, 20000);
-              if (candidate.ok && candidate.body) {
-                const buf = Buffer.from(await candidate.arrayBuffer());
-                if (buf.length > 1024) {
-                  const headStr = buf.subarray(0, 64).toString('utf8').trim();
-                  if (!headStr.startsWith('<!DOCTYPE') && !headStr.startsWith('<html') && !headStr.startsWith('{"error')) {
-                    return buf;
-                  }
-                }
-              }
-            } catch {}
-          }
-          throw new Error('Gagal mengunduh stream video dari server sumber.');
-        };
-
-        let rawVidBuf: Buffer;
-        try {
-          rawVidBuf = await fetchFullVideoBuffer(targetUrl);
-        } catch (firstVidErr) {
-          const refreshed = await tryReResolveFreshUrl();
-          if (!refreshed?.url) throw firstVidErr;
-          targetUrl = refreshed.url;
-          rawVidBuf = await fetchFullVideoBuffer(targetUrl);
-        }
-
-        normalizedMp4 = await ensureMp4TargetResolution(rawVidBuf, targetShortSide);
-        videoNormalizeCache.set(normCacheKey, { buffer: normalizedMp4, timestamp: Date.now() });
-        setTimeout(() => {
-          videoNormalizeCache.delete(normCacheKey);
-        }, 180000);
-      }
-
-      if (isPrepareOnly) {
-        res.setHeader('Cache-Control', 'no-store');
-        res.json({
-          success: true,
-          ready: true,
-          size: normalizedMp4.length,
-          resolution: `${targetShortSide}p`,
-          original: false
-        });
-        return;
-      }
-
-      res.setHeader('Content-Type', 'video/mp4');
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader(
-        'Content-Disposition',
-        isInline
-          ? `inline; filename="${sanitizedFilename}"`
-          : `attachment; filename="${sanitizedFilename}"; filename*=UTF-8''${encodeURIComponent(sanitizedFilename)}`
-      );
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges, X-Video-Resolution');
-      res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('X-Video-Resolution', `${targetShortSide}p`);
-
-      if (rangeHeader) {
-        const totalLen = normalizedMp4.length;
-        const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
-        if (match) {
-          const start = match[1] ? parseInt(match[1], 10) : 0;
-          const end = match[2] ? Math.min(parseInt(match[2], 10), totalLen - 1) : totalLen - 1;
-          if (!isNaN(start) && !isNaN(end) && start <= end && start < totalLen) {
-            const sliced = normalizedMp4.subarray(start, end + 1);
-            res.status(206);
-            res.setHeader('Content-Range', `bytes ${start}-${end}/${totalLen}`);
-            res.setHeader('Content-Length', sliced.length);
-            res.send(sliced);
-            return;
-          }
-        }
-      }
-
-      res.setHeader('Content-Length', normalizedMp4.length);
-      res.send(normalizedMp4);
-      return;
-    }
+    // Stream native MP4 directly via high-speed zero-copy HTTP Range pass-through without slow CPU re-encoding
+    void [parseTargetShortSide, ensureMp4TargetResolution, videoNormalizeCache];
 
     // Fast non-destructive Original prepare probe (HEAD + lightweight Range: bytes=0-1023 fallback)
     if (isPrepareOnly && !wantsMp3OutputEarly) {
       const probeOriginalStream = async (candidateTarget: string): Promise<{ ok: boolean; size?: number }> => {
-        for (const cfg of fetchCandidateConfigs) {
+        for (const cfg of getOrderedFetchConfigs(candidateTarget)) {
           try {
-            const headRes = await fetchWithHeaderTimeout(candidateTarget, { ...cfg.headers }, 7000, 'HEAD');
+            const headRes = await fetchWithHeaderTimeout(candidateTarget, { ...cfg.headers }, 5000, 'HEAD');
             if (headRes.ok) {
               const ct = (headRes.headers.get('content-type') || '').toLowerCase();
               if (!ct.includes('text/html') && !ct.includes('application/json')) {
                 const cl = Number(headRes.headers.get('content-length') || 0);
                 if (Number.isFinite(cl) && cl > 1024) {
+                  rememberWinningStrategy(candidateTarget, cfg.idx);
                   return { ok: true, size: cl };
                 }
               }
@@ -1067,12 +1036,12 @@ export default async function handler(req: any, res: any) {
           } catch {}
         }
 
-        for (const cfg of fetchCandidateConfigs) {
+        for (const cfg of getOrderedFetchConfigs(candidateTarget)) {
           try {
             const rangeRes = await fetchWithHeaderTimeout(
               candidateTarget,
               { ...cfg.headers, Range: 'bytes=0-1023' },
-              9000,
+              6000,
               'GET'
             );
             if (rangeRes.ok && rangeRes.body) {
@@ -1093,6 +1062,7 @@ export default async function handler(req: any, res: any) {
               if (looksLikeErr) {
                 continue;
               }
+              rememberWinningStrategy(candidateTarget, cfg.idx);
               let totalSize = 0;
               const cr = rangeRes.headers.get('content-range') || '';
               const crMatch = cr.match(/bytes\s+\d+-\d+\/(\d+)/i);
@@ -1103,6 +1073,8 @@ export default async function handler(req: any, res: any) {
                 totalSize = Number.isFinite(cl) && cl > 1024 ? cl : 0;
               }
               return { ok: true, size: totalSize > 0 ? totalSize : undefined };
+            } else {
+              try { await rangeRes.body?.cancel(); } catch {}
             }
           } catch {}
         }
@@ -1134,46 +1106,88 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
+    const streamAbortController = new AbortController();
+    let clientAborted = false;
+    let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
+    res.on?.('close', () => {
+      if (!res.writableFinished) {
+        clientAborted = true;
+        streamAbortController.abort();
+        try {
+          void activeReader?.cancel();
+        } catch {}
+      }
+    });
+
     let remoteRes: globalThis.Response | null = null;
     let lastStatus = 0;
 
-    for (const cfg of fetchCandidateConfigs) {
-      try {
-        const reqHeaders: Record<string, string> = { ...cfg.headers };
-        if (rangeHeader) {
-          reqHeaders['Range'] = rangeHeader;
+    const tryFetchUpstream = async (candidateTarget: string): Promise<globalThis.Response | null> => {
+      for (const cfg of getOrderedFetchConfigs(candidateTarget)) {
+        if (clientAborted) return null;
+        try {
+          const reqHeaders: Record<string, string> = { ...cfg.headers };
+          if (rangeHeader) {
+            reqHeaders['Range'] = rangeHeader;
+          }
+          const resCandidate = await fetchWithHeaderTimeout(
+            candidateTarget,
+            reqHeaders,
+            7500,
+            'GET',
+            streamAbortController.signal
+          );
+          const candidateCt = (resCandidate.headers.get('content-type') || '').toLowerCase();
+          if (resCandidate.ok && resCandidate.body && !candidateCt.includes('text/html')) {
+            rememberWinningStrategy(candidateTarget, cfg.idx);
+            return resCandidate;
+          }
+          lastStatus = candidateCt.includes('text/html') ? 502 : resCandidate.status;
+          try { await resCandidate.body?.cancel(); } catch {}
+        } catch (e: any) {
+          if (clientAborted) return null;
+          console.warn('[proxy-download] Candidate fetch notice:', e?.message || e);
         }
-        const resCandidate = await fetchWithHeaderTimeout(targetUrl, reqHeaders, 15000);
-        if (resCandidate.ok && resCandidate.body) {
-          remoteRes = resCandidate;
-          break;
-        } else {
-          lastStatus = resCandidate.status;
-        }
-      } catch (e: any) {
-        console.warn('[proxy-download] Candidate fetch notice:', e?.message || e);
       }
-    }
+      return null;
+    };
 
-    // If CDN link expired or returned 403/404/410, attempt on-the-fly re-resolution
-    if ((!remoteRes || !remoteRes.ok) && sourceUrl && /^https?:\/\//i.test(sourceUrl)) {
+    const isInvalidMediaPayload = (chunk: Uint8Array, ctHeader: string): boolean => {
+      if (ctHeader.toLowerCase().includes('text/html')) return true;
+      const sampleText = Buffer.from(chunk.subarray(0, 512))
+        .toString('utf-8')
+        .replace(/^\uFEFF/, '')
+        .trim();
+      const isHtmlDoc =
+        /^<!doctype\s+html/i.test(sampleText) ||
+        /^<html[\s>]/i.test(sampleText) ||
+        /^<head[\s>]/i.test(sampleText) ||
+        /^<script[\s>]/i.test(sampleText) ||
+        /^<!--/.test(sampleText) ||
+        sampleText.includes('<title>Error') ||
+        sampleText.includes('Attention Required! | Cloudflare');
+      const isJsonError =
+        sampleText.startsWith('{"docs_url"') ||
+        sampleText.startsWith('{"error_code"') ||
+        sampleText.startsWith('{"success":false') ||
+        (sampleText.startsWith('{') && sampleText.includes('"status":false'));
+      return isHtmlDoc || isJsonError;
+    };
+
+    remoteRes = await tryFetchUpstream(targetUrl);
+
+    // If CDN link expired or returned 403/404/410/text/html, attempt on-the-fly re-resolution
+    if ((!remoteRes || !remoteRes.ok) && !clientAborted && sourceUrl && /^https?:\/\//i.test(sourceUrl)) {
       const freshTarget = await tryReResolveFreshUrl();
       if (freshTarget?.url && freshTarget.url !== targetUrl && freshTarget.url.startsWith('http')) {
         targetUrl = freshTarget.url;
-        for (const cfg of fetchCandidateConfigs) {
-          try {
-            const reqHeaders: Record<string, string> = { ...cfg.headers };
-            if (rangeHeader) {
-              reqHeaders['Range'] = rangeHeader;
-            }
-            const resCandidate = await fetchWithHeaderTimeout(targetUrl, reqHeaders, 15000);
-            if (resCandidate.ok && resCandidate.body) {
-              remoteRes = resCandidate;
-              break;
-            }
-          } catch {}
-        }
+        remoteRes = await tryFetchUpstream(targetUrl);
       }
+    }
+
+    if (clientAborted) {
+      return;
     }
 
     if (!remoteRes || !remoteRes.ok || !remoteRes.body) {
@@ -1181,35 +1195,52 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const reader = remoteRes.body.getReader();
-    const { done: initialDone, value: firstChunk } = await reader.read();
+    let reader = remoteRes.body.getReader();
+    activeReader = reader;
+    let { done: initialDone, value: firstChunk } = await reader.read();
+
+    if (clientAborted) {
+      try { await reader.cancel(); } catch {}
+      return;
+    }
 
     if (initialDone || !firstChunk || firstChunk.length === 0) {
       res.status(502).json({ success: false, error: 'Berkas kosong dari server sumber.' });
       return;
     }
 
-    // Check first chunk for text/html or JSON error signatures
-    const sampleText = Buffer.from(firstChunk.slice(0, 512)).toString('utf-8').trim();
-    const isHtmlDoc =
-      sampleText.startsWith('<!DOCTYPE html') ||
-      sampleText.startsWith('<!doctype html') ||
-      sampleText.startsWith('<html') ||
-      sampleText.includes('<title>Error') ||
-      sampleText.includes('Attention Required! | Cloudflare');
-    const isJsonError =
-      sampleText.startsWith('{"docs_url"') ||
-      sampleText.startsWith('{"error_code"') ||
-      sampleText.startsWith('{"success":false') ||
-      (sampleText.startsWith('{') && sampleText.includes('"status":false'));
-
-    if (isHtmlDoc || isJsonError) {
-      console.warn('[api/proxy-download] Upstream served HTML/JSON error text instead of binary media:', sampleText.slice(0, 150));
-      res.status(502).json({
-        success: false,
-        error: 'Tautan unduhan tidak menghasilkan berkas media yang valid dari server sumber.'
-      });
-      return;
+    // Check first chunk for text/html or JSON error signatures; re-resolve once if needed
+    if (isInvalidMediaPayload(firstChunk, remoteRes.headers.get('content-type') || '')) {
+      try { await reader.cancel(); } catch {}
+      let recovered = false;
+      if (!clientAborted && sourceUrl && /^https?:\/\//i.test(sourceUrl)) {
+        const freshTarget = await tryReResolveFreshUrl();
+        if (freshTarget?.url && freshTarget.url !== targetUrl && freshTarget.url.startsWith('http')) {
+          targetUrl = freshTarget.url;
+          const retryRes = await tryFetchUpstream(targetUrl);
+          if (retryRes && retryRes.ok && retryRes.body) {
+            const retryReader = retryRes.body.getReader();
+            activeReader = retryReader;
+            const retryFirst = await retryReader.read();
+            if (!retryFirst.done && retryFirst.value && retryFirst.value.length > 0 && !isInvalidMediaPayload(retryFirst.value, retryRes.headers.get('content-type') || '')) {
+              remoteRes = retryRes;
+              reader = retryReader;
+              firstChunk = retryFirst.value;
+              recovered = true;
+            } else {
+              try { await retryReader.cancel(); } catch {}
+            }
+          }
+        }
+      }
+      if (!recovered) {
+        console.warn('[api/proxy-download] Upstream served HTML/JSON error text instead of binary media.');
+        res.status(502).json({
+          success: false,
+          error: 'Tautan unduhan tidak menghasilkan berkas media yang valid dari server sumber.'
+        });
+        return;
+      }
     }
 
     const rawContentType = remoteRes.headers.get('content-type') || '';
@@ -1272,12 +1303,37 @@ export default async function handler(req: any, res: any) {
     else if (sanitizedFilename.endsWith('.zip')) mimeType = 'application/zip';
     else if (rawContentType && !rawContentType.includes('text/')) mimeType = rawContentType;
 
+    const rawUpstreamLen = remoteRes.headers.get('content-length');
+    const contentEncoding = remoteRes.headers.get('content-encoding');
+    const upstreamLenNum = rawUpstreamLen && !contentEncoding && !isNaN(Number(rawUpstreamLen)) ? Number(rawUpstreamLen) : 0;
+
+    let skipBytesRemaining = 0;
+    let limitOutputBytes: number | null = null;
+    const requestedRangeMatch = rangeHeader ? /bytes=(\d*)-(\d*)/.exec(rangeHeader) : null;
+
     if (remoteRes.status === 206) {
       res.status(206);
       const contentRange = remoteRes.headers.get('content-range');
       if (contentRange) {
         res.setHeader('Content-Range', contentRange);
       }
+      if (upstreamLenNum > 0) {
+        res.setHeader('Content-Length', String(upstreamLenNum));
+      }
+    } else if (requestedRangeMatch && upstreamLenNum > 0) {
+      const reqStart = requestedRangeMatch[1] ? parseInt(requestedRangeMatch[1], 10) : 0;
+      const reqEnd = requestedRangeMatch[2] ? Math.min(parseInt(requestedRangeMatch[2], 10), upstreamLenNum - 1) : upstreamLenNum - 1;
+      if (!isNaN(reqStart) && !isNaN(reqEnd) && reqStart <= reqEnd && reqStart < upstreamLenNum) {
+        skipBytesRemaining = reqStart;
+        limitOutputBytes = reqEnd - reqStart + 1;
+        res.status(206);
+        res.setHeader('Content-Range', `bytes ${reqStart}-${reqEnd}/${upstreamLenNum}`);
+        res.setHeader('Content-Length', String(limitOutputBytes));
+      } else {
+        res.setHeader('Content-Length', String(upstreamLenNum));
+      }
+    } else if (upstreamLenNum > 0) {
+      res.setHeader('Content-Length', String(upstreamLenNum));
     }
 
     res.setHeader('Content-Type', mimeType);
@@ -1290,33 +1346,75 @@ export default async function handler(req: any, res: any) {
     );
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length, Content-Type, Content-Range, Accept-Ranges');
-    res.setHeader('Cache-Control', isInline ? 'private, max-age=300' : 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Cache-Control', isInline ? 'private, max-age=300, no-transform' : 'no-store, no-cache, must-revalidate, private, no-transform');
+    res.setHeader('X-Accel-Buffering', 'no');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.flushHeaders?.();
 
-    const contentLength = remoteRes.headers.get('content-length');
-    const contentEncoding = remoteRes.headers.get('content-encoding');
-    if (contentLength && !contentEncoding && !isNaN(Number(contentLength))) {
-      res.setHeader('Content-Length', contentLength);
-    }
+    const waitForDrain = () =>
+      new Promise<void>((resolve) => {
+        if (clientAborted || res.destroyed || res.writableEnded) {
+          resolve();
+          return;
+        }
+        const cleanup = () => {
+          res.off?.('drain', onDone);
+          res.off?.('close', onDone);
+        };
+        const onDone = () => {
+          cleanup();
+          resolve();
+        };
+        res.once?.('drain', onDone);
+        res.once?.('close', onDone);
+      });
 
-    req.on?.('close', () => {
-      try {
-        reader.cancel();
-      } catch {}
-    });
-
-    // Write verified first chunk, then stream the rest
-    res.write(Buffer.from(firstChunk));
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        res.write(Buffer.from(value));
+    const writeStreamSlice = async (chunk: Uint8Array): Promise<boolean> => {
+      if (clientAborted || res.destroyed || res.writableEnded) return false;
+      let slice = chunk;
+      if (skipBytesRemaining > 0) {
+        if (slice.byteLength <= skipBytesRemaining) {
+          skipBytesRemaining -= slice.byteLength;
+          return true;
+        }
+        slice = slice.subarray(skipBytesRemaining);
+        skipBytesRemaining = 0;
       }
+      if (limitOutputBytes !== null) {
+        if (limitOutputBytes <= 0) return false;
+        if (slice.byteLength > limitOutputBytes) {
+          slice = slice.subarray(0, limitOutputBytes);
+        }
+        limitOutputBytes -= slice.byteLength;
+      }
+      if (slice.byteLength > 0) {
+        const ok = res.write(slice);
+        if (!ok) {
+          await waitForDrain();
+        }
+      }
+      return limitOutputBytes === null || limitOutputBytes > 0;
+    };
+
+    const keepReading = await writeStreamSlice(firstChunk);
+    if (keepReading && !clientAborted) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done || clientAborted || res.destroyed || res.writableEnded) break;
+        if (value && !(await writeStreamSlice(value))) {
+          try { await reader.cancel(); } catch {}
+          break;
+        }
+      }
+    } else {
+      try { await reader.cancel(); } catch {}
     }
-    res.end();
+
+    if (!res.writableEnded && !res.destroyed) {
+      res.end();
+    }
   } catch (err: any) {
+    if (err?.name === 'AbortError') return;
     if (!res.headersSent) {
       res.status(500).json({ success: false, error: `Download gagal: ${err.message}` });
     }

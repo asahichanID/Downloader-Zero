@@ -11,7 +11,7 @@ import { PlatformCards } from './components/PlatformCards.tsx';
 import { TipPromoCard } from './components/TipPromoCard.tsx';
 import { HistorySection } from './components/HistorySection.tsx';
 import { BottomNavbar, type TabType } from './components/BottomNavbar.tsx';
-import { FormatSelectorModal } from './components/FormatSelectorModal.tsx';
+import { FormatSelectorModal, type InstantModalStage } from './components/FormatSelectorModal.tsx';
 import { FloatingVideoPlayer } from './components/FloatingVideoPlayer.tsx';
 import { FloatingSpotifyPlayer } from './components/FloatingSpotifyPlayer.tsx';
 import { FloatingPhotoViewer } from './components/FloatingPhotoViewer.tsx';
@@ -145,6 +145,24 @@ export default function App() {
   const [spotifyTrackStatuses, setSpotifyTrackStatuses] = useState<Record<string, 'downloading' | 'done' | 'error'>>({});
   const [photoDownloadStatuses, setPhotoDownloadStatuses] = useState<Record<number, 'downloading' | 'done' | 'error'>>({});
 
+  // Instant Download setting & in-place modal workflow states
+  const [instantDownload, setInstantDownload] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('dz_instant_download') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [instantStage, setInstantStage] = useState<InstantModalStage>('select');
+  const [instantProgress, setInstantProgress] = useState<number>(0);
+  const [instantStatusText, setInstantStatusText] = useState<string>('');
+  const [instantSelectedLabel, setInstantSelectedLabel] = useState<string>('');
+  const [instantCompletedLabel, setInstantCompletedLabel] = useState<string>('');
+  const [instantCountdown, setInstantCountdown] = useState<number>(3);
+  const [instantError, setInstantError] = useState<string | null>(null);
+  const instantStageRef = useRef<InstantModalStage>('select');
+  instantStageRef.current = instantStage;
+
   // Extracted media metadata
   const [mediaData, setMediaData] = useState<MediaMetadata | null>(() => initialSnap?.mediaData || null);
 
@@ -253,7 +271,9 @@ export default function App() {
 
     void registerWebViewOnce();
     const stopAutoRefresh = initAutoRefresh({
-      isDownloading: () => latestSessionRef.current.berandaStage === 'downloading',
+      isDownloading: () =>
+        latestSessionRef.current.berandaStage === 'downloading' ||
+        instantStageRef.current === 'processing',
       onBeforeReload: () => {
         try {
           sessionStorage.setItem(
@@ -504,6 +524,45 @@ export default function App() {
     };
   }, [berandaStage]);
 
+  const finishInstantDownloadReset = useCallback(() => {
+    setIsFormatModalOpen(false);
+    setInstantStage('select');
+    setInstantProgress(0);
+    setInstantStatusText('');
+    setInstantSelectedLabel('');
+    setInstantCompletedLabel('');
+    setInstantError(null);
+    setBerandaStage('idle');
+    setPreparedDownload(null);
+    setMediaData(null);
+    setUrl('');
+    setDownloadProgress(0);
+    setDownloadStatusText('');
+    setErrorMessage(null);
+    setCompletedLabel('');
+    setSelectedTeraboxFileIds([]);
+    setSelectedSpotifyTrackId(null);
+  }, []);
+
+  // Auto-return to initial Beranda view 3 seconds after Instant Download completes inside floating modal
+  useEffect(() => {
+    if (instantStage !== 'completed') return;
+
+    setInstantCountdown(3);
+    const interval = setInterval(() => {
+      setInstantCountdown((prev) => (prev > 1 ? prev - 1 : 1));
+    }, 1000);
+
+    const resetTimer = setTimeout(() => {
+      finishInstantDownloadReset();
+    }, 3000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(resetTimer);
+    };
+  }, [instantStage, finishInstantDownloadReset]);
+
   const extractCleanUrl = (raw: string): string => {
     const trimmed = (raw || '').trim();
     const match = trimmed.match(/https?:\/\/[^\s<>"'`]+/i);
@@ -606,9 +665,158 @@ export default function App() {
     return href;
   };
 
+  const getMimeTypeForExtension = (ext: string): string => {
+    switch (ext.toLowerCase()) {
+      case 'mp4':
+        return 'video/mp4';
+      case 'mp3':
+        return 'audio/mpeg';
+      case 'm4a':
+        return 'audio/mp4';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'zip':
+        return 'application/zip';
+      default:
+        return 'application/octet-stream';
+    }
+  };
+
+  const isChunkHtmlOrJsonError = (chunk: Uint8Array): string | null => {
+    const head = new TextDecoder('utf-8', { fatal: false })
+      .decode(chunk.subarray(0, 512))
+      .replace(/^\uFEFF/, '')
+      .trim();
+    if (
+      /^<!doctype\s+html/i.test(head) ||
+      /^<html[\s>]/i.test(head) ||
+      /^<head[\s>]/i.test(head) ||
+      /^<script[\s>]/i.test(head) ||
+      /^<!--/.test(head) ||
+      head.includes('accounts.google.com')
+    ) {
+      return 'Server mengembalikan halaman HTML, bukan berkas media asli. Silakan coba lagi.';
+    }
+    if (head.startsWith('{') && (head.includes('"success":false') || head.includes('"error"'))) {
+      try {
+        const parsed = JSON.parse(head);
+        if (parsed?.error) return String(parsed.error);
+      } catch {}
+      return 'Server gagal menyiapkan berkas media asli.';
+    }
+    return null;
+  };
+
+  const fetchVerifiedMediaBlob = async (
+    downloadHref: string,
+    expectedExt: string,
+    options?: {
+      startPct?: number;
+      endPct?: number;
+      onProgress?: (pct: number) => void;
+      onStatusText?: (text: string) => void;
+    }
+  ): Promise<Blob> => {
+    const startPct = options?.startPct ?? 12;
+    const endPct = options?.endPct ?? 97;
+    const onProgress = options?.onProgress;
+    const onStatusText = options?.onStatusText;
+
+    const res = await fetch(downloadHref, { credentials: 'same-origin' });
+    const rawCt = (res.headers.get('content-type') || '').toLowerCase();
+
+    if (!res.ok) {
+      if (rawCt.includes('application/json')) {
+        try {
+          const errJson = await res.json();
+          if (errJson?.error) throw new Error(String(errJson.error));
+        } catch (parseErr: any) {
+          if (parseErr?.message) throw parseErr;
+        }
+      }
+      throw new Error(`Gagal mengunduh berkas dari server (HTTP ${res.status}).`);
+    }
+
+    if (rawCt.includes('text/html') || rawCt.includes('application/xhtml+xml')) {
+      throw new Error('Respon server berupa halaman HTML, bukan berkas media asli. Silakan coba lagi.');
+    }
+    if (rawCt.includes('application/json')) {
+      try {
+        const errJson = await res.json();
+        throw new Error(errJson?.error || 'Server mengembalikan data JSON, bukan berkas media.');
+      } catch (e: any) {
+        if (e?.message) throw e;
+      }
+    }
+
+    const mimeType = getMimeTypeForExtension(expectedExt);
+    const contentLen = Number(res.headers.get('content-length') || 0);
+    const reader = res.body?.getReader();
+
+    if (!reader) {
+      const fallbackBuf = new Uint8Array(await res.arrayBuffer());
+      if (fallbackBuf.byteLength < 256) {
+        throw new Error('Berkas media dari server kosong atau rusak.');
+      }
+      const errSig = isChunkHtmlOrJsonError(fallbackBuf);
+      if (errSig) throw new Error(errSig);
+      return new Blob([fallbackBuf], { type: mimeType });
+    }
+
+    const chunks: BlobPart[] = [];
+    let received = 0;
+    let checkedFirstChunk = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+
+      if (!checkedFirstChunk) {
+        checkedFirstChunk = true;
+        const errSig = isChunkHtmlOrJsonError(value);
+        if (errSig) {
+          try { await reader.cancel(); } catch {}
+          throw new Error(errSig);
+        }
+      }
+
+      chunks.push(value);
+      received += value.byteLength;
+
+      if (onProgress) {
+        if (contentLen > 0) {
+          const ratio = Math.min(1, received / contentLen);
+          onProgress(Math.round(startPct + ratio * (endPct - startPct)));
+        } else {
+          const approxRatio = 1 - Math.exp(-received / (4 * 1024 * 1024));
+          onProgress(Math.round(startPct + approxRatio * (endPct - startPct)));
+        }
+      }
+      if (onStatusText) {
+        if (contentLen > 0) {
+          const pctVal = Math.min(99, Math.round((received / contentLen) * 100));
+          onStatusText(`Mengunduh berkas asli... ${pctVal}% (${formatBytes(received)})`);
+        } else {
+          onStatusText(`Mengunduh berkas asli... ${formatBytes(received)}`);
+        }
+      }
+    }
+
+    if (received < 256) {
+      throw new Error('Berkas media dari server kosong atau tidak lengkap.');
+    }
+
+    return new Blob(chunks, { type: mimeType });
+  };
+
   const triggerBlobDownload = (blob: Blob, filename: string) => {
     const blobUrl = URL.createObjectURL(blob);
     const dlLink = document.createElement('a');
+    dlLink.style.display = 'none';
     dlLink.href = blobUrl;
     dlLink.download = filename;
     document.body.appendChild(dlLink);
@@ -619,21 +827,6 @@ export default function App() {
         URL.revokeObjectURL(blobUrl);
       } catch {}
     }, 30000);
-  };
-
-  const triggerDirectDownloadFallback = (directUrl: string, filename: string) => {
-    const dlLink = document.createElement('a');
-    dlLink.href = directUrl;
-    dlLink.target = '_blank';
-    dlLink.rel = 'noreferrer noopener';
-    dlLink.download = filename;
-    document.body.appendChild(dlLink);
-    dlLink.click();
-    setTimeout(() => {
-      try {
-        document.body.removeChild(dlLink);
-      } catch {}
-    }, 5000);
   };
 
   const enterPreviewStage = (meta: MediaMetadata, fmt: MediaFormat, resolvedUrl: string) => {
@@ -711,6 +904,14 @@ export default function App() {
     }
 
     if (meta.platform === 'terabox' && meta.formats[0]) {
+      if (instantDownload && (!meta.files || meta.files.length <= 1)) {
+        setInstantStage('select');
+        setInstantProgress(0);
+        setInstantStatusText('');
+        setInstantError(null);
+        setIsFormatModalOpen(true);
+        return;
+      }
       enterPreviewStage(meta, meta.formats[0], meta.formats[0].url);
       return;
     }
@@ -724,6 +925,10 @@ export default function App() {
       enterPreviewStage(meta, photoFmt, photoFmt.url);
       return;
     }
+    setInstantStage('select');
+    setInstantProgress(0);
+    setInstantStatusText('');
+    setInstantError(null);
     setIsFormatModalOpen(true);
   };
 
@@ -814,12 +1019,195 @@ export default function App() {
     }
   };
 
-  // Prepare media stream & switch Beranda view to Preview Result View (uses cache if URL is still valid)
+  // Prepare media stream & either run Instant Download inside modal or switch Beranda to Preview Result View
   const handleConfirmDownload = async (targetFormat: MediaFormat) => {
-    if (!mediaData || berandaStage !== 'idle') return;
+    if (!mediaData || berandaStage !== 'idle' || instantStageRef.current === 'processing') return;
 
     const customKey = localStorage.getItem('dz_neoxr_api_key') || '';
     const cachedPrep = getCachedPrepared(mediaData.url, targetFormat, serverMode, customKey);
+    const useInstantFlow = instantDownload;
+
+    if (useInstantFlow) {
+      const labelParts = [
+        targetFormat.resolution || targetFormat.quality || '',
+        targetFormat.type === 'audio'
+          ? 'Audio MP3'
+          : targetFormat.type === 'photos'
+            ? 'Foto'
+            : (targetFormat.extension || 'MP4').toUpperCase()
+      ].filter(Boolean);
+      setInstantSelectedLabel(labelParts.join(' · '));
+      setInstantError(null);
+      setInstantStage('processing');
+
+      try {
+        let resolvedFormat: MediaFormat = targetFormat;
+        let finalUrl = targetFormat.url;
+        let activeMedia: MediaMetadata = mediaData;
+
+        if (cachedPrep) {
+          activeMedia = cachedPrep.media;
+          resolvedFormat = cachedPrep.format;
+          finalUrl = cachedPrep.resolvedUrl;
+          setInstantProgress(25);
+          setInstantStatusText('Mengunduh berkas media asli...');
+        } else {
+          const needsServerResolution =
+            !targetFormat.url ||
+            !targetFormat.url.startsWith('http') ||
+            Boolean(targetFormat.needsResolution);
+
+          if (!needsServerResolution) {
+            setCachedPrepared(mediaData.url, targetFormat, serverMode, customKey, mediaData, targetFormat.url);
+            setInstantProgress(25);
+            setInstantStatusText('Mengunduh berkas media asli...');
+          } else {
+            setInstantProgress(12);
+            setInstantStatusText(`Menyiapkan ${targetFormat.quality || targetFormat.resolution} dari server...`);
+
+            let jobId = targetFormat.jobId;
+            let startJobError = '';
+            const loaderFormat = mapFormatForLoader(targetFormat);
+
+            try {
+              const startRes = await fetch('/api/start-job', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  platform: mediaData.platform,
+                  format: loaderFormat,
+                  formatId: targetFormat.id,
+                  resolution: targetFormat.resolution,
+                  quality: targetFormat.quality,
+                  type: targetFormat.type,
+                  url: mediaData.url,
+                  server: serverMode,
+                  apiKey: customKey
+                })
+              });
+              const ct = startRes.headers.get('content-type') || '';
+              if (ct.includes('application/json')) {
+                const startData = await startRes.json();
+                if (startRes.ok && startData.downloadUrl) {
+                  finalUrl = startData.downloadUrl;
+                  resolvedFormat = {
+                    ...resolvedFormat,
+                    url: finalUrl,
+                    ...(typeof startData.dashAudioUrl === 'string' && startData.dashAudioUrl.startsWith('http')
+                      ? { dashAudioUrl: startData.dashAudioUrl }
+                      : {})
+                  };
+                } else if (startRes.ok && startData.id) {
+                  jobId = startData.id;
+                } else if (startData?.error) {
+                  startJobError = startData.error;
+                }
+              }
+            } catch (e: any) {
+              console.warn('Instant start job notice:', e);
+            }
+
+            if (jobId && (!finalUrl || !finalUrl.startsWith('http'))) {
+              setInstantStatusText('Menunggu tautan dari server...');
+              let finished = false;
+              let attempts = 0;
+
+              while (!finished && attempts < 25) {
+                attempts++;
+                const pollDelay = attempts <= 4 ? 450 : attempts <= 10 ? 750 : 1000;
+                await new Promise((r) => setTimeout(r, pollDelay));
+                setInstantProgress((prev) => Math.min(48, prev + 3));
+
+                try {
+                  const progRes = await fetch(`/api/progress/${encodeURIComponent(jobId)}`);
+                  if (progRes.ok) {
+                    const pData = await progRes.json();
+                    if (pData.success && pData.downloadUrl) {
+                      finalUrl = pData.downloadUrl;
+                      finished = true;
+                      break;
+                    } else if (pData.statusText) {
+                      setInstantStatusText(pData.statusText);
+                    }
+                  }
+                } catch (e) {
+                  console.warn('Instant progress poll notice:', e);
+                }
+              }
+            }
+
+            if (!finalUrl && (mediaData.platform === 'tiktok' || detectPlatform(mediaData.url) === 'tiktok')) {
+              try {
+                const resolved = await resolveTikTokDownload(
+                  mediaData.url,
+                  targetFormat.id || 'tt-1080',
+                  targetFormat.resolution || '1080p',
+                  targetFormat.type || 'video',
+                  serverMode,
+                  customKey
+                );
+                if (resolved && resolved.downloadUrl) {
+                  finalUrl = resolved.downloadUrl;
+                }
+              } catch (ttErr) {
+                console.warn('Direct TikTok resolution notice:', ttErr);
+              }
+            }
+
+            if (!finalUrl || !finalUrl.startsWith('http')) {
+              const directFallback = mediaData.formats.find(
+                (f) => f.isDirect && f.url && f.url.startsWith('http') && !f.url.includes('loader.to')
+              );
+              if (directFallback) {
+                finalUrl = directFallback.url;
+              }
+            }
+
+            if (!finalUrl || typeof finalUrl !== 'string' || !finalUrl.startsWith('http')) {
+              throw new Error(startJobError || 'Tautan media tidak tersedia dari server sumber saat ini.');
+            }
+
+            setCachedPrepared(mediaData.url, resolvedFormat, serverMode, customKey, mediaData, finalUrl);
+          }
+        }
+
+        setInstantProgress(50);
+        setInstantStatusText('Mengunduh berkas media asli...');
+
+        const { completedLabel: doneLabel } = await executeSingleMediaDownload({
+          media: activeMedia,
+          targetFormat: resolvedFormat,
+          resolvedUrl: finalUrl,
+          startPct: 50,
+          onProgress: setInstantProgress,
+          onStatusText: setInstantStatusText
+        });
+
+        setInstantProgress(100);
+        setInstantStatusText('Berkas asli berhasil diunduh!');
+        setInstantCompletedLabel(doneLabel);
+        setInstantStage('completed');
+      } catch (err: any) {
+        console.error('Instant download error:', err);
+        void logDownloadActivity({
+          platform: mediaData.platform,
+          url: mediaData.url,
+          resolution: targetFormat.resolution || targetFormat.quality || '-',
+          status: 'gagal',
+          mediaType: targetFormat.type,
+          title: mediaData.title || ''
+        });
+        invalidateCacheForUrl(mediaData.url);
+        if (url.trim() && url.trim() !== mediaData.url) {
+          invalidateCacheForUrl(url.trim());
+        }
+        setInstantProgress(0);
+        setInstantStatusText('');
+        setInstantError(err?.message || 'Gagal mengunduh media. Silakan coba kembali.');
+        setInstantStage('error');
+      }
+      return;
+    }
 
     if (cachedPrep) {
       setIsFormatModalOpen(false);
@@ -828,15 +1216,21 @@ export default function App() {
       return;
     }
 
-    const isOrigTarget =
-      targetFormat.resolution?.toLowerCase() === 'original' ||
-      targetFormat.id?.toLowerCase().includes('original');
+    const needsServerResolution = !targetFormat.url || !targetFormat.url.startsWith('http') || Boolean(targetFormat.needsResolution);
+    if (!needsServerResolution) {
+      setIsFormatModalOpen(false);
+      setErrorMessage(null);
+      setCachedPrepared(mediaData.url, targetFormat, serverMode, customKey, mediaData, targetFormat.url);
+      enterPreviewStage(mediaData, targetFormat, targetFormat.url);
+      return;
+    }
+
     pendingPreparingFormatRef.current = targetFormat;
     setIsFormatModalOpen(false);
     setErrorMessage(null);
     setBerandaStage('preparing');
     setDownloadProgress(20);
-    setDownloadStatusText(`Menyiapkan pratinjau ${targetFormat.quality || targetFormat.resolution}...`);
+    setDownloadStatusText(`Menyiapkan ${targetFormat.quality || targetFormat.resolution}...`);
 
     try {
       let resolvedFormat: MediaFormat = targetFormat;
@@ -893,8 +1287,9 @@ export default function App() {
 
           while (!finished && attempts < 25) {
             attempts++;
-            await new Promise((r) => setTimeout(r, 1000));
-            setDownloadProgress((prev) => Math.min(85, prev + 3));
+            const pollDelay = attempts <= 4 ? 450 : attempts <= 10 ? 750 : 1000;
+            await new Promise((r) => setTimeout(r, pollDelay));
+            setDownloadProgress((prev) => Math.min(88, prev + 3));
 
             try {
               const progRes = await fetch(`/api/progress/${encodeURIComponent(jobId)}`);
@@ -948,53 +1343,45 @@ export default function App() {
         throw new Error(startJobError || 'Tautan media tidak tersedia dari server sumber saat ini.');
       }
 
-      // Verify stream accessibility / resolution preparation for MP4 video formats
-      if (
-        resolvedFormat.type === 'video' &&
-        (resolvedFormat.extension || 'mp4').toLowerCase() === 'mp4'
-      ) {
-        setDownloadProgress(55);
-        setDownloadStatusText(
-          isOrigTarget
-            ? 'Menyiapkan stream Original (tanpa encode ulang)...'
-            : mediaData.platform === 'tiktok'
-              ? `Menyiapkan resolusi ${resolvedFormat.resolution || '1080p'}...`
-              : `Menyiapkan pratinjau ${resolvedFormat.resolution || ''}...`
-        );
-        let prepTick: ReturnType<typeof setInterval> | null = null;
-        try {
-          prepTick = setInterval(() => {
-            setDownloadProgress((prev) => (prev < 94 ? prev + 4 : prev));
-          }, 450);
-          const prepareHref = `${buildProxyHref(finalUrl, `preview.${resolvedFormat.extension || 'mp4'}`, mediaData, true, undefined, resolvedFormat)}&prepare=1`;
-          const prepRes = await fetch(prepareHref);
-          if (!prepRes.ok) {
-            const ctPrep = (prepRes.headers.get('content-type') || '').toLowerCase();
-            let prepErrMsg = '';
-            if (ctPrep.includes('application/json')) {
-              const j = await prepRes.json().catch(() => null);
-              prepErrMsg = j?.error || '';
-            }
-            console.warn('[prepare-video] Non-fatal prepare status:', prepRes.status, prepErrMsg);
-          } else {
-            const prepJson = await prepRes.json().catch(() => null);
-            if (prepJson && typeof prepJson.size === 'number' && prepJson.size > 0) {
-              resolvedFormat = {
-                ...resolvedFormat,
-                filesize: formatBytes(prepJson.size),
-                filesizeBytes: prepJson.size
-              };
-            }
-          }
-        } finally {
-          if (prepTick) clearInterval(prepTick);
-        }
-      }
-
+      // Immediately open Preview Stage and let <video> stream via high-speed HTTP Range pass-through
       setCachedPrepared(mediaData.url, resolvedFormat, serverMode, customKey, mediaData, finalUrl);
-      setDownloadProgress(95);
+      setDownloadProgress(100);
       setDownloadStatusText('Memuat pratinjau...');
       enterPreviewStage(mediaData, resolvedFormat, finalUrl);
+
+      // Non-blocking background metadata probe to backfill exact filesize without delaying preview
+      if (
+        resolvedFormat.type === 'video' &&
+        (resolvedFormat.extension || 'mp4').toLowerCase() === 'mp4' &&
+        !resolvedFormat.filesizeBytes &&
+        !resolvedFormat.dashAudioUrl
+      ) {
+        const probeMediaUrl = mediaData.url;
+        const probeFormatSnapshot = resolvedFormat;
+        const probeFinalUrl = finalUrl;
+        const prepareHref = `${buildProxyHref(finalUrl, `preview.${resolvedFormat.extension || 'mp4'}`, mediaData, true, undefined, resolvedFormat)}&prepare=1`;
+        void fetch(prepareHref)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((prepJson) => {
+            if (!prepJson || typeof prepJson.size !== 'number' || prepJson.size <= 0) return;
+            const enrichedFmt: MediaFormat = {
+              ...probeFormatSnapshot,
+              filesize: formatBytes(prepJson.size),
+              filesizeBytes: prepJson.size
+            };
+            setCachedPrepared(probeMediaUrl, enrichedFmt, serverMode, customKey, mediaData, probeFinalUrl);
+            setPreparedDownload((prev) => {
+              if (!prev || prev.resolvedUrl !== probeFinalUrl || prev.format.id !== probeFormatSnapshot.id) {
+                return prev;
+              }
+              return {
+                ...prev,
+                format: enrichedFmt
+              };
+            });
+          })
+          .catch(() => {});
+      }
     } catch (err: any) {
       console.error('Prepare preview error:', err);
       void logDownloadActivity({
@@ -1026,75 +1413,6 @@ export default function App() {
     resumeConfirm: (fmt: MediaFormat) => {
       void handleConfirmDownload(fmt);
     }
-  };
-
-  // Fetch binary blob with live streaming progress
-  const fetchBlobWithProgress = async (
-    downloadHref: string,
-    progressStart: number,
-    progressSpan: number
-  ): Promise<Blob | null> => {
-    const dlResponse = await fetch(downloadHref);
-    if (!dlResponse.ok) {
-      const ctErr = (dlResponse.headers.get('content-type') || '').toLowerCase();
-      let errMsg = '';
-      if (ctErr.includes('application/json')) {
-        const j = await dlResponse.json().catch(() => null);
-        errMsg = j?.error || '';
-      } else if (ctErr.includes('text/')) {
-        errMsg = await dlResponse.text().catch(() => '');
-      }
-      throw new Error(errMsg || `Server gagal mengunduh berkas (HTTP ${dlResponse.status}).`);
-    }
-    const contentType = dlResponse.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) return null;
-
-    const totalBytes = Number(dlResponse.headers.get('content-length')) || 0;
-    if (dlResponse.body && typeof dlResponse.body.getReader === 'function') {
-      const reader = dlResponse.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-      let lastPct = progressStart;
-      let lastTickAt = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          chunks.push(value);
-          received += value.length;
-          const now = performance.now();
-          if (now - lastTickAt >= 100) {
-            if (totalBytes > 0) {
-              const pct = Math.min(
-                progressStart + progressSpan,
-                progressStart + Math.round((received / totalBytes) * progressSpan)
-              );
-              if (pct !== lastPct) {
-                lastPct = pct;
-                lastTickAt = now;
-                setDownloadProgress(pct);
-              }
-            } else {
-              lastTickAt = now;
-              setDownloadProgress((prev) => Math.min(progressStart + progressSpan - 5, prev + 2));
-            }
-          }
-        }
-      }
-
-      const blob = new Blob(chunks as BlobPart[], { type: contentType || 'application/octet-stream' });
-      if (blob.size >= 120 || !blob.type.includes('text')) {
-        return blob;
-      }
-      return null;
-    }
-
-    const blob = await dlResponse.blob();
-    if (blob.size >= 120 || !blob.type.includes('text')) {
-      return blob;
-    }
-    return null;
   };
 
   // Toggle TeraBox file selection (minimum 1 kept selected, maximum 2 files allowed)
@@ -1148,20 +1466,7 @@ export default function App() {
       const safeTitle = (track.title || 'Spotify_Track').slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
       const filename = `DownloaderZero_${safeTitle}_${activeKbps}kbps.mp3`;
       const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, track, targetFormat);
-
-      const res = await fetch(downloadHref);
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        throw new Error(errText || `Gagal mengunduh "${track.title}" (HTTP ${res.status}).`);
-      }
-      const ct = (res.headers.get('content-type') || '').toLowerCase();
-      if (ct.includes('text/html')) {
-        throw new Error(`Respon server tidak valid untuk "${track.title}".`);
-      }
-      const mp3Blob = await res.blob();
-      if (mp3Blob.size < 10000) {
-        throw new Error(`File audio "${track.title}" terlalu kecil.`);
-      }
+      const mp3Blob = await fetchVerifiedMediaBlob(downloadHref, 'mp3');
 
       triggerBlobDownload(mp3Blob, filename);
       setSpotifyTrackStatuses((prev) => ({ ...prev, [trackId]: 'done' }));
@@ -1223,23 +1528,9 @@ export default function App() {
       const activeResSlug = 'Ultra_HD';
       const filename = `DownloaderZero_${sanitizedTitle}_foto_${serialTag}_${activeResSlug}.${ext}`;
       const downloadHref = buildProxyHref(photoUrl, filename, media, false);
+      const photoBlob = await fetchVerifiedMediaBlob(downloadHref, ext);
 
-      const res = await fetch(downloadHref);
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        throw new Error(errText || `Gagal mengunduh Foto #${slideNumber} (HTTP ${res.status}).`);
-      }
-      const ct = (res.headers.get('content-type') || '').toLowerCase();
-      if (ct.includes('text/html') || ct.includes('application/json')) {
-        throw new Error(`Respon server tidak valid untuk Foto #${slideNumber}.`);
-      }
-
-      const imgBlob = await res.blob();
-      if (imgBlob.size < 500) {
-        throw new Error(`Berkas Foto #${slideNumber} tidak valid atau terlalu kecil.`);
-      }
-
-      triggerBlobDownload(imgBlob, filename);
+      triggerBlobDownload(photoBlob, filename);
       setPhotoDownloadStatuses((prev) => ({ ...prev, [slideIndex]: 'done' }));
 
       await saveDownloadedMedia({
@@ -1253,10 +1544,10 @@ export default function App() {
         mediaType: 'photos',
         extension: ext,
         filename,
-        filesize: formatBytes(imgBlob.size),
-        filesizeBytes: imgBlob.size,
+        filesize: formatBytes(photoBlob.size),
+        filesizeBytes: photoBlob.size,
         downloadUrl: photoUrl,
-        blob: imgBlob
+        blob: photoBlob
       }).catch(() => {});
 
       await loadHistory();
@@ -1435,6 +1726,129 @@ export default function App() {
     }
   };
 
+  // Shared single-item download pipeline: authenticated stream validation -> local Blob download (never .html, never opens server URL)
+  const executeSingleMediaDownload = async ({
+    media,
+    targetFormat,
+    resolvedUrl,
+    startPct = 15,
+    onProgress,
+    onStatusText
+  }: {
+    media: MediaMetadata;
+    targetFormat: MediaFormat;
+    resolvedUrl: string;
+    startPct?: number;
+    onProgress: (pct: number) => void;
+    onStatusText: (text: string) => void;
+  }): Promise<{ completedLabel: string }> => {
+    const activePhotoSlideImages = media.images;
+    const selectedTrack =
+      media.platform === 'spotify' && media.tracks && media.tracks.length > 0
+        ? media.tracks.find((t) => t.id === selectedSpotifyTrackId) || media.tracks[0]
+        : undefined;
+
+    const effectiveTitle = selectedTrack?.title || media.title || 'media';
+    const effectiveAuthor = selectedTrack?.artist || media.author || media.platform;
+    const effectiveThumb = selectedTrack?.thumbnail || media.thumbnail || '';
+    const effectiveDuration = selectedTrack?.duration || media.duration || (targetFormat.type === 'audio' ? 210 : 60);
+    const effectiveDurationFmt = selectedTrack?.durationFormatted || media.durationFormatted || formatDuration(effectiveDuration);
+
+    let effectiveUrl = resolvedUrl;
+    if (media.platform === 'spotify' && selectedTrack && media.isAudioPlaylist) {
+      const trackId = selectedTrack.id?.replace(/^sp-track-/, '') || '';
+      effectiveUrl =
+        selectedTrack.url?.startsWith('http') && !selectedTrack.url.includes('mp3-preview')
+          ? selectedTrack.url
+          : `https://open.spotify.com/track/${trackId || selectedTrack.id}`;
+    } else if (targetFormat.type === 'photos') {
+      const singlePhotoUrl = (activePhotoSlideImages && activePhotoSlideImages[0]) || resolvedUrl;
+      if (singlePhotoUrl && singlePhotoUrl.startsWith('http')) {
+        effectiveUrl = singlePhotoUrl;
+      }
+    }
+
+    const rawExt = targetFormat.extension || (targetFormat.type === 'audio' ? 'mp3' : targetFormat.type === 'photos' ? 'jpg' : 'mp4');
+    const ext =
+      targetFormat.type === 'photos' && rawExt === 'zip'
+        ? (/\.(png)(?:[?#]|$)/i.test(effectiveUrl) ? 'png' : 'jpg')
+        : rawExt;
+    const sanitizedTitle = effectiveTitle.slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const rawResTag =
+      targetFormat.type === 'photos'
+        ? 'Ultra_HD'
+        : (targetFormat.resolution || targetFormat.quality.split(' ')[0] || (targetFormat.type === 'audio' ? 'Audio' : '1080p'));
+    const resTag = rawResTag.replace(/\s+/g, '_');
+    const filename = `DownloaderZero_${sanitizedTitle}_${resTag}.${ext}`;
+
+    const effectiveFormatForHistory: MediaFormat =
+      targetFormat.type === 'photos'
+        ? { ...targetFormat, resolution: 'Ultra HD', quality: 'Foto Ultra HD' }
+        : targetFormat;
+
+    const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, selectedTrack, effectiveFormatForHistory);
+
+    onProgress(startPct);
+    onStatusText('Mengunduh berkas media asli...');
+    const mediaBlob = await fetchVerifiedMediaBlob(downloadHref, ext, {
+      startPct,
+      endPct: 97,
+      onProgress,
+      onStatusText
+    });
+
+    onProgress(98);
+    onStatusText('Menyimpan file ke perangkat...');
+    triggerBlobDownload(mediaBlob, filename);
+
+    try {
+      const finalThumbnail =
+        effectiveThumb || (media.platform === 'spotify' ? 'https://open.spotifycdn.com/cdn/images/favicon.0f31d2ea.ico' : '');
+
+      await saveDownloadedMedia({
+        sourceUrl: media.url,
+        platform: media.platform,
+        title: effectiveTitle || 'Media DownloaderZero',
+        author: effectiveAuthor || media.platform,
+        artist: effectiveAuthor,
+        album: selectedTrack?.album || media.album,
+        thumbnail: finalThumbnail,
+        duration: effectiveDuration,
+        durationFormatted: effectiveDurationFmt,
+        quality: effectiveFormatForHistory.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
+        resolution: effectiveFormatForHistory.resolution || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
+        mediaType: targetFormat.type,
+        extension: ext as any,
+        filename,
+        filesize: formatBytes(mediaBlob.size),
+        filesizeBytes: mediaBlob.size,
+        downloadUrl: effectiveUrl,
+        blob: mediaBlob
+      });
+      await loadHistory();
+    } catch (histErr) {
+      console.warn('Save history notice:', histErr);
+    }
+
+    void logDownloadActivity({
+      platform: media.platform,
+      url: media.url,
+      resolution: targetFormat.resolution || targetFormat.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
+      status: 'berhasil',
+      mediaType: targetFormat.type,
+      title: effectiveTitle || 'Media DownloaderZero'
+    });
+
+    return {
+      completedLabel:
+        targetFormat.type === 'audio'
+          ? 'Audio Terunduh!'
+          : targetFormat.type === 'photos'
+            ? 'Foto Terunduh!'
+            : 'Video Terunduh!'
+    };
+  };
+
   // Execute actual download when user clicks the "Download" button in BerandaResultView
   const handleExecuteActualDownload = async () => {
     if (berandaStage !== 'preview' || !preparedDownload) return;
@@ -1442,11 +1856,11 @@ export default function App() {
     const { media, format: targetFormat, resolvedUrl } = preparedDownload;
     setErrorMessage(null);
     setBerandaStage('downloading');
-    setDownloadProgress(10);
-    setDownloadStatusText('Mengunduh berkas media...');
+    setDownloadProgress(12);
+    setDownloadStatusText('Mengunduh berkas media asli...');
 
     try {
-      // CASE A: TeraBox (1 or 2 selected files)
+      // CASE A: TeraBox (1 or 2 selected files — verified binary download without .html or opening server link)
       if (media.platform === 'terabox') {
         const allFiles = media.files && media.files.length > 0
           ? media.files
@@ -1468,9 +1882,9 @@ export default function App() {
 
         for (let i = 0; i < filesToDownload.length; i++) {
           const tbFile = filesToDownload[i];
-          const basePct = 10 + Math.round((i / filesToDownload.length) * 80);
-          const spanPct = Math.round(75 / filesToDownload.length);
-          setDownloadProgress(basePct);
+          const sliceStart = Math.round((i / filesToDownload.length) * 80) + 10;
+          const sliceEnd = Math.round(((i + 1) / filesToDownload.length) * 80) + 10;
+          setDownloadProgress(sliceStart);
           setDownloadStatusText(
             filesToDownload.length > 1
               ? `Mengunduh file ${i + 1} dari ${filesToDownload.length}: ${tbFile.filename}...`
@@ -1481,22 +1895,18 @@ export default function App() {
           const filename = safeName.startsWith('DownloaderZero_') ? safeName : `DownloaderZero_${safeName}`;
           const downloadHref = buildProxyHref(tbFile.url, filename, media, false);
 
-          let mediaBlob: Blob | null = null;
-          try {
-            mediaBlob = await fetchBlobWithProgress(downloadHref, basePct, spanPct);
-          } catch (tbErr) {
-            console.warn('TeraBox proxy download notice, falling back to direct URL:', tbErr);
-          }
+          const tbBlob = await fetchVerifiedMediaBlob(downloadHref, tbFile.extension || 'mp4', {
+            startPct: sliceStart,
+            endPct: sliceEnd,
+            onProgress: setDownloadProgress,
+            onStatusText: setDownloadStatusText
+          });
 
           if (i > 0) {
             await new Promise((r) => setTimeout(r, 350));
           }
 
-          if (mediaBlob) {
-            triggerBlobDownload(mediaBlob, filename);
-          } else {
-            triggerDirectDownloadFallback(tbFile.url, filename);
-          }
+          triggerBlobDownload(tbBlob, filename);
 
           const historyMediaType = tbFile.mediaType === 'audio' ? 'audio' : tbFile.mediaType === 'photos' ? 'photos' : 'video';
           await saveDownloadedMedia({
@@ -1512,10 +1922,10 @@ export default function App() {
             mediaType: historyMediaType,
             extension: (tbFile.extension as any) || 'mp4',
             filename,
-            filesize: tbFile.size || (mediaBlob ? formatBytes(mediaBlob.size) : ''),
-            filesizeBytes: mediaBlob ? mediaBlob.size : (tbFile.sizeBytes || 0),
+            filesize: formatBytes(tbBlob.size),
+            filesizeBytes: tbBlob.size,
             downloadUrl: tbFile.url,
-            blob: mediaBlob || undefined
+            blob: tbBlob
           }).catch(() => {});
         }
 
@@ -1621,123 +2031,19 @@ export default function App() {
         return;
       }
 
-      // CASE C: Spotify (single track or selected track from playlist)
-      const selectedTrack =
-        media.platform === 'spotify' && media.tracks && media.tracks.length > 0
-          ? media.tracks.find((t) => t.id === selectedSpotifyTrackId) || media.tracks[0]
-          : undefined;
-
-      const effectiveTitle = selectedTrack?.title || media.title || 'media';
-      const effectiveAuthor = selectedTrack?.artist || media.author || media.platform;
-      const effectiveThumb = selectedTrack?.thumbnail || media.thumbnail || '';
-      const effectiveDuration = selectedTrack?.duration || media.duration || (targetFormat.type === 'audio' ? 210 : 60);
-      const effectiveDurationFmt = selectedTrack?.durationFormatted || media.durationFormatted || formatDuration(effectiveDuration);
-
-      let effectiveUrl = resolvedUrl;
-      if (media.platform === 'spotify' && selectedTrack && media.isAudioPlaylist) {
-        const trackId = selectedTrack.id?.replace(/^sp-track-/, '') || '';
-        effectiveUrl =
-          selectedTrack.url?.startsWith('http') && !selectedTrack.url.includes('mp3-preview')
-            ? selectedTrack.url
-            : `https://open.spotify.com/track/${trackId || selectedTrack.id}`;
-      } else if (targetFormat.type === 'photos') {
-        const singlePhotoUrl = (activePhotoSlideImages && activePhotoSlideImages[0]) || resolvedUrl;
-        if (singlePhotoUrl && singlePhotoUrl.startsWith('http')) {
-          effectiveUrl = singlePhotoUrl;
-        }
-      }
-
-      const rawExt = targetFormat.extension || (targetFormat.type === 'audio' ? 'mp3' : targetFormat.type === 'photos' ? 'jpg' : 'mp4');
-      const ext =
-        targetFormat.type === 'photos' && rawExt === 'zip'
-          ? (/\.(png)(?:[?#]|$)/i.test(effectiveUrl) ? 'png' : 'jpg')
-          : rawExt;
-      const sanitizedTitle = effectiveTitle.slice(0, 40).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const rawResTag =
-        targetFormat.type === 'photos'
-          ? 'Ultra_HD'
-          : (targetFormat.resolution || targetFormat.quality.split(' ')[0] || (targetFormat.type === 'audio' ? 'Audio' : '1080p'));
-      const resTag = rawResTag.replace(/\s+/g, '_');
-      const filename = `DownloaderZero_${sanitizedTitle}_${resTag}.${ext}`;
-
-      const effectiveFormatForHistory: MediaFormat =
-        targetFormat.type === 'photos'
-          ? { ...targetFormat, resolution: 'Ultra HD', quality: 'Foto Ultra HD' }
-          : targetFormat;
-
-      const downloadHref = buildProxyHref(effectiveUrl, filename, media, false, selectedTrack, effectiveFormatForHistory);
-
-      let mediaBlob: Blob | null = null;
-      let proxyError: Error | null = null;
-      try {
-        mediaBlob = await fetchBlobWithProgress(downloadHref, 15, 70);
-      } catch (dlErr: any) {
-        proxyError = dlErr instanceof Error ? dlErr : new Error(String(dlErr || 'Gagal mengunduh media.'));
-        console.warn('Proxy download notice:', dlErr);
-      }
-
-      setDownloadProgress(90);
-      setDownloadStatusText('Menyimpan berkas ke perangkat...');
-
-      const isAudioOrSpotify = media.platform === 'spotify' || targetFormat.type === 'audio' || ext === 'mp3';
-      const requiresNormalizedProxy = isAudioOrSpotify;
-      if (mediaBlob) {
-        triggerBlobDownload(mediaBlob, filename);
-      } else if (requiresNormalizedProxy) {
-        throw proxyError || new Error(
-          'Gagal mengunduh audio MP3 sesuai bitrate yang dipilih dari server. Silakan coba lagi.'
-        );
-      } else {
-        triggerDirectDownloadFallback(effectiveUrl, filename);
-      }
-
-      try {
-        const finalThumbnail =
-          effectiveThumb || (media.platform === 'spotify' ? 'https://open.spotifycdn.com/cdn/images/favicon.0f31d2ea.ico' : '');
-
-        await saveDownloadedMedia({
-          sourceUrl: media.url,
-          platform: media.platform,
-          title: effectiveTitle || 'Media DownloaderZero',
-          author: effectiveAuthor || media.platform,
-          artist: effectiveAuthor,
-          album: selectedTrack?.album || media.album,
-          thumbnail: finalThumbnail,
-          duration: effectiveDuration,
-          durationFormatted: effectiveDurationFmt,
-          quality: effectiveFormatForHistory.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
-          resolution: effectiveFormatForHistory.resolution || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
-          mediaType: targetFormat.type,
-          extension: ext as any,
-          filename,
-          filesize: mediaBlob ? formatBytes(mediaBlob.size) : (targetFormat.filesize || ''),
-          filesizeBytes: mediaBlob ? mediaBlob.size : (targetFormat.filesizeBytes || 0),
-          downloadUrl: effectiveUrl,
-          blob: mediaBlob || undefined
-        });
-        await loadHistory();
-      } catch (histErr) {
-        console.warn('Save history notice:', histErr);
-      }
-
-      void logDownloadActivity({
-        platform: media.platform,
-        url: media.url,
-        resolution: targetFormat.resolution || targetFormat.quality || (targetFormat.type === 'audio' ? `${selectedAudioQuality} kbps` : selectedVideoRes),
-        status: 'berhasil',
-        mediaType: targetFormat.type,
-        title: effectiveTitle || 'Media DownloaderZero'
+      // CASE C: Single video, audio, Spotify track, or single photo
+      const { completedLabel: doneLabel } = await executeSingleMediaDownload({
+        media,
+        targetFormat,
+        resolvedUrl,
+        startPct: 12,
+        onProgress: setDownloadProgress,
+        onStatusText: setDownloadStatusText
       });
 
       setDownloadProgress(100);
-      setDownloadStatusText('Unduhan selesai!');
-      setCompletedLabel(
-        targetFormat.type === 'audio'
-          ? 'Audio Terunduh!'
-          : targetFormat.type === 'photos'
-            ? 'Foto Terunduh!'
-            : 'Video Terunduh!'
-      );
+      setDownloadStatusText('Berkas asli berhasil diunduh!');
+      setCompletedLabel(doneLabel);
       setBerandaStage('completed');
     } catch (err: any) {
       console.error('Download execution error:', err);
@@ -1760,12 +2066,17 @@ export default function App() {
     }
   };
 
-  // Re-download from history item
-  const handleDownloadAgain = useCallback((item: HistoryItem) => {
+  // Re-download from history item (uses local Blob if present, otherwise verified authenticated fetch -> Blob)
+  const handleDownloadAgain = useCallback(async (item: HistoryItem) => {
     const ext = item.extension || 'mp4';
     const filename = item.filename || `DownloaderZero_${item.title.slice(0, 30)}.${ext}`;
-    const streamUrl = item.downloadUrl || item.sourceUrl;
 
+    if (item.blob && item.blob.size > 500) {
+      triggerBlobDownload(item.blob, filename);
+      return;
+    }
+
+    const streamUrl = item.downloadUrl || item.sourceUrl;
     let downloadHref = `/api/proxy-download?url=${encodeURIComponent(streamUrl)}&filename=${encodeURIComponent(filename)}&platform=${encodeURIComponent(item.platform)}&sourceUrl=${encodeURIComponent(item.sourceUrl)}&server=${encodeURIComponent(serverMode)}`;
     if (item.resolution) {
       downloadHref += `&res=${encodeURIComponent(item.resolution)}`;
@@ -1783,18 +2094,14 @@ export default function App() {
       downloadHref += `&bitrate=${encodeURIComponent(bitrate)}&title=${encodeURIComponent(item.title || '')}&artist=${encodeURIComponent(item.artist || item.author || '')}`;
     }
 
-    const a = document.createElement('a');
-    a.href = downloadHref;
-    a.download = filename;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      try {
-        document.body.removeChild(a);
-      } catch {}
-    }, 1500);
-  }, []);
+    try {
+      const freshBlob = await fetchVerifiedMediaBlob(downloadHref, ext);
+      triggerBlobDownload(freshBlob, filename);
+    } catch (err: any) {
+      console.warn('Re-download error:', err);
+      setErrorMessage(err?.message || 'Gagal mengunduh ulang berkas media asli.');
+    }
+  }, [serverMode]);
 
   // Delete history item
   const handleDeleteHistory = useCallback(async (id: string) => {
@@ -1921,8 +2228,32 @@ export default function App() {
     setTermsDefaultTab(tab);
     setIsTermsOpen(true);
   }, []);
+  const handleToggleInstantDownload = useCallback(() => {
+    setInstantDownload((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('dz_instant_download', next ? '1' : '0');
+      } catch {}
+      return next;
+    });
+  }, []);
   const handleCloseTerms = useCallback(() => setIsTermsOpen(false), []);
-  const handleCloseFormatModal = useCallback(() => setIsFormatModalOpen(false), []);
+  const handleCloseFormatModal = useCallback(() => {
+    if (instantStageRef.current === 'processing') return;
+    setIsFormatModalOpen(false);
+    setInstantStage('select');
+    setInstantProgress(0);
+    setInstantStatusText('');
+    setInstantSelectedLabel('');
+    setInstantCompletedLabel('');
+    setInstantError(null);
+  }, []);
+  const handleBackToFormatSelect = useCallback(() => {
+    setInstantStage('select');
+    setInstantProgress(0);
+    setInstantStatusText('');
+    setInstantError(null);
+  }, []);
   const handleClosePlayer = useCallback(() => setPlayingItem(null), []);
   const handleSelectServerMode = useCallback((mode: ServerMode) => setServerMode(mode), []);
   const handleAdminAccessChange = useCallback((active: boolean, openPanel?: boolean) => {
@@ -1932,7 +2263,10 @@ export default function App() {
   const handleOpenAdmin = useCallback(() => setIsAdminPanelOpen(true), []);
   const handleBackFromAdmin = useCallback(() => setIsAdminPanelOpen(false), []);
 
-  const isBusy = berandaStage === 'preparing' || berandaStage === 'downloading';
+  const isBusy =
+    berandaStage === 'preparing' ||
+    berandaStage === 'downloading' ||
+    instantStage === 'processing';
   const handleChangeTab = useCallback((tab: TabType) => {
     if (!isBusy) {
       setIsAdminPanelOpen(false);
@@ -2078,6 +2412,8 @@ export default function App() {
               bannerDownloadProgress={busyBannerState?.progress || 0}
               downloadingBannerLabel={busyBannerLabel}
               onOpenBannerSelector={handleOpenBannerSelector}
+              instantDownload={instantDownload}
+              onToggleInstantDownload={handleToggleInstantDownload}
             />
           )
         )}
@@ -2105,6 +2441,16 @@ export default function App() {
           onSelectAudioQuality={setSelectedAudioQuality}
           onConfirmDownload={handleConfirmDownload}
           isDownloading={isBusy}
+          instantDownload={instantDownload}
+          instantStage={instantStage}
+          instantProgress={instantProgress}
+          instantStatusText={instantStatusText}
+          instantSelectedLabel={instantSelectedLabel}
+          instantCompletedLabel={instantCompletedLabel}
+          instantCountdown={instantCountdown}
+          instantError={instantError}
+          onBackToFormatSelect={handleBackToFormatSelect}
+          onCompleteFinish={finishInstantDownloadReset}
         />
       )}
 

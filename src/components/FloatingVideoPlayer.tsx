@@ -113,6 +113,7 @@ export const FloatingVideoPlayer: React.FC<FloatingVideoPlayerProps> = React.mem
               poster={item.thumbnail}
               autoPlay
               playsInline
+              preload="auto"
               controls
               onError={() => {
                 if (!forceProxy && blobUrl && proxyUrl) {

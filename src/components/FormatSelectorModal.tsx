@@ -1,7 +1,24 @@
 import React from 'react';
-import { X, Video, Music, Check, Download, Sparkles, Film, Disc, ShieldCheck } from 'lucide-react';
+import {
+  X,
+  Video,
+  Music,
+  Check,
+  Download,
+  Sparkles,
+  Film,
+  Disc,
+  ShieldCheck,
+  Zap,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  RotateCcw
+} from 'lucide-react';
 import type { MediaMetadata, MediaFormat, MediaType } from '../types/index.ts';
 import { formatDuration, formatBytes } from '../services/scraper.ts';
+
+export type InstantModalStage = 'select' | 'processing' | 'completed' | 'error';
 
 interface FormatSelectorModalProps {
   isOpen: boolean;
@@ -15,6 +32,16 @@ interface FormatSelectorModalProps {
   onSelectAudioQuality: (quality: string) => void;
   onConfirmDownload: (format: MediaFormat) => void;
   isDownloading?: boolean;
+  instantDownload?: boolean;
+  instantStage?: InstantModalStage;
+  instantProgress?: number;
+  instantStatusText?: string;
+  instantSelectedLabel?: string;
+  instantCompletedLabel?: string;
+  instantCountdown?: number;
+  instantError?: string | null;
+  onBackToFormatSelect?: () => void;
+  onCompleteFinish?: () => void;
 }
 
 export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.memo(({
@@ -28,7 +55,17 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
   selectedAudioQuality,
   onSelectAudioQuality,
   onConfirmDownload,
-  isDownloading = false
+  isDownloading = false,
+  instantDownload = false,
+  instantStage = 'select',
+  instantProgress = 0,
+  instantStatusText = '',
+  instantSelectedLabel = '',
+  instantCompletedLabel = '',
+  instantCountdown = 3,
+  instantError = null,
+  onBackToFormatSelect,
+  onCompleteFinish
 }) => {
   if (!isOpen) return null;
 
@@ -468,10 +505,21 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
     (isFacebookServer2 && !hasFacebookAudio);
   const effectiveType: MediaType = isSpotify ? 'audio' : hideAudioTab ? 'video' : selectedType;
 
+  const activeStage: InstantModalStage = instantDownload ? instantStage : 'select';
+  const lockDismiss = activeStage === 'processing';
+  const handleDismiss = () => {
+    if (lockDismiss) return;
+    if (activeStage === 'completed' && onCompleteFinish) {
+      onCompleteFinish();
+      return;
+    }
+    onClose();
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 overflow-y-auto"
-      onClick={onClose}
+      onClick={handleDismiss}
       role="dialog"
       aria-modal="true"
     >
@@ -481,47 +529,218 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
       >
           {/* Header */}
           <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-blue-900/60">
-            <div>
+            <div className="min-w-0 pr-2">
               <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-sky-600 dark:text-cyan-400" />
-                <span>
-                  {isTerabox
-                    ? 'Siap Unduh File'
-                    : isSpotify
-                      ? 'Pilih Kualitas Audio'
-                      : hideAudioTab
-                        ? 'Pilih Resolusi Video'
-                        : 'Pilih Format & Kualitas'}
+                {activeStage === 'processing' ? (
+                  <Zap className="w-4 h-4 text-emerald-500 dark:text-emerald-400 shrink-0" />
+                ) : activeStage === 'completed' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-400 shrink-0" />
+                ) : activeStage === 'error' ? (
+                  <AlertCircle className="w-4 h-4 text-red-500 dark:text-red-400 shrink-0" />
+                ) : instantDownload ? (
+                  <Zap className="w-4 h-4 text-emerald-500 dark:text-emerald-400 shrink-0" />
+                ) : (
+                  <Sparkles className="w-4 h-4 text-sky-600 dark:text-cyan-400 shrink-0" />
+                )}
+                <span className="truncate">
+                  {activeStage === 'processing'
+                    ? 'Memproses Unduhan Instan'
+                    : activeStage === 'completed'
+                      ? (instantCompletedLabel || 'Unduhan Selesai!')
+                      : activeStage === 'error'
+                        ? 'Unduhan Gagal'
+                        : isTerabox
+                          ? 'Siap Unduh File'
+                          : isSpotify
+                            ? 'Pilih Kualitas Audio'
+                            : hideAudioTab
+                              ? 'Pilih Resolusi Video'
+                              : 'Pilih Format & Kualitas'}
                 </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-blue-200/70 mt-0.5">
-                {isTerabox
-                  ? 'File TeraBox akan diunduh sesuai berkas aslinya'
-                  : isSpotify
-                    ? 'Sesuaikan bitrate audio MP3 yang ingin disimpan'
-                    : isTwitter
-                      ? (hasTwitterAudio
-                          ? 'Pilih resolusi video asli atau ekstrak audio MP3 dari postingan X'
-                          : 'Menampilkan resolusi asli yang tersedia dari postingan X')
-                      : isInstagramServer2
-                        ? 'Menampilkan resolusi asli yang tersedia dari Instagram Server 2'
-                        : isPinterestServer2
-                          ? 'Menampilkan resolusi asli yang tersedia dari Pinterest Server 2'
-                          : isFacebookServer2
-                            ? 'Pilih resolusi video asli atau audio MP3 dari Facebook Server 2'
-                            : 'Sesuaikan resolusi video atau bitrate audio yang ingin disimpan'}
+                {activeStage === 'processing'
+                  ? 'Mengunduh & memverifikasi berkas media asli'
+                  : activeStage === 'completed'
+                    ? 'Berkas media asli terunduh & tersimpan di Riwayat'
+                    : activeStage === 'error'
+                      ? 'Terjadi kendala saat menyiapkan atau mengunduh berkas'
+                      : isTerabox
+                        ? 'File TeraBox akan diunduh sesuai berkas aslinya'
+                        : isSpotify
+                          ? 'Sesuaikan bitrate audio MP3 yang ingin disimpan'
+                          : isTwitter
+                            ? (hasTwitterAudio
+                                ? 'Pilih resolusi video asli atau ekstrak audio MP3 dari postingan X'
+                                : 'Menampilkan resolusi asli yang tersedia dari postingan X')
+                            : isInstagramServer2
+                              ? 'Menampilkan resolusi asli yang tersedia dari Instagram Server 2'
+                              : isPinterestServer2
+                                ? 'Menampilkan resolusi asli yang tersedia dari Pinterest Server 2'
+                                : isFacebookServer2
+                                  ? 'Pilih resolusi video asli atau audio MP3 dari Facebook Server 2'
+                                  : instantDownload
+                                    ? 'Unduh Instan aktif · Pilih kualitas lalu unduh langsung ke perangkat'
+                                    : 'Sesuaikan resolusi video atau bitrate audio yang ingin disimpan'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-900/80 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center border border-slate-200 dark:border-white/10 active:scale-90 transition-transform duration-150 cursor-pointer"
-              aria-label="Tutup pemilihan format"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            {!lockDismiss && (
+              <button
+                type="button"
+                onClick={handleDismiss}
+                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-900/80 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white flex items-center justify-center border border-slate-200 dark:border-white/10 active:scale-90 transition-transform duration-150 cursor-pointer shrink-0"
+                aria-label="Tutup panel format"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
+          {activeStage === 'processing' ? (
+            <div className="py-5 space-y-5">
+              {/* Compact Media Summary */}
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-[#0c1e42] border border-slate-200 dark:border-blue-500/25">
+                <div className="relative w-20 h-14 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-900 shrink-0 border border-slate-200 dark:border-white/10">
+                  {isSpotify && (!resolvedThumbnail || resolvedThumbnail.includes('favicon')) ? (
+                    <div className="w-full h-full flex items-center justify-center bg-black">
+                      <div className="w-8 h-8 rounded-full bg-[#1DB954] flex items-center justify-center shadow-md">
+                        <svg className="w-4 h-4 fill-black" viewBox="0 0 24 24">
+                          <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.508 17.308a.747.747 0 01-1.03.248c-2.82-1.723-6.37-2.113-10.55-1.158a.75.75 0 11-.336-1.462c4.57-1.043 8.49-.597 11.668 1.342.348.213.46.666.248 1.03zm1.47-3.268a.936.936 0 01-1.288.309c-3.227-1.984-8.147-2.557-11.964-1.398a.937.937 0 11-.548-1.792c4.364-1.325 9.79-.684 13.49 1.593.407.25.539.78.31 1.288zm.126-3.41c-3.863-2.294-10.244-2.507-13.935-1.386a1.124 1.124 0 01-.655-2.152c4.24-1.288 11.288-1.042 15.74 1.602a1.125 1.125 0 01-1.15 1.936z" />
+                        </svg>
+                      </div>
+                    </div>
+                  ) : resolvedThumbnail ? (
+                    <img
+                      src={resolvedThumbnail}
+                      alt={media.title}
+                      decoding="async"
+                      referrerPolicy="no-referrer"
+                      crossOrigin="anonymous"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-blue-950">
+                      <Film className="w-6 h-6 text-cyan-400" />
+                    </div>
+                  )}
+                  {displayDuration && (
+                    <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/85 text-[10px] font-mono font-semibold text-white">
+                      {displayDuration}
+                    </span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-sky-600 dark:text-cyan-400">
+                      {media.platform}
+                    </span>
+                    {instantSelectedLabel && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                        {instantSelectedLabel}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate mt-0.5">
+                    {media.title || 'Tautan Media'}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-blue-200/60 truncate">
+                    {media.author || 'Sedang Memproses'}
+                  </p>
+                </div>
+              </div>
+
+              {/* In-Place Progress Indicator */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#050e24] border border-slate-200 dark:border-blue-900/60 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Loader2 className="w-5 h-5 text-sky-600 dark:text-cyan-400 animate-spin shrink-0" />
+                    <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">
+                      {instantStatusText || 'Mengambil hasil dari server...'}
+                    </span>
+                  </div>
+                  <span className="text-xs sm:text-sm font-extrabold font-mono text-sky-600 dark:text-cyan-400 shrink-0">
+                    {Math.max(0, Math.min(100, Math.round(instantProgress)))}%
+                  </span>
+                </div>
+
+                <div className="w-full h-3 rounded-full bg-slate-200 dark:bg-slate-800/90 overflow-hidden p-0.5">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-400 transition-all duration-200"
+                    style={{ width: `${Math.max(4, Math.min(100, instantProgress))}%` }}
+                  />
+                </div>
+
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center">
+                  Berkas media asli diverifikasi lalu disimpan otomatis ke perangkat Anda.
+                </p>
+              </div>
+            </div>
+          ) : activeStage === 'completed' ? (
+            <div className="py-6 flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-300 dark:border-emerald-400/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-lg shadow-emerald-500/20">
+                <CheckCircle2 className="w-9 h-9 stroke-[2.2]" />
+              </div>
+
+              <div className="space-y-1 max-w-sm">
+                <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
+                  {instantCompletedLabel || 'Unduhan Selesai!'}
+                </h3>
+                <p className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 line-clamp-2">
+                  {media.title || 'Media berhasil disimpan'}
+                </p>
+                {instantSelectedLabel && (
+                  <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                    {instantSelectedLabel}
+                  </p>
+                )}
+              </div>
+
+              <div className="px-4 py-2 rounded-full bg-slate-100 dark:bg-[#050e24] border border-slate-200 dark:border-blue-900/60 text-xs font-semibold text-slate-600 dark:text-cyan-300">
+                Kembali ke Beranda dalam {instantCountdown} detik...
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDismiss}
+                className="w-full py-3.5 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-bold text-sm shadow-lg shadow-emerald-500/25 active:scale-[0.98] transition-transform cursor-pointer"
+              >
+                Selesai Sekarang
+              </button>
+            </div>
+          ) : activeStage === 'error' ? (
+            <div className="py-5 space-y-4">
+              <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-500/30 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                <div className="min-w-0 space-y-1">
+                  <h3 className="text-sm font-bold text-red-800 dark:text-red-200">
+                    Gagal Memproses Unduhan Instan
+                  </h3>
+                  <p className="text-xs text-red-700 dark:text-red-300/90 leading-relaxed break-words">
+                    {instantError || 'Terjadi kesalahan saat mengunduh media. Silakan coba resolusi atau server lain.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => onBackToFormatSelect?.()}
+                  className="flex-1 py-3.5 px-4 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-600/25 active:scale-[0.98] transition-transform cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Pilih Kualitas Lain</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="py-3.5 px-5 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-[#0c1e42] dark:hover:bg-[#132a5c] text-slate-700 dark:text-slate-200 font-bold text-xs sm:text-sm border border-slate-200 dark:border-blue-500/30 active:scale-[0.98] transition-transform cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          ) : (
+          <>
           {/* Scrollable Content */}
           <div className="overflow-y-auto space-y-4 py-3.5 pr-1">
             {/* Media Preview Card */}
@@ -858,12 +1077,28 @@ export const FormatSelectorModal: React.FC<FormatSelectorModalProps> = React.mem
               type="button"
               disabled={isDownloading}
               onClick={handleStartDownload}
-              className="w-full py-4 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 active:scale-[0.98] transition-colors duration-150 cursor-pointer disabled:opacity-50"
+              className={`w-full py-4 rounded-full text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] transition-colors duration-150 cursor-pointer disabled:opacity-50 ${
+                instantDownload
+                  ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-400 shadow-emerald-600/30'
+                  : 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 shadow-blue-600/30'
+              }`}
             >
-              <Download className="w-5 h-5 stroke-[2.5]" />
-              <span>{isDownloading ? 'Sedang Memproses...' : 'Mulai Download'}</span>
+              {instantDownload ? (
+                <Zap className="w-5 h-5 stroke-[2.5]" />
+              ) : (
+                <Download className="w-5 h-5 stroke-[2.5]" />
+              )}
+              <span>
+                {isDownloading
+                  ? 'Sedang Memproses...'
+                  : instantDownload
+                    ? 'Unduh Instan'
+                    : 'Mulai Download'}
+              </span>
             </button>
           </div>
+          </>
+          )}
       </div>
     </div>
   );
