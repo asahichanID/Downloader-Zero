@@ -64,9 +64,9 @@ export function isSafePublicUrl(urlString: string): { safe: boolean; reason?: st
     return { safe: false, reason: 'URL kosong atau tidak valid.' };
   }
 
-  // Length limit to prevent buffer/regex DoS
-  if (urlString.length > 2048) {
-    return { safe: false, reason: 'URL melebihi batas panjang maksimum (2048 karakter).' };
+  // Length limit to prevent buffer/regex DoS while permitting long signed CDN URLs
+  if (urlString.length > 8192) {
+    return { safe: false, reason: 'URL melebihi batas panjang maksimum (8192 karakter).' };
   }
 
   // Null byte injection check

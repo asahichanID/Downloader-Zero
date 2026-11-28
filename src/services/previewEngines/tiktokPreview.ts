@@ -2,7 +2,9 @@ import type { MediaMetadata, MediaFormat, ServerMode } from '../../types/index.t
 import {
   resolveTikTokServer2 as resolveTikTokServer2S2,
   resolveTikTokShortUrl,
-  getCachedOrFetchTikTokData
+  getCachedOrFetchTikTokData,
+  getTikTokCdnCookieForUrl,
+  type TikTokResolveOptions
 } from '../server2/tiktok-s2.ts';
 
 // Helper to format bytes
@@ -276,9 +278,10 @@ export async function resolveTikTokServer2(
   url: string,
   formatId: string,
   resolution: string,
-  type: string
+  type: string,
+  options?: TikTokResolveOptions
 ): Promise<{ downloadUrl: string; quality?: string }> {
-  return await resolveTikTokServer2S2(url, formatId, resolution, type);
+  return await resolveTikTokServer2S2(url, formatId, resolution, type, options);
 }
 
 // Master Dispatcher for TikTok format download (Server 1 vs Server 2 vs Auto)
@@ -288,20 +291,33 @@ export async function resolveTikTokDownload(
   resolution: string,
   type: string,
   serverMode: ServerMode = 'auto',
-  apiKey?: string
+  apiKey?: string,
+  options?: TikTokResolveOptions
 ): Promise<{ downloadUrl: string; quality?: string }> {
   if (serverMode === 'server1') {
     return await resolveTikTokServer1(url, formatId, resolution, type, apiKey);
   }
 
   if (serverMode === 'server2') {
-    return await resolveTikTokServer2(url, formatId, resolution, type);
+    return await resolveTikTokServer2(url, formatId, resolution, type, options);
   }
 
-  // Auto / Default: Server 2 is the dedicated scraper engine for TikTok (free, no apikey, accurate 4K/2K/1080p/720p/audio)
-  // We prioritize Server 2 first; if it ever fails, smoothly fallback to Server 1
+  const failedUrl = options?.failedUrl || '';
+  const failedFromServer1 = Boolean(failedUrl && failedUrl.includes('neoxr'));
+
+  // Auto / Default: Server 2 is the dedicated scraper engine for TikTok
+  // When recovering from a failed URL, skip returning an identical un-cookied failed URL and fail over to Server 1.
   try {
-    return await resolveTikTokServer2(url, formatId, resolution, type);
+    const s2 = await resolveTikTokServer2(url, formatId, resolution, type, options);
+    if (
+      failedUrl &&
+      s2.downloadUrl === failedUrl &&
+      !failedFromServer1 &&
+      !getTikTokCdnCookieForUrl(s2.downloadUrl)
+    ) {
+      throw new Error('Server 2 returned identical failed TikTok stream URL.');
+    }
+    return s2;
   } catch (err2) {
     console.warn('[TikTok Resolve] Server 2 scraper notice, falling back to Server 1:', err2);
     return await resolveTikTokServer1(url, formatId, resolution, type, apiKey);

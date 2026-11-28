@@ -1360,7 +1360,7 @@ export default function App() {
         const probeFormatSnapshot = resolvedFormat;
         const probeFinalUrl = finalUrl;
         const prepareHref = `${buildProxyHref(finalUrl, `preview.${resolvedFormat.extension || 'mp4'}`, mediaData, true, undefined, resolvedFormat)}&prepare=1`;
-        void fetch(prepareHref)
+        void fetch(prepareHref, { credentials: 'same-origin' })
           .then((r) => (r.ok ? r.json() : null))
           .then((prepJson) => {
             if (!prepJson || typeof prepJson.size !== 'number' || prepJson.size <= 0) return;
@@ -1597,7 +1597,7 @@ export default function App() {
 
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            const res = await fetch(downloadHref);
+            const res = await fetch(downloadHref, { credentials: 'same-origin' });
             if (!res.ok) continue;
             const ct = (res.headers.get('content-type') || '').toLowerCase();
             if (ct.includes('text/html')) continue;
@@ -1970,7 +1970,8 @@ export default function App() {
           const photoExt = isPng ? 'png' : 'jpg';
           const photoEntryName = `${sanitizedTitle}_foto_${String(i + 1).padStart(2, '0')}.${photoExt}`;
           const res = await fetch(
-            `/api/proxy-download?url=${encodeURIComponent(imgUrl)}&filename=${encodeURIComponent(photoEntryName)}&platform=${encodeURIComponent(media.platform)}&sourceUrl=${encodeURIComponent(media.url)}`
+            `/api/proxy-download?url=${encodeURIComponent(imgUrl)}&filename=${encodeURIComponent(photoEntryName)}&platform=${encodeURIComponent(media.platform)}&sourceUrl=${encodeURIComponent(media.url)}`,
+            { credentials: 'same-origin' }
           );
           if (res.ok) {
             const ct = (res.headers.get('content-type') || '').toLowerCase();

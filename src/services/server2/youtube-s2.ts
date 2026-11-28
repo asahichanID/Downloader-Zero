@@ -370,17 +370,34 @@ async function getSaveTubeCdnHost(forceRefresh = false): Promise<string> {
   return fallback;
 }
 
-async function fetchSaveTubeInfo(canonicalUrl: string, videoId: string): Promise<{ cdn: string; info: SaveTubeInfo }> {
-  const cached = videoId ? infoCache.get(videoId) : undefined;
-  if (cached && Date.now() < cached.expiresAt) {
-    return { cdn: cached.cdn, info: cached.info };
+async function fetchSaveTubeInfo(
+  canonicalUrl: string,
+  videoId: string,
+  options?: { forceRefresh?: boolean; excludeCdnHost?: string }
+): Promise<{ cdn: string; info: SaveTubeInfo }> {
+  const forceRefresh = Boolean(options?.forceRefresh);
+  const excludeCdnHost = (options?.excludeCdnHost || '').toLowerCase().trim();
+
+  if (forceRefresh && videoId) {
+    infoCache.delete(videoId);
+  } else {
+    const cached = videoId ? infoCache.get(videoId) : undefined;
+    if (cached && Date.now() < cached.expiresAt && cached.cdn.toLowerCase() !== excludeCdnHost) {
+      return { cdn: cached.cdn, info: cached.info };
+    }
   }
 
-  const primaryCdn = await getSaveTubeCdnHost(false);
-  const cdnCandidates = [
+  const primaryCdn = await getSaveTubeCdnHost(forceRefresh);
+  const rawCandidates = [
     primaryCdn,
-    ...FALLBACK_CDNS.filter((c) => c !== primaryCdn).slice(0, 2)
+    ...FALLBACK_CDNS.filter((c) => c !== primaryCdn)
   ];
+  const cdnCandidates = excludeCdnHost
+    ? [
+        ...rawCandidates.filter((c) => c.toLowerCase() !== excludeCdnHost),
+        ...rawCandidates.filter((c) => c.toLowerCase() === excludeCdnHost)
+      ].slice(0, 3)
+    : rawCandidates.slice(0, 3);
 
   let lastErr = '';
   for (const cdn of cdnCandidates) {
@@ -646,7 +663,8 @@ export async function resolveYouTubeServer2(
   rawUrl: string,
   formatId: string,
   resolution: string,
-  type: string
+  type: string,
+  options?: { forceRefresh?: boolean; excludeCdnHost?: string }
 ): Promise<{ downloadUrl: string; quality?: string }> {
   const videoId = extractYouTubeVideoId(rawUrl);
   const canonicalUrl = canonicalizeYouTubeUrl(rawUrl);
@@ -655,7 +673,7 @@ export async function resolveYouTubeServer2(
     throw new Error('Server 2 YouTube: ID video tidak valid.');
   }
 
-  const { cdn, info } = await fetchSaveTubeInfo(canonicalUrl, videoId);
+  const { cdn, info } = await fetchSaveTubeInfo(canonicalUrl, videoId, options);
 
   const isAudio =
     type === 'audio' ||
@@ -708,10 +726,9 @@ export async function resolveYouTubeServer2(
       const q = candidateAudioQs[i];
       let dlUrl = await callSaveTubeDownload('audio', q, activeAudioCdn, activeAudioKey).catch(() => null);
       if (!dlUrl && i === 0) {
-        // Retry once with fresh info key/CDN in case cached key expired
-        infoCache.delete(videoId);
+        // Retry once with fresh info key/CDN excluding failed CDN
         try {
-          const fresh = await fetchSaveTubeInfo(canonicalUrl, videoId);
+          const fresh = await fetchSaveTubeInfo(canonicalUrl, videoId, { forceRefresh: true, excludeCdnHost: activeAudioCdn });
           activeAudioCdn = fresh.cdn;
           activeAudioKey = fresh.info.key;
           dlUrl = await callSaveTubeDownload('audio', q, activeAudioCdn, activeAudioKey).catch(() => null);
@@ -766,10 +783,9 @@ export async function resolveYouTubeServer2(
     const q = candidateHeights[i];
     let dlUrl = await callSaveTubeDownload('video', q, activeCdn, activeKey).catch(() => null);
     if (!dlUrl && i === 0) {
-      // Refresh key once if first attempt failed (e.g. expired key)
-      infoCache.delete(videoId);
+      // Refresh key once on another CDN if first attempt failed (e.g. expired key or CDN outage)
       try {
-        const fresh = await fetchSaveTubeInfo(canonicalUrl, videoId);
+        const fresh = await fetchSaveTubeInfo(canonicalUrl, videoId, { forceRefresh: true, excludeCdnHost: activeCdn });
         activeCdn = fresh.cdn;
         activeKey = fresh.info.key;
         dlUrl = await callSaveTubeDownload('video', q, activeCdn, activeKey).catch(() => null);

@@ -10,6 +10,7 @@ import { createServer as createViteServer } from 'vite';
 import NodeID3 from 'node-id3';
 import ffmpegStaticPath from 'ffmpeg-static';
 import { extractMedia, detectPlatform, resolveTikTokDownload, resolveYouTubeServer2, resolveSpotifyFullAudioServer2, resolveInstagramServer2, resolvePinterestServer2, resolveFacebookServer2, checkNeoxrApiKeyStatus } from './src/services/scraper.ts';
+import { getTikTokCdnCookieForUrl } from './src/services/server2/tiktok-s2.ts';
 import {
   isSafePublicUrl,
   createRateLimiter,
@@ -55,7 +56,7 @@ for (let i = 0; i < cliArgs.length; i++) {
   }
 }
 const HOST = cliHost || (process.env.HOST ? process.env.HOST : '0.0.0.0');
-const PORT = cliPort || 3000;
+const PORT = cliPort || Number(process.env.PORT) || 3000;
 
 async function startServer() {
   const app = express();
@@ -1028,11 +1029,11 @@ async function startServer() {
         targetUrl = req.query.url[0];
       }
 
-      // Check raw request URL to avoid truncation by unencoded ampersands
+      // Check raw request URL to avoid truncation by unencoded ampersands (anchored to ^, ?, or &)
       const rawReqUrl = req.url || '';
-      const urlParamIdx = rawReqUrl.indexOf('url=');
-      if (urlParamIdx !== -1) {
-        let extracted = rawReqUrl.slice(urlParamIdx + 4);
+      const urlParamMatch = rawReqUrl.match(/(?:^|[?&])url=/);
+      if (urlParamMatch && urlParamMatch.index !== undefined) {
+        let extracted = rawReqUrl.slice(urlParamMatch.index + urlParamMatch[0].length);
         const nextParamMatch = extracted.match(/&(?:filename|platform|sourceUrl|title|artist|album|genre|year|cover|apiKey|server|inline|bitrate|duration|audioUrl|res|original|prepare|cb)=/);
         if (nextParamMatch && nextParamMatch.index !== undefined) {
           extracted = extracted.slice(0, nextParamMatch.index);
@@ -1363,69 +1364,107 @@ async function startServer() {
         return;
       }
 
-      // Multi-Platform CDN Fetch Cascade
-      // Define appropriate Referer candidate for target CDN
-      let platformReferer = '';
-      if (targetUrl.includes('tikwm.com')) {
-        platformReferer = 'https://www.tikwm.com/';
-      } else if (targetUrl.includes('tiktokcdn') || targetUrl.includes('byteoversea') || targetUrl.includes('ibyteimg')) {
-        platformReferer = ''; // Empty Referer ensures TikTok CDN serves at maximum bitrate without 503
-      } else if (targetUrl.includes('tiktok.com')) {
-        platformReferer = 'https://www.tiktok.com/';
-      } else if (platform === 'instagram' || targetUrl.includes('instagram') || targetUrl.includes('cdninstagram')) {
-        platformReferer = 'https://www.instagram.com/';
-      } else if (targetUrl.includes('facebook') || targetUrl.includes('fbcdn')) {
-        platformReferer = 'https://www.facebook.com/';
-      } else if (targetUrl.includes('savetube')) {
-        platformReferer = 'https://save-tube.com/';
-      } else if (
-        targetUrl.includes('youtube') ||
-        targetUrl.includes('googlevideo') ||
-        targetUrl.includes('yt3.ggpht.com') ||
-        targetUrl.includes('yt4.ggpht.com') ||
-        targetUrl.includes('lh3.googleusercontent.com')
-      ) {
-        platformReferer = 'https://www.youtube.com/';
-      } else if (targetUrl.includes('pinterest') || targetUrl.includes('pinimg')) {
-        platformReferer = 'https://www.pinterest.com/';
-      } else if (targetUrl.includes('terabox') || targetUrl.includes('1024tera') || targetUrl.includes('4funbox')) {
-        platformReferer = 'https://www.terabox.app/';
-      } else if (targetUrl.includes('snapcdn.app')) {
-        platformReferer = 'https://dl.snapcdn.app/';
-      } else if (targetUrl.includes('twimg.com') || targetUrl.includes('twitter.com') || targetUrl.includes('x.com')) {
-        platformReferer = 'https://x.com/';
-      }
+      // Multi-Platform CDN Fetch Cascade (computed dynamically per candidate URL so retries get matching headers & cookies)
+      const getPlatformRefererForUrl = (candidateUrl: string): string => {
+        if (candidateUrl.includes('tikwm.com')) return 'https://www.tikwm.com/';
+        if (candidateUrl.includes('tikcdn.io') || candidateUrl.includes('ssstik')) return 'https://ssstik.io/';
+        if (candidateUrl.includes('tiktokcdn') || candidateUrl.includes('byteoversea') || candidateUrl.includes('ibyteimg')) return '';
+        if (candidateUrl.includes('tiktok.com')) return 'https://www.tiktok.com/';
+        if (platform === 'instagram' || candidateUrl.includes('instagram') || candidateUrl.includes('cdninstagram')) return 'https://www.instagram.com/';
+        if (candidateUrl.includes('facebook') || candidateUrl.includes('fbcdn')) return 'https://www.facebook.com/';
+        if (candidateUrl.includes('savetube')) return 'https://save-tube.com/';
+        if (
+          candidateUrl.includes('youtube') ||
+          candidateUrl.includes('googlevideo') ||
+          candidateUrl.includes('yt3.ggpht.com') ||
+          candidateUrl.includes('yt4.ggpht.com') ||
+          candidateUrl.includes('lh3.googleusercontent.com')
+        ) {
+          return 'https://www.youtube.com/';
+        }
+        if (candidateUrl.includes('pinterest') || candidateUrl.includes('pinimg')) return 'https://www.pinterest.com/';
+        if (candidateUrl.includes('terabox') || candidateUrl.includes('1024tera') || candidateUrl.includes('4funbox')) return 'https://www.terabox.app/';
+        if (candidateUrl.includes('snapcdn.app')) return 'https://dl.snapcdn.app/';
+        if (candidateUrl.includes('twimg.com') || candidateUrl.includes('twitter.com') || candidateUrl.includes('x.com')) return 'https://x.com/';
+        return '';
+      };
 
-      const fetchCandidateConfigs: Array<{ idx: number; headers: Record<string, string> }> = [
-        // Strategy 0: Clean browser request without Referer (standard for most signed media CDNs)
-        {
+      const buildFetchConfigsForUrl = (candidateUrl: string): Array<{ idx: number; headers: Record<string, string> }> => {
+        const ref = getPlatformRefererForUrl(candidateUrl);
+        const ttCookie = getTikTokCdnCookieForUrl(candidateUrl);
+        const configs: Array<{ idx: number; headers: Record<string, string> }> = [];
+
+        if (ttCookie) {
+          configs.push({
+            idx: 5,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+              'Accept': '*/*',
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Referer': 'https://www.tiktok.com/',
+              'Origin': 'https://www.tiktok.com',
+              'Cookie': ttCookie
+            }
+          });
+        }
+
+        // Strategy 0: Clean Chrome without Sec-Fetch-Mode (safe across signed storage & Cloudflare Workers)
+        configs.push({
           idx: 0,
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
             'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Sec-Fetch-Mode': 'no-cors'
+            'Accept-Language': 'en-US,en;q=0.9'
           }
-        },
-        // Strategy 1: With specific platform referer
-        ...(platformReferer ? [{
-          idx: 1,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-            'Referer': platformReferer
-          }
-        }] : []),
+        });
+
+        // Strategy 1: With matched platform Referer
+        if (ref) {
+          configs.push({
+            idx: 1,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+              'Accept': '*/*',
+              'Referer': ref
+            }
+          });
+        }
+
         // Strategy 2: Mobile Safari User-Agent
-        {
+        configs.push({
           idx: 2,
           headers: {
             'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
             'Accept': '*/*',
-            ...(platformReferer ? { 'Referer': platformReferer } : {})
+            ...(ref ? { 'Referer': ref } : {})
           }
+        });
+
+        // Strategy 3: Chrome with Sec-Fetch-Mode: no-cors
+        configs.push({
+          idx: 3,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Sec-Fetch-Mode': 'no-cors'
+          }
+        });
+
+        // Strategy 4: Explicit TikTok Referer fallback for TikTok CDNs when empty referer fails
+        if (!ref && (candidateUrl.includes('tiktokcdn') || candidateUrl.includes('byteoversea') || candidateUrl.includes('ibyteimg'))) {
+          configs.push({
+            idx: 4,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+              'Accept': '*/*',
+              'Referer': 'https://www.tiktok.com/'
+            }
+          });
         }
-      ];
+
+        return configs;
+      };
 
       const getHostKey = (u: string): string => {
         try {
@@ -1436,12 +1475,13 @@ async function startServer() {
       };
 
       const getOrderedFetchConfigs = (u: string) => {
+        const candidateConfigs = buildFetchConfigsForUrl(u);
         const host = getHostKey(u);
         const preferredIdx = host ? winningStrategyByHost.get(host) : undefined;
-        if (preferredIdx === undefined) return fetchCandidateConfigs;
-        const preferred = fetchCandidateConfigs.find((c) => c.idx === preferredIdx);
-        if (!preferred) return fetchCandidateConfigs;
-        return [preferred, ...fetchCandidateConfigs.filter((c) => c.idx !== preferredIdx)];
+        if (preferredIdx === undefined) return candidateConfigs;
+        const preferred = candidateConfigs.find((c) => c.idx === preferredIdx);
+        if (!preferred) return candidateConfigs;
+        return [preferred, ...candidateConfigs.filter((c) => c.idx !== preferredIdx)];
       };
 
       const rememberWinningStrategy = (u: string, idx: number) => {
@@ -1546,8 +1586,15 @@ async function startServer() {
       const rawResHint = `${rawResParam} ${sanitizedFilename}`.toLowerCase();
       const isPrepareOnly = req.query.prepare === '1' || req.query.prepare === 'true';
 
-      const tryReResolveFreshUrl = async (): Promise<{ url: string; dashAudioUrl?: string } | null> => {
+      const tryReResolveFreshUrl = async (failedUrl: string = targetUrl): Promise<{ url: string; dashAudioUrl?: string } | null> => {
         if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) return null;
+        const isAcceptableFresh = (candidateUrl?: string): boolean => {
+          if (!candidateUrl || !/^https?:\/\//i.test(candidateUrl)) return false;
+          if (!isSafePublicUrl(candidateUrl).safe) return false;
+          if (candidateUrl !== failedUrl) return true;
+          return Boolean(getTikTokCdnCookieForUrl(candidateUrl));
+        };
+
         try {
           console.log(`[proxy-download] Attempting on-the-fly re-resolution for ${platform || 'media'} (${sourceUrl})...`);
           const reKey = typeof req.query.apiKey === 'string' && req.query.apiKey.trim() ? req.query.apiKey.trim() : undefined;
@@ -1574,71 +1621,95 @@ async function startServer() {
               resTag,
               wantsMp3Output ? 'audio' : 'video',
               reServer,
-              reKey
+              reKey,
+              { forceRefresh: true, failedUrl }
             );
-            if (resolvedTt.downloadUrl?.startsWith('http') && isSafePublicUrl(resolvedTt.downloadUrl).safe) {
+            if (isAcceptableFresh(resolvedTt.downloadUrl)) {
               return { url: resolvedTt.downloadUrl };
             }
           }
 
           if (detected === 'facebook' && reServer !== 'server1') {
-            const resolvedFb = await resolveFacebookServer2(
-              sourceUrl,
-              rawResParam || (wantsMp3Output ? '320 kbps' : '720p'),
-              wantsMp3Output ? 'audio' : 'video'
-            );
-            if (resolvedFb.downloadUrl?.startsWith('http') && isSafePublicUrl(resolvedFb.downloadUrl).safe) {
-              const safeDashAudio = resolvedFb.dashAudioUrl && isSafePublicUrl(resolvedFb.dashAudioUrl).safe ? resolvedFb.dashAudioUrl : undefined;
-              return { url: resolvedFb.downloadUrl, dashAudioUrl: safeDashAudio };
-            }
+            try {
+              const resolvedFb = await resolveFacebookServer2(
+                sourceUrl,
+                rawResParam || (wantsMp3Output ? '320 kbps' : '720p'),
+                wantsMp3Output ? 'audio' : 'video'
+              );
+              if (isAcceptableFresh(resolvedFb.downloadUrl)) {
+                const safeDashAudio = resolvedFb.dashAudioUrl && isSafePublicUrl(resolvedFb.dashAudioUrl).safe ? resolvedFb.dashAudioUrl : undefined;
+                return { url: resolvedFb.downloadUrl, dashAudioUrl: safeDashAudio };
+              }
+            } catch {}
           }
 
           if (detected === 'instagram' && reServer !== 'server1') {
-            const resolvedIg = await resolveInstagramServer2(
-              sourceUrl,
-              rawResParam || (wantsMp3Output ? '320 kbps' : '1080p'),
-              wantsMp3Output ? 'audio' : 'video'
-            );
-            if (resolvedIg.downloadUrl?.startsWith('http') && isSafePublicUrl(resolvedIg.downloadUrl).safe) {
-              const safeDashAudio = resolvedIg.dashAudioUrl && isSafePublicUrl(resolvedIg.dashAudioUrl).safe ? resolvedIg.dashAudioUrl : undefined;
-              return { url: resolvedIg.downloadUrl, dashAudioUrl: safeDashAudio };
-            }
+            try {
+              const resolvedIg = await resolveInstagramServer2(
+                sourceUrl,
+                rawResParam || (wantsMp3Output ? '320 kbps' : '1080p'),
+                wantsMp3Output ? 'audio' : 'video'
+              );
+              if (isAcceptableFresh(resolvedIg.downloadUrl)) {
+                const safeDashAudio = resolvedIg.dashAudioUrl && isSafePublicUrl(resolvedIg.dashAudioUrl).safe ? resolvedIg.dashAudioUrl : undefined;
+                return { url: resolvedIg.downloadUrl, dashAudioUrl: safeDashAudio };
+              }
+            } catch {}
           }
 
           if (detected === 'pinterest' && reServer !== 'server1') {
-            const resolvedPin = await resolvePinterestServer2(
-              sourceUrl,
-              rawResParam || (wantsMp3Output ? '320 kbps' : '720p'),
-              wantsMp3Output ? 'audio' : 'video'
-            );
-            if (resolvedPin.downloadUrl?.startsWith('http') && isSafePublicUrl(resolvedPin.downloadUrl).safe) {
-              const safeDashAudio = resolvedPin.dashAudioUrl && isSafePublicUrl(resolvedPin.dashAudioUrl).safe ? resolvedPin.dashAudioUrl : undefined;
-              return { url: resolvedPin.downloadUrl, dashAudioUrl: safeDashAudio };
-            }
+            try {
+              const resolvedPin = await resolvePinterestServer2(
+                sourceUrl,
+                rawResParam || (wantsMp3Output ? '320 kbps' : '720p'),
+                wantsMp3Output ? 'audio' : 'video'
+              );
+              if (isAcceptableFresh(resolvedPin.downloadUrl)) {
+                const safeDashAudio = resolvedPin.dashAudioUrl && isSafePublicUrl(resolvedPin.dashAudioUrl).safe ? resolvedPin.dashAudioUrl : undefined;
+                return { url: resolvedPin.downloadUrl, dashAudioUrl: safeDashAudio };
+              }
+            } catch {}
           }
 
           if (detected === 'youtube' && reServer !== 'server1') {
-            const resolvedYt = await resolveYouTubeServer2(
-              sourceUrl,
-              '',
-              rawResParam || (wantsMp3Output ? '320 kbps' : '1080p'),
-              wantsMp3Output ? 'audio' : 'video'
-            );
-            if (resolvedYt.downloadUrl?.startsWith('http') && isSafePublicUrl(resolvedYt.downloadUrl).safe) {
-              return { url: resolvedYt.downloadUrl };
-            }
+            try {
+              const resolvedYt = await resolveYouTubeServer2(
+                sourceUrl,
+                '',
+                rawResParam || (wantsMp3Output ? '320 kbps' : '1080p'),
+                wantsMp3Output ? 'audio' : 'video',
+                { forceRefresh: true, excludeCdnHost: getHostKey(failedUrl) }
+              );
+              if (isAcceptableFresh(resolvedYt.downloadUrl)) {
+                return { url: resolvedYt.downloadUrl };
+              }
+            } catch {}
           }
 
-          const freshMedia = await extractMedia(sourceUrl, reKey, reServer);
-          if (freshMedia?.formats?.length) {
-            const matchedFormat =
-              (rawResParam && freshMedia.formats.find((f) => f.url?.startsWith('http') && f.resolution?.toLowerCase() === rawResParam.toLowerCase())) ||
-              freshMedia.formats.find((f) => f.isDirect && f.url && f.url.startsWith('http')) ||
-              freshMedia.formats[0];
-            if (matchedFormat?.url?.startsWith('http') && isSafePublicUrl(matchedFormat.url).safe) {
-              const safeDashAudio = matchedFormat.dashAudioUrl && isSafePublicUrl(matchedFormat.dashAudioUrl).safe ? matchedFormat.dashAudioUrl : undefined;
-              return { url: matchedFormat.url, dashAudioUrl: safeDashAudio };
-            }
+          // Cross-server failover in auto mode or full extractMedia fallback
+          const tryModes: Array<'server1' | 'server2' | 'auto'> =
+            reServer === 'auto'
+              ? (failedUrl.includes('neoxr') ? ['server2', 'server1'] : ['server1', 'server2'])
+              : [reServer];
+
+          for (const mode of tryModes) {
+            try {
+              const freshMedia = await extractMedia(sourceUrl, reKey, mode);
+              if (freshMedia?.formats?.length) {
+                const wantType = wantsMp3Output ? 'audio' : (sanitizedFilename.match(/\.(jpg|jpeg|png)$/i) ? 'photos' : 'video');
+                const candidates = freshMedia.formats.filter((f) => isAcceptableFresh(f.url));
+                const matchedFormat =
+                  (rawResParam && candidates.find((f) => f.type === wantType && f.resolution?.toLowerCase() === rawResParam.toLowerCase())) ||
+                  candidates.find((f) => f.type === wantType && f.isDirect) ||
+                  candidates.find((f) => f.type === wantType) ||
+                  candidates.find((f) => f.isDirect) ||
+                  candidates[0];
+                if (matchedFormat?.url && isAcceptableFresh(matchedFormat.url)) {
+                  const safeDashAudio = matchedFormat.dashAudioUrl && isSafePublicUrl(matchedFormat.dashAudioUrl).safe ? matchedFormat.dashAudioUrl : undefined;
+                  return { url: matchedFormat.url, dashAudioUrl: safeDashAudio };
+                }
+              }
+            } catch {}
           }
         } catch (reErr) {
           console.warn('[proxy-download] On-the-fly re-resolution notice:', reErr);
@@ -1685,7 +1756,7 @@ async function startServer() {
                   audioUrl ? fetchFullStreamBuffer(audioUrl) : Promise.resolve(null)
                 ]);
               } catch (firstMuxErr) {
-                const refreshed = await tryReResolveFreshUrl();
+                const refreshed = await tryReResolveFreshUrl(targetUrl);
                 if (!refreshed?.url) throw firstMuxErr;
                 targetUrl = refreshed.url;
                 if (refreshed.dashAudioUrl) audioUrl = refreshed.dashAudioUrl;
@@ -1825,8 +1896,9 @@ async function startServer() {
 
         let probeResult = await probeOriginalStream(targetUrl);
         if (!probeResult.ok && sourceUrl && /^https?:\/\//i.test(sourceUrl)) {
-          const fresh = await tryReResolveFreshUrl();
-          if (fresh?.url && fresh.url !== targetUrl) {
+          const fresh = await tryReResolveFreshUrl(targetUrl);
+          const hasCookie = Boolean(fresh?.url && getTikTokCdnCookieForUrl(fresh.url));
+          if (fresh?.url && (fresh.url !== targetUrl || hasCookie)) {
             targetUrl = fresh.url;
             probeResult = await probeOriginalStream(targetUrl);
           }
@@ -1852,8 +1924,12 @@ async function startServer() {
       let clientAborted = false;
       let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
-      res.on('close', () => {
-        if (!res.writableFinished) {
+      res.on?.('close', () => {
+        const finished = Boolean((res as any).writableFinished || (res as any).writableEnded);
+        const hasEndFlags =
+          typeof (res as any).writableFinished === 'boolean' ||
+          typeof (res as any).writableEnded === 'boolean';
+        if (!finished && (hasEndFlags || (res as any).destroyed || (req as any).destroyed)) {
           clientAborted = true;
           streamAbortController.abort();
           try {
@@ -1864,32 +1940,46 @@ async function startServer() {
 
       let response: globalThis.Response | null = null;
       let lastStatus = 0;
+      let lastErrMsg = '';
 
       const tryFetchUpstream = async (candidateTarget: string): Promise<globalThis.Response | null> => {
-        for (const cfg of getOrderedFetchConfigs(candidateTarget)) {
+        const orderedConfigs = getOrderedFetchConfigs(candidateTarget);
+        let consecutiveNetworkErrors = 0;
+
+        for (let attemptIdx = 0; attemptIdx < orderedConfigs.length; attemptIdx++) {
+          const cfg = orderedConfigs[attemptIdx];
           if (clientAborted) return null;
           try {
             const reqHeaders: Record<string, string> = { ...cfg.headers };
             if (rangeHeader && !wantsMp3Output) {
               reqHeaders['Range'] = rangeHeader;
             }
+            const timeoutMs = attemptIdx === 0 ? 15000 : 8000;
             const resCandidate = await fetchWithHeaderTimeout(
               candidateTarget,
               reqHeaders,
-              7500,
+              timeoutMs,
               'GET',
               streamAbortController.signal
             );
+            consecutiveNetworkErrors = 0;
             const candidateCt = (resCandidate.headers.get('content-type') || '').toLowerCase();
             if (resCandidate.ok && resCandidate.body && !candidateCt.includes('text/html')) {
               rememberWinningStrategy(candidateTarget, cfg.idx);
               return resCandidate;
             }
             lastStatus = candidateCt.includes('text/html') ? 502 : resCandidate.status;
+            lastErrMsg = `HTTP ${resCandidate.status} (${candidateCt || 'unknown'})`;
             try { await resCandidate.body?.cancel(); } catch {}
           } catch (e: any) {
             if (clientAborted) return null;
-            console.warn('[proxy-download] Candidate fetch notice:', e?.message || e);
+            consecutiveNetworkErrors += 1;
+            lastErrMsg = e?.message || String(e);
+            console.warn('[proxy-download] Candidate fetch notice:', lastErrMsg);
+            // If host fails at network/timeout level twice in a row, short-circuit to re-resolution immediately
+            if (consecutiveNetworkErrors >= 2) {
+              break;
+            }
           }
         }
         return null;
@@ -1919,10 +2009,11 @@ async function startServer() {
 
       response = await tryFetchUpstream(targetUrl);
 
-      // If CDN link expired or returned 403/404/410/text/html, attempt on-the-fly re-resolution
+      // If CDN link expired or returned 403/404/410/timeout/text/html, attempt on-the-fly re-resolution
       if ((!response || !response.ok) && !clientAborted && sourceUrl && /^https?:\/\//i.test(sourceUrl)) {
-        const freshTarget = await tryReResolveFreshUrl();
-        if (freshTarget?.url && freshTarget.url !== targetUrl && freshTarget.url.startsWith('http')) {
+        const freshTarget = await tryReResolveFreshUrl(targetUrl);
+        const hasFreshCookie = Boolean(freshTarget?.url && getTikTokCdnCookieForUrl(freshTarget.url));
+        if (freshTarget?.url && freshTarget.url.startsWith('http') && (freshTarget.url !== targetUrl || hasFreshCookie)) {
           targetUrl = freshTarget.url;
           response = await tryFetchUpstream(targetUrl);
         }
@@ -1933,7 +2024,8 @@ async function startServer() {
       }
 
       if (!response || !response.ok || !response.body) {
-        res.status(lastStatus || 500).json({ success: false, error: 'Gagal mengunduh berkas dari tautan sumber.' });
+        console.warn(`[proxy-download] Upstream exhausted for host=${getHostKey(targetUrl)} status=${lastStatus} err=${lastErrMsg}`);
+        res.status(lastStatus || 502).json({ success: false, error: 'Gagal mengunduh berkas dari tautan sumber.' });
         return;
       }
 
@@ -1956,8 +2048,9 @@ async function startServer() {
         try { await reader.cancel(); } catch {}
         let recovered = false;
         if (!clientAborted && sourceUrl && /^https?:\/\//i.test(sourceUrl)) {
-          const freshTarget = await tryReResolveFreshUrl();
-          if (freshTarget?.url && freshTarget.url !== targetUrl && freshTarget.url.startsWith('http')) {
+          const freshTarget = await tryReResolveFreshUrl(targetUrl);
+          const hasFreshCookie = Boolean(freshTarget?.url && getTikTokCdnCookieForUrl(freshTarget.url));
+          if (freshTarget?.url && freshTarget.url.startsWith('http') && (freshTarget.url !== targetUrl || hasFreshCookie)) {
             targetUrl = freshTarget.url;
             const retryRes = await tryFetchUpstream(targetUrl);
             if (retryRes && retryRes.ok && retryRes.body) {

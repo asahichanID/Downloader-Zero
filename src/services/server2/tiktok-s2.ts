@@ -121,13 +121,76 @@ interface TikWMResponse {
   data?: TikWMData;
 }
 
+export interface TikTokResolveOptions {
+  forceRefresh?: boolean;
+  failedUrl?: string;
+}
+
 // Shared short-lived cache + global 1.15s pacer to eliminate TikWM "Free Api Limit: 1 request/second" failures
 const TIKWM_CACHE_TTL_MS = 3 * 60 * 1000;
 const TIKWM_MIN_INTERVAL_MS = 1150;
+const TIKTOK_COOKIE_TTL_MS = 15 * 60 * 1000;
 const tikwmDataCache = new Map<string, { data: TikWMData; expiresAt: number }>();
 const inflightTikTokLookups = new Map<string, Promise<TikWMData>>();
+const tiktokCdnCookieCache = new Map<string, { cookie: string; expiresAt: number }>();
 let tikwmPaceChain: Promise<void> = Promise.resolve();
 let lastTikwmRequestAt = 0;
+
+function extractCookieHeaderFromResponse(res: globalThis.Response): string {
+  const rawList: string[] = [];
+  const headersAny = res.headers as any;
+  if (typeof headersAny?.getSetCookie === 'function') {
+    const arr = headersAny.getSetCookie();
+    if (Array.isArray(arr)) rawList.push(...arr);
+  }
+  if (rawList.length === 0) {
+    const single = res.headers.get('set-cookie');
+    if (single) {
+      rawList.push(...single.split(/,(?=\s*[A-Za-z0-9_.-]+=)/));
+    }
+  }
+  const pairs: string[] = [];
+  const seenNames = new Set<string>();
+  for (const item of rawList) {
+    const firstPart = String(item || '').split(';')[0]?.trim();
+    if (!firstPart || !firstPart.includes('=')) continue;
+    const eqIdx = firstPart.indexOf('=');
+    const name = firstPart.slice(0, eqIdx).trim();
+    if (!name || seenNames.has(name)) continue;
+    seenNames.add(name);
+    pairs.push(firstPart);
+  }
+  return pairs.join('; ');
+}
+
+function registerTikTokCdnCookies(targetUrl: string, cookieHeader: string): void {
+  if (!targetUrl || !cookieHeader || !targetUrl.includes('webapp-prime.tiktok.com')) return;
+  const expiresAt = Date.now() + TIKTOK_COOKIE_TTL_MS;
+  tiktokCdnCookieCache.set(`url:${targetUrl}`, { cookie: cookieHeader, expiresAt });
+  try {
+    const parsed = new URL(targetUrl);
+    tiktokCdnCookieCache.set(`host:${parsed.hostname.toLowerCase()}`, { cookie: cookieHeader, expiresAt });
+  } catch {}
+  if (tiktokCdnCookieCache.size > 120) {
+    const now = Date.now();
+    for (const [k, v] of tiktokCdnCookieCache.entries()) {
+      if (now > v.expiresAt) tiktokCdnCookieCache.delete(k);
+    }
+  }
+}
+
+export function getTikTokCdnCookieForUrl(targetUrl: string): string {
+  if (!targetUrl || !targetUrl.includes('webapp-prime.tiktok.com')) return '';
+  const now = Date.now();
+  const exact = tiktokCdnCookieCache.get(`url:${targetUrl}`);
+  if (exact && now < exact.expiresAt) return exact.cookie;
+  try {
+    const host = new URL(targetUrl).hostname.toLowerCase();
+    const byHost = tiktokCdnCookieCache.get(`host:${host}`);
+    if (byHost && now < byHost.expiresAt) return byHost.cookie;
+  } catch {}
+  return '';
+}
 
 function getCachedTikTokEntry(key: string): TikWMData | null {
   if (!key) return null;
@@ -210,6 +273,7 @@ async function fetchTikTokWebHtmlData(targetUrl: string, awemeId: string): Promi
       });
       if (!res.ok) continue;
 
+      const pageCookies = extractCookieHeaderFromResponse(res);
       const html = await res.text();
       const match = html.match(/<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
       if (!match?.[1]) continue;
@@ -231,39 +295,59 @@ async function fetchTikTokWebHtmlData(targetUrl: string, awemeId: string): Promi
         return /_\d*1$/.test((gearName || '').trim());
       };
 
-      const bitrateGears: Array<{ bitRate: number; url: string; size?: number; height: number; isH264: boolean }> = Array.isArray(item.video?.bitrateInfo)
+      const bitrateGears: Array<{ bitRate: number; url: string; fallbackUrl: string; size?: number; height: number; isH264: boolean; isCookieFree: boolean }> = Array.isArray(item.video?.bitrateInfo)
         ? item.video.bitrateInfo
             .map((g: any) => {
               const urlList: string[] = Array.isArray(g?.PlayAddr?.UrlList) ? g.PlayAddr.UrlList : [];
-              const bestCandidateUrl =
+              const cookieFreeUrl =
                 urlList.find((u: string) => typeof u === 'string' && u.startsWith('http') && !u.includes('webapp-prime.tiktok.com')) ||
+                '';
+              const anyValidUrl =
+                cookieFreeUrl ||
                 urlList.find((u: string) => typeof u === 'string' && u.startsWith('http')) ||
                 '';
               return {
                 bitRate: Number(g?.Bitrate || 0),
-                url: bestCandidateUrl,
+                url: anyValidUrl,
+                fallbackUrl: anyValidUrl,
                 size: Number(g?.PlayAddr?.DataSize || 0) || undefined,
                 height: Number(g?.PlayAddr?.Height || 0),
-                isH264: !isBytevc1OrHevc(g?.CodecType, g?.GearName)
+                isH264: !isBytevc1OrHevc(g?.CodecType, g?.GearName),
+                isCookieFree: Boolean(cookieFreeUrl)
               };
             })
             .filter((g: any) => Boolean(g.url))
             .sort((a: any, b: any) => {
+              if (a.isCookieFree !== b.isCookieFree) return a.isCookieFree ? -1 : 1;
               if (b.height !== a.height) return b.height - a.height;
               if (a.isH264 !== b.isH264) return a.isH264 ? -1 : 1;
               return b.bitRate - a.bitRate;
             })
         : [];
 
-      const h264Gears = bitrateGears.filter((g) => g.isH264);
+      const cookieFreeGears = bitrateGears.filter((g) => g.isCookieFree);
+      const gearPool = cookieFreeGears.length > 0 ? cookieFreeGears : bitrateGears;
+      const h264Gears = gearPool.filter((g) => g.isH264);
       const topH264 = h264Gears[0];
-      const topAny = bitrateGears[0];
+      const topAny = gearPool[0];
       const hdGear = topH264 && topAny && topH264.height >= topAny.height ? topH264 : (topAny || topH264);
-      const sdGear = h264Gears[h264Gears.length - 1] || bitrateGears[bitrateGears.length - 1];
+      const sdGear = h264Gears[h264Gears.length - 1] || gearPool[gearPool.length - 1];
 
       const hdUrl = hdGear?.url || item.video?.playAddr || item.video?.downloadAddr || '';
       const sdUrl = sdGear?.url || item.video?.playAddr || hdUrl;
       const musicUrl = item.music?.playUrl || '';
+
+      if (pageCookies) {
+        if (hdUrl) registerTikTokCdnCookies(hdUrl, pageCookies);
+        if (sdUrl) registerTikTokCdnCookies(sdUrl, pageCookies);
+      } else if (
+        hdUrl.includes('webapp-prime.tiktok.com') &&
+        sdUrl.includes('webapp-prime.tiktok.com') &&
+        imgs.length === 0
+      ) {
+        // Without session cookies, webapp-prime URLs fail with 403; continue checking other candidates
+        continue;
+      }
 
       if (!hdUrl && !sdUrl && imgs.length === 0 && !musicUrl) continue;
 
@@ -387,36 +471,41 @@ async function fetchSSSTikData(targetUrl: string): Promise<TikWMData | null> {
  */
 async function fetchOfficialTikTokFeed(awemeId: string): Promise<any | null> {
   if (!awemeId || !/^\d+$/.test(awemeId)) return null;
-  const feedUrl = `https://api16-normal-useast5.tiktokv.us/aweme/v1/feed/?aweme_id=${encodeURIComponent(awemeId)}`;
-  try {
-    const res = await fetch(feedUrl, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'com.zhiliaoapp.musically/300904 (2018111632; U; Android 10; en_US; Pixel 4; Build/QQ3A.200805.001; Cronet/58.0.2991.0)',
-        'Accept-Encoding': 'identity'
-      },
-      signal: AbortSignal.timeout(7000)
-    });
-    if (!res.ok) return null;
-    const rawBuf = new Uint8Array(await res.arrayBuffer());
-    if (rawBuf.length < 10) return null;
+  const feedHosts = [
+    `https://api16-normal-useast5.tiktokv.us/aweme/v1/feed/?aweme_id=${encodeURIComponent(awemeId)}`,
+    `https://api22-normal-c-useast1a.tiktokv.com/aweme/v1/feed/?aweme_id=${encodeURIComponent(awemeId)}`
+  ];
+  for (const feedUrl of feedHosts) {
+    try {
+      const res = await fetch(feedUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'com.zhiliaoapp.musically/300904 (2018111632; U; Android 10; en_US; Pixel 4; Build/QQ3A.200805.001; Cronet/58.0.2991.0)',
+          'Accept-Encoding': 'identity'
+        },
+        signal: AbortSignal.timeout(6500)
+      });
+      if (!res.ok) continue;
+      const rawBuf = new Uint8Array(await res.arrayBuffer());
+      if (rawBuf.length < 10) continue;
 
-    let jsonStr = '';
-    if (rawBuf[0] === 0x1f && rawBuf[1] === 0x8b && typeof DecompressionStream !== 'undefined') {
-      const ds = new DecompressionStream('gzip');
-      jsonStr = await new Response(new Blob([rawBuf]).stream().pipeThrough(ds)).text();
-    } else {
-      jsonStr = new TextDecoder().decode(rawBuf);
-    }
-    const json = JSON.parse(jsonStr);
-    if (json && json.status_code === 0 && Array.isArray(json.aweme_list) && json.aweme_list[0]) {
-      const item = json.aweme_list[0];
-      if (!item.aweme_id || String(item.aweme_id) === awemeId) {
-        return item;
+      let jsonStr = '';
+      if (rawBuf[0] === 0x1f && rawBuf[1] === 0x8b && typeof DecompressionStream !== 'undefined') {
+        const ds = new DecompressionStream('gzip');
+        jsonStr = await new Response(new Blob([rawBuf]).stream().pipeThrough(ds)).text();
+      } else {
+        jsonStr = new TextDecoder().decode(rawBuf);
       }
+      const json = JSON.parse(jsonStr);
+      if (json && json.status_code === 0 && Array.isArray(json.aweme_list) && json.aweme_list[0]) {
+        const item = json.aweme_list[0];
+        if (!item.aweme_id || String(item.aweme_id) === awemeId) {
+          return item;
+        }
+      }
+    } catch (e) {
+      console.warn('[Server 2 TikTok] Official gateway notice:', e);
     }
-  } catch (e) {
-    console.warn('[Server 2 TikTok] Official gateway notice:', e);
   }
   return null;
 }
@@ -491,20 +580,31 @@ function convertOfficialFeedToTikWMData(item: any, awemeId: string): TikWMData |
 /**
  * Unified cached + rate-limit-safe TikTok data fetcher used by both Preview and Resolver.
  */
-export async function getCachedOrFetchTikTokData(rawUrl: string): Promise<TikWMData> {
+export async function getCachedOrFetchTikTokData(
+  rawUrl: string,
+  options?: TikTokResolveOptions
+): Promise<TikWMData> {
   const target = await resolveTikTokShortUrl(rawUrl);
   const cleanedUrl = cleanTikTokUrl(target);
   const awemeId = extractTikTokAwemeId(cleanedUrl) || extractTikTokAwemeId(target);
+  const forceRefresh = Boolean(options?.forceRefresh);
+  const failedUrl = options?.failedUrl || '';
 
-  const cached =
-    (awemeId ? getCachedTikTokEntry(`id:${awemeId}`) : null) ||
-    getCachedTikTokEntry(`url:${cleanedUrl}`) ||
-    getCachedTikTokEntry(`url:${target}`);
-  if (cached) {
-    return cached;
+  if (forceRefresh) {
+    if (awemeId) tikwmDataCache.delete(`id:${awemeId}`);
+    tikwmDataCache.delete(`url:${cleanedUrl}`);
+    tikwmDataCache.delete(`url:${target}`);
+  } else {
+    const cached =
+      (awemeId ? getCachedTikTokEntry(`id:${awemeId}`) : null) ||
+      getCachedTikTokEntry(`url:${cleanedUrl}`) ||
+      getCachedTikTokEntry(`url:${target}`);
+    if (cached) {
+      return cached;
+    }
   }
 
-  const inflightKey = awemeId ? `id:${awemeId}` : `url:${cleanedUrl}`;
+  const inflightKey = `${forceRefresh ? 'refresh:' : ''}${awemeId ? `id:${awemeId}` : `url:${cleanedUrl}`}`;
   const existingInflight = inflightTikTokLookups.get(inflightKey);
   if (existingInflight) {
     return existingInflight;
@@ -512,34 +612,38 @@ export async function getCachedOrFetchTikTokData(rawUrl: string): Promise<TikWMD
 
   const lookupPromise = (async (): Promise<TikWMData> => {
     let lastError = '';
+    const skipSsstik = failedUrl.includes('tikcdn.io') || failedUrl.includes('ssstik');
+    const skipTikwmInitially = failedUrl.includes('tikwm.com');
 
-    // 1. Paced TikWM request (avoids 1 req/s bursts across extract -> start-job)
-    try {
-      let json = await queryTikWMPaced(cleanedUrl, 'https://www.tikwm.com');
-      if (json.code !== 0 && /limit|second|too many|429/i.test(json.msg || '')) {
-        await new Promise((r) => setTimeout(r, 1250));
-        json = await queryTikWMPaced(cleanedUrl, 'https://tikwm.com');
+    const tryTikWM = async (): Promise<TikWMData | null> => {
+      try {
+        let json = await queryTikWMPaced(cleanedUrl, 'https://www.tikwm.com');
+        if (json.code !== 0 && /limit|second|too many|429/i.test(json.msg || '')) {
+          await new Promise((r) => setTimeout(r, 1250));
+          json = await queryTikWMPaced(cleanedUrl, 'https://tikwm.com');
+        }
+        if (json.code === 0 && json.data) {
+          const result = { ...json.data, _sourceEngine: 'TikWM' };
+          storeCachedTikTokEntry(
+            [
+              result.id ? `id:${result.id}` : '',
+              awemeId ? `id:${awemeId}` : '',
+              `url:${cleanedUrl}`,
+              `url:${target}`
+            ],
+            result
+          );
+          return result;
+        }
+        if (json.msg) lastError = json.msg;
+      } catch (e: any) {
+        lastError = e?.message || 'Koneksi ke endpoint TikWM gagal';
       }
-      if (json.code === 0 && json.data) {
-        const result = { ...json.data, _sourceEngine: 'TikWM' };
-        storeCachedTikTokEntry(
-          [
-            result.id ? `id:${result.id}` : '',
-            awemeId ? `id:${awemeId}` : '',
-            `url:${cleanedUrl}`,
-            `url:${target}`
-          ],
-          result
-        );
-        return result;
-      }
-      if (json.msg) lastError = json.msg;
-    } catch (e: any) {
-      lastError = e?.message || 'Koneksi ke endpoint TikWM gagal';
-    }
+      return null;
+    };
 
-    // 2. Official TikTok mobile feed gateway (cookie-free CDN URLs, handles gzip & photo carousels)
-    if (awemeId) {
+    const tryOfficialFeed = async (): Promise<TikWMData | null> => {
+      if (!awemeId) return null;
       const feedItem = await fetchOfficialTikTokFeed(awemeId);
       const converted = convertOfficialFeedToTikWMData(feedItem, awemeId);
       if (converted) {
@@ -554,36 +658,66 @@ export async function getCachedOrFetchTikTokData(rawUrl: string): Promise<TikWMD
         );
         return converted;
       }
+      return null;
+    };
+
+    // 1. Paced TikWM request (unless we are specifically recovering from a tikwm.com CDN failure)
+    if (!skipTikwmInitially) {
+      const tikwmRes = await tryTikWM();
+      if (tikwmRes && (!failedUrl || (tikwmRes.hdplay !== failedUrl && tikwmRes.play !== failedUrl))) {
+        return tikwmRes;
+      }
     }
 
-    // 3. Web HTML __UNIVERSAL_DATA_FOR_REHYDRATION__ (handles videos & photo carousels without rate limit)
+    // 2. Official TikTok mobile feed gateway (cookie-free CDN URLs, handles gzip & photo carousels)
+    const officialRes = await tryOfficialFeed();
+    if (officialRes && (!failedUrl || (officialRes.hdplay !== failedUrl && officialRes.play !== failedUrl))) {
+      return officialRes;
+    }
+
+    // 3. Web HTML __UNIVERSAL_DATA_FOR_REHYDRATION__ (captures cookies if webapp-prime is needed)
     const webData = await fetchTikTokWebHtmlData(cleanedUrl, awemeId);
     if (webData) {
-      storeCachedTikTokEntry(
-        [
-          webData.id ? `id:${webData.id}` : '',
-          awemeId ? `id:${awemeId}` : '',
-          `url:${cleanedUrl}`,
-          `url:${target}`
-        ],
-        webData
-      );
-      return webData;
+      const onlyReturnedFailedUnCookied =
+        Boolean(failedUrl) &&
+        webData.hdplay === failedUrl &&
+        webData.play === failedUrl &&
+        !getTikTokCdnCookieForUrl(webData.hdplay || webData.play);
+      if (!onlyReturnedFailedUnCookied) {
+        storeCachedTikTokEntry(
+          [
+            webData.id ? `id:${webData.id}` : '',
+            awemeId ? `id:${awemeId}` : '',
+            `url:${cleanedUrl}`,
+            `url:${target}`
+          ],
+          webData
+        );
+        return webData;
+      }
     }
 
-    // 4. SSSTik fallback with live token extraction
-    const sssData = await fetchSSSTikData(cleanedUrl);
-    if (sssData) {
-      storeCachedTikTokEntry(
-        [
-          sssData.id ? `id:${sssData.id}` : '',
-          awemeId ? `id:${awemeId}` : '',
-          `url:${cleanedUrl}`,
-          `url:${target}`
-        ],
-        sssData
-      );
-      return sssData;
+    // 4. Retry TikWM if skipped earlier
+    if (skipTikwmInitially) {
+      const tikwmRes = await tryTikWM();
+      if (tikwmRes) return tikwmRes;
+    }
+
+    // 5. SSSTik fallback with live token extraction (skipped if tikcdn.io already failed)
+    if (!skipSsstik) {
+      const sssData = await fetchSSSTikData(cleanedUrl);
+      if (sssData && !sssData.hdplay?.includes('tikcdn.io')) {
+        storeCachedTikTokEntry(
+          [
+            sssData.id ? `id:${sssData.id}` : '',
+            awemeId ? `id:${awemeId}` : '',
+            `url:${cleanedUrl}`,
+            `url:${target}`
+          ],
+          sssData
+        );
+        return sssData;
+      }
     }
 
     throw new Error(
@@ -618,10 +752,20 @@ export async function resolveTikTokServer2(
   url: string,
   formatId: string,
   resolution: string,
-  type: string
+  type: string,
+  options?: TikTokResolveOptions
 ): Promise<{ downloadUrl: string; quality?: string }> {
   const target = await resolveTikTokShortUrl(url);
-  const data = await getCachedOrFetchTikTokData(target);
+  const data = await getCachedOrFetchTikTokData(target, options);
+  const failedUrl = options?.failedUrl || '';
+  const pickFresh = (candidate?: string): string => {
+    const abs = ensureAbsoluteUrl(candidate);
+    if (!abs || !abs.startsWith('http')) return '';
+    if (failedUrl && abs === failedUrl && !getTikTokCdnCookieForUrl(abs)) {
+      return '';
+    }
+    return abs;
+  };
 
   const isAudio =
     type === 'audio' ||
@@ -635,7 +779,7 @@ export async function resolveTikTokServer2(
   if (isAudio) {
     const kbpsMatch = `${resolution} ${formatId}`.match(/(320|256|192|128|64)/);
     const kbpsLabel = kbpsMatch ? `${kbpsMatch[1]} kbps` : '320 kbps';
-    const audioCandidate = ensureAbsoluteUrl(data.music || data.music_info?.play);
+    const audioCandidate = pickFresh(data.music || data.music_info?.play);
     if (audioCandidate && audioCandidate.startsWith('http')) {
       const audioTitle = data.music_info?.title ? ` - ${data.music_info.title}` : '';
       return {
@@ -648,8 +792,8 @@ export async function resolveTikTokServer2(
     const awemeId = extractTikTokAwemeId(target) || (data.id && /^\d+$/.test(String(data.id)) ? String(data.id) : '');
     if (awemeId) {
       const officialItem = await fetchOfficialTikTokFeed(awemeId);
-      const officialAudio = officialItem?.music?.play_url?.url_list?.[0];
-      if (officialAudio && typeof officialAudio === 'string' && officialAudio.startsWith('http')) {
+      const officialAudio = pickFresh(officialItem?.music?.play_url?.url_list?.[0]);
+      if (officialAudio && officialAudio.startsWith('http')) {
         return {
           downloadUrl: officialAudio,
           quality: `${kbpsLabel} MP3 (Official Audio Master)`
@@ -658,7 +802,7 @@ export async function resolveTikTokServer2(
     }
 
     // Fallback: Return HD/SD video stream so proxy-download extracts clean MP3 at exact bitrate via ffmpeg
-    const fallbackVideoForAudio = ensureAbsoluteUrl(data.hdplay || data.play);
+    const fallbackVideoForAudio = pickFresh(data.hdplay) || pickFresh(data.play);
     if (fallbackVideoForAudio && fallbackVideoForAudio.startsWith('http')) {
       return {
         downloadUrl: fallbackVideoForAudio,
@@ -703,9 +847,9 @@ export async function resolveTikTokServer2(
   const is720p = !isOriginal && (normalizedRes.includes('720') || formatIdLower.includes('720')) && !is4K && !is2K && !is1080p;
   const is480p = !isOriginal && (normalizedRes.includes('480') || normalizedRes.includes('360') || formatIdLower.includes('480')) && !is4K && !is2K && !is1080p && !is720p;
 
-  const hdPlayUrl = ensureAbsoluteUrl(data.hdplay);
-  const standardPlayUrl = ensureAbsoluteUrl(data.play);
-  const wmPlayUrl = ensureAbsoluteUrl(data.wmplay);
+  const hdPlayUrl = pickFresh(data.hdplay);
+  const standardPlayUrl = pickFresh(data.play);
+  const wmPlayUrl = pickFresh(data.wmplay);
 
   const pickOfficialFeedStream = async (awemeIdStr: string, preferLowBitrate: boolean): Promise<string> => {
     if (!awemeIdStr) return '';
